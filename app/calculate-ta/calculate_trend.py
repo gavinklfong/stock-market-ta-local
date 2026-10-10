@@ -97,20 +97,12 @@ def compute_atr(highs, lows, closes, period=14):
             true_ranges[i] = tr
 
     atr_values = [None] * len(highs)
-    first_atr_idx = None
-    for i in range(period, len(true_ranges)):
-        if true_ranges[i] is not None:
-            first_atr_idx = i
-            break
-
-    if first_atr_idx is None:
-        return atr_values
-
-    initial_atr = sum(true_ranges[first_atr_idx:first_atr_idx + period]) / period
-    atr_values[first_atr_idx] = initial_atr
+    # Seed ATR at index `period` using first `period` true ranges (indices 0..period-1)
+    initial_atr = sum(true_ranges[i] for i in range(period)) / period
+    atr_values[period] = initial_atr
 
     k = 2.0 / (period + 1)
-    for i in range(first_atr_idx + 1, len(highs)):
+    for i in range(period + 1, len(highs)):
         if true_ranges[i] is not None:
             prev_atr = atr_values[i - 1]
             if prev_atr is not None:
