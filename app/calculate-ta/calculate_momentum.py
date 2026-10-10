@@ -141,7 +141,7 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
     closes = raw_df["Close"].tolist()
 
-    # Merge with existing TA data if available (preserves columns from calculate_ta.py and calculate_trend.py)
+    # Merge with existing TA data if available (preserves columns from prior modules)
     if os.path.exists(output_path):
         df = pd.read_csv(output_path)
         df["Date"] = pd.to_datetime(df["Date"])

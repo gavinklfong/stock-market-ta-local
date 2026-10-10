@@ -39,11 +39,13 @@ def compute_garch_volatility(closes, p=1, q=1):
             "ta_garch_sq": [None] * n,
         }
 
-    # Compute log returns
+    # Compute log returns (also exposed as ta_log_return output column)
+    ta_log_return = [None] * n
     log_returns = np.zeros(n)
     for i in range(1, n):
         if closes[i - 1] > 0 and closes[i] > 0:
             log_returns[i] = math.log(closes[i] / closes[i - 1])
+            ta_log_return[i] = log_returns[i]
         else:
             log_returns[i] = 0.0
 
@@ -54,6 +56,7 @@ def compute_garch_volatility(closes, p=1, q=1):
         return {
             "ta_garch_vol": [None] * n,
             "ta_garch_sq": [None] * n,
+            "ta_log_return": ta_log_return,
         }
 
     try:
@@ -228,9 +231,12 @@ def compute_regime_columns(closes, n):
     garch_cols = compute_garch_volatility(closes)
     hmm_cols = compute_hmm_regime(closes)
 
+    # ta_log_return is already in garch_cols (exposed as output column)
+    combined = {**garch_cols, **hmm_cols}
+
     # Ensure all columns are length n (trim or pad if needed)
     result = {}
-    for col, values in {**garch_cols, **hmm_cols}.items():
+    for col, values in combined.items():
         if len(values) > n:
             result[col] = values[:n]
         elif len(values) < n:
@@ -323,6 +329,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_regime",
-    description="regime detection: GARCH volatility + 3-state HMM",
+    description="regime detection: GARCH volatility + 3-state HMM, log return",
     process_csv_fn=process_csv,
 )

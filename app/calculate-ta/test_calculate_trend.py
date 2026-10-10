@@ -389,6 +389,9 @@ class TestComputeTrendColumns:
             "ta_ema20", "ta_ema50", "ta_ema200",
             "ta_supertrend", "ta_supertrend_direction",
             "ta_supertrend_upper", "ta_supertrend_lower",
+            "ta_ma20", "ta_ma50", "ta_sma10",
+            "ta_ma20_slope", "ta_ma50_slope",
+            "ta_price_ma20_ratio",
         }
         assert set(result.keys()) == expected_keys
 

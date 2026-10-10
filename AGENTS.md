@@ -18,12 +18,11 @@ app/
 python app/ticker-retriever/download_tickers.py
 
 # 2. Run TA scripts in order — each adds columns to the same CSVs
-python app/calculate-ta/calculate_ta.py          # core: RSI, MACD, ATR, OFI, MAs, log return/vol, normalized ATR
-python app/calculate-ta/calculate_trend.py       # trend: EMA20/50/200, SuperTrend (ATR-based)
+python app/calculate-ta/calculate_trend.py       # trend: EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA ratio
 python app/calculate-ta/calculate_momentum.py    # momentum: RSI, MACD, ROC(20)
-python app/calculate-ta/calculate_volume.py      # volume: OBV, CMF(20), VWAP
-python app/calculate-ta/calculate_volatility.py  # volatility: ATR(14), Bollinger Bands(20,2) → ta_atr14, ta_bband_upper/middle/lower
-python app/calculate-ta/calculate_regime.py      # regime: GARCH(1,1) vol forecast + 3-state HMM → ta_garch_vol/sq, ta_hmm_regime/prob_*
+python app/calculate-ta/calculate_volume.py      # volume: OBV, CMF(20), VWAP, OFI, log volume
+python app/calculate-ta/calculate_volatility.py  # volatility: ATR(14), Bollinger Bands(20,2), normalized ATR
+python app/calculate-ta/calculate_regime.py      # regime: GARCH(1,1) vol forecast + 3-state HMM, log return
 python app/calculate-ta/calculate_return.py      # future returns: 5d/10d/20d → ta_return_5d/10d/20d
 ```
 
@@ -45,3 +44,4 @@ Each module reads from `data/market-data/`, appends its columns to the correspon
 - **Git-ignored**: `data/market-data/*.csv` (regenerated each download).
 - **TA output order matters**: Run `calculate_ta.py` first, then trend/momentum/volume/volatility/regime modules in any order after that. `calculate_return.py` can run anytime — it only needs raw OHLCV, not prior TA columns.
 - **Tests**: Run per-module tests with `pytest app/calculate-ta/test_calculate_*.py`.
+- **Pipeline order**: Run `calculate_trend.py` first (it creates the initial TA CSV from raw market data), then momentum/volume/volatility/regime in any order. `calculate_return.py` can run anytime — it only needs raw OHLCV, not prior TA columns.

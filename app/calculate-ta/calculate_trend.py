@@ -52,6 +52,28 @@ def compute_atr(highs, lows, closes, period=14):
     return atr_values
 
 
+def compute_ma(closes, period):
+    """Compute Simple Moving Average (SMA) for each candle."""
+    ma_values = [None] * len(closes)
+    for i in range(period - 1, len(closes)):
+        window = closes[i - period + 1: i + 1]
+        ma_values[i] = sum(window) / period
+    return ma_values
+
+
+def compute_ma_slope(closes, period, lookback=10):
+    """Compute slope of MA over `lookback` periods.
+
+    slope = (MA_at_current - MA_at_current_lookback) / lookback
+    """
+    ma_values = compute_ma(closes, period)
+    slope_values = [None] * len(closes)
+    for i in range(period - 1 + lookback, len(closes)):
+        if ma_values[i] is not None and ma_values[i - lookback] is not None:
+            slope_values[i] = (ma_values[i] - ma_values[i - lookback]) / lookback
+    return slope_values
+
+
 def compute_supertrend(highs, lows, closes, atr_period=14, multiplier=3.0):
     """Compute SuperTrend indicator.
     
@@ -145,7 +167,16 @@ def compute_trend_columns(highs, lows, closes, n):
     ta_ema50 = compute_ema(closes, 50) if n >= 50 else [None] * n
     ta_ema200 = compute_ema(closes, 200) if n >= 200 else [None] * n
     st = compute_supertrend(highs, lows, closes, atr_period=14, multiplier=3.0)
-    
+    ta_ma20 = compute_ma(closes, 20)
+    ta_ma50 = compute_ma(closes, 50)
+    ta_sma10 = compute_ma(closes, 10)
+    ta_ma20_slope = compute_ma_slope(closes, 20, lookback=10)
+    ta_ma50_slope = compute_ma_slope(closes, 50, lookback=10)
+    ta_price_ma20_ratio = [None] * n
+    for i in range(n):
+        if ta_ma20[i] is not None and ta_ma20[i] != 0:
+            ta_price_ma20_ratio[i] = closes[i] / ta_ma20[i]
+
     return {
         "ta_ema20": ta_ema20,
         "ta_ema50": ta_ema50,
@@ -154,6 +185,12 @@ def compute_trend_columns(highs, lows, closes, n):
         "ta_supertrend_direction": st["direction"],
         "ta_supertrend_upper": st["upper_band"],
         "ta_supertrend_lower": st["lower_band"],
+        "ta_ma20": ta_ma20,
+        "ta_ma50": ta_ma50,
+        "ta_sma10": ta_sma10,
+        "ta_ma20_slope": ta_ma20_slope,
+        "ta_ma50_slope": ta_ma50_slope,
+        "ta_price_ma20_ratio": ta_price_ma20_ratio,
     }
 
 
@@ -167,7 +204,7 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     highs = raw_df["High"].tolist()
     lows = raw_df["Low"].tolist()
 
-    # Merge with existing TA data if available (preserves columns from calculate_ta.py)
+    # Merge with existing TA data if available (preserves columns from prior modules)
     if os.path.exists(output_path):
         df = pd.read_csv(output_path)
         df["Date"] = pd.to_datetime(df["Date"])
@@ -193,6 +230,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_trend",
-    description="trend indicators: EMA20, EMA50, EMA200, SuperTrend",
+    description="trend indicators: EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA ratio",
     process_csv_fn=process_csv,
 )

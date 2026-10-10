@@ -289,7 +289,7 @@ class TestComputeVolumeColumns:
     def test_expected_keys(self):
         highs, lows, closes, volumes = _make_sample(50)
         cols = compute_volume_columns(highs, lows, closes, volumes, 50)
-        assert set(cols.keys()) == {"ta_obv", "ta_cmf", "ta_vwap"}
+        assert set(cols.keys()) == {"ta_obv", "ta_cmf", "ta_vwap", "ta_ofi", "ta_log_volume"}
 
     def test_all_same_length(self):
         highs, lows, closes, volumes = _make_sample(50)

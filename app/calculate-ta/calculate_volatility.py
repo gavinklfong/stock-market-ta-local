@@ -62,10 +62,15 @@ def compute_bollinger_bands(closes, period=20, num_std=2.0):
 def compute_volatility_columns(highs, lows, closes, n):
     """Compute all volatility indicator columns for a single ticker's data."""
     ta_atr = compute_atr(highs, lows, closes, 14) if n >= 15 else [None] * n
+    ta_normalized_atr14 = [
+        ta_atr[i] / closes[i] if ta_atr[i] is not None and closes[i] != 0 else None
+        for i in range(n)
+    ]
     bb = compute_bollinger_bands(closes) if n >= 20 else {"upper": [None] * n, "middle": [None] * n, "lower": [None] * n}
 
     return {
         "ta_atr14": ta_atr,
+        "ta_normalized_atr14": ta_normalized_atr14,
         "ta_bband_upper": bb["upper"],
         "ta_bband_middle": bb["middle"],
         "ta_bband_lower": bb["lower"],
@@ -82,8 +87,7 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     lows = raw_df["Low"].tolist()
     closes = raw_df["Close"].tolist()
 
-    # Merge with existing TA data if available (preserves columns from calculate_ta.py,
-    # calculate_trend.py, calculate_momentum.py, and calculate_volume.py)
+    # Merge with existing TA data if available (preserves columns from prior modules)
     if os.path.exists(output_path):
         df = pd.read_csv(output_path)
         df["Date"] = pd.to_datetime(df["Date"])

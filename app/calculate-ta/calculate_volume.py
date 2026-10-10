@@ -5,6 +5,21 @@ import pandas as pd
 from common import main
 
 
+def compute_ofi(open_prices, highs, lows, closes):
+    if len(open_prices) < 2:
+        return [None] * len(open_prices)
+
+    ofi_values = [None] * len(open_prices)
+    for i in range(len(open_prices)):
+        high_low_range = highs[i] - lows[i]
+        if high_low_range == 0:
+            ofi_values[i] = 0.0
+        else:
+            ofi_values[i] = (closes[i] - open_prices[i]) / high_low_range
+
+    return ofi_values
+
+
 def compute_obv(closes, volumes):
     """Compute On-Balance Volume. Returns a list aligned with input."""
     n = len(closes)
@@ -96,16 +111,20 @@ def compute_vwap(highs, lows, closes, volumes):
     return result
 
 
-def compute_volume_columns(highs, lows, closes, volumes, n):
+def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     """Compute all volume indicator columns for a single ticker's data."""
     ta_obv = compute_obv(closes, volumes)
     ta_cmf = compute_cmf(highs, lows, closes, volumes) if n >= 20 else [None] * n
     ta_vwap = compute_vwap(highs, lows, closes, volumes)
+    ta_ofi = compute_ofi(opens, highs, lows, closes) if opens is not None else [None] * n
+    ta_log_volume = [math.log(v) if v > 0 else None for v in volumes]
 
     return {
         "ta_obv": ta_obv,
         "ta_cmf": ta_cmf,
         "ta_vwap": ta_vwap,
+        "ta_ofi": ta_ofi,
+        "ta_log_volume": ta_log_volume,
     }
 
 
@@ -119,9 +138,9 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     lows = raw_df["Low"].tolist()
     closes = raw_df["Close"].tolist()
     volumes = raw_df["Volume"].tolist()
+    opens = raw_df["Open"].tolist()
 
-    # Merge with existing TA data if available (preserves columns from calculate_ta.py,
-    # calculate_trend.py, and calculate_momentum.py)
+    # Merge with existing TA data if available (preserves columns from prior modules)
     if os.path.exists(output_path):
         df = pd.read_csv(output_path)
         df["Date"] = pd.to_datetime(df["Date"])
@@ -132,10 +151,11 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
         lows = raw_df["Low"].tolist()
         closes = raw_df["Close"].tolist()
         volumes = raw_df["Volume"].tolist()
+        opens = raw_df["Open"].tolist()
     else:
         df = raw_df.copy()
 
-    volume_cols = compute_volume_columns(highs, lows, closes, volumes, file_total)
+    volume_cols = compute_volume_columns(highs, lows, closes, volumes, file_total, opens=opens)
     for col, values in volume_cols.items():
         df[col] = values
 
@@ -147,6 +167,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volume",
-    description="volume indicators: OBV, CMF(20), VWAP",
+    description="volume indicators: OBV, CMF(20), VWAP, OFI, log volume",
     process_csv_fn=process_csv,
 )
