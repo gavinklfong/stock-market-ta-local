@@ -317,13 +317,12 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
     df = df.sort_values("Date").reset_index(drop=True)
 
-    # Progress updates
-    for i in range(file_total):
-        if (i + 1) % max(1, file_total // 50) == 0 or i == file_total - 1:
-            row_progress_bar(os.path.basename(input_path), file_total, i + 1)
-
     df.to_csv(output_path, index=False)
     return len(df)
 
 
-main()
+main(
+    module_name="calculate_regime",
+    description="regime detection: GARCH volatility + 3-state HMM",
+    process_csv_fn=process_csv,
+)
