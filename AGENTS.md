@@ -23,6 +23,7 @@ python app/calculate-ta/calculate_trend.py       # trend: EMA20/50/200, SuperTre
 python app/calculate-ta/calculate_momentum.py    # momentum: RSI, MACD, ROC(20)
 python app/calculate-ta/calculate_volume.py      # volume: OBV, CMF(20), VWAP
 python app/calculate-ta/calculate_volatility.py  # volatility: ATR(14), Bollinger Bands(20,2) → ta_atr14, ta_bband_upper/middle/lower
+python app/calculate-ta/calculate_regime.py      # regime: GARCH(1,1) vol forecast + 3-state HMM → ta_garch_vol/sq, ta_hmm_regime/prob_*
 ```
 
 Each module reads from `data/market-data/`, appends its columns to the corresponding file in `data/ta-data/`, and merges with whatever columns already exist from prior modules.
