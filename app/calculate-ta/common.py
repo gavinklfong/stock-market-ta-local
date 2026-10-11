@@ -6,6 +6,7 @@ Exports:
     compute_momentum_columns — assemble all momentum columns for a ticker
     compute_garch_volatility, compute_hmm_regime, compute_regime_columns — regime-indicator functions
     main — thread-pool pipeline with progress reporting (call from each module)
+    read_yfinance_csv — read yfinance CSVs with multi-row header support
 """
 
 import math
@@ -16,6 +17,7 @@ import threading
 import concurrent.futures
 
 import numpy as np
+import pandas as pd
 
 
 # --- Thread-safe progress bar state (shared across all modules) ---
@@ -78,6 +80,65 @@ def row_progress_bar(filename, total_rows, current_row):
             _bar_state["last_row_lines"][filename] = 0
         else:
             _bar_state["last_row_lines"][filename] = 1
+
+
+# --- yfinance CSV reader ---
+
+def read_yfinance_csv(input_path: str) -> pd.DataFrame:
+    """Read a yfinance CSV, handling 2-row or 3-row header formats.
+
+    yfinance CSVs have header rows like:
+      Row 0: Ticker,NG.L,NG.L,NG.L,NG.L,NG.L
+      Row 1: Price,Open,High,Low,Close,Volume
+      Row 2: Date,,,,,  (3-row only)
+      Row 3+: actual data
+
+    Falls back to standard single-header CSV if no multi-row header is detected.
+
+    Args:
+        input_path: Path to the CSV file.
+
+    Returns:
+        DataFrame with proper column names (Date, Open, High, Low, Close, Volume)
+        and numeric types.
+    """
+    raw = pd.read_csv(input_path, header=None)
+
+    # Find the header row: the row where col[0] is "Date"
+    header_idx = None
+    for i in range(min(5, len(raw))):
+        val = str(raw.iloc[i, 0]).strip()
+        if val == "Date":
+            header_idx = i
+            break
+
+    if header_idx is None:
+        # Fallback: use first row as header (standard single-header CSV)
+        header_row = raw.iloc[0].astype(str)
+    else:
+        # For yfinance multi-row headers, the row above has Open/High/Low/Close/Volume
+        above = raw.iloc[header_idx - 1].astype(str) if header_idx > 0 else None
+        header_row = raw.iloc[header_idx].astype(str)
+
+        # Merge: use above-row values where the Date-row is empty/NaN
+        merged = {}
+        for col in range(len(header_row)):
+            h_val = header_row.iloc[col].strip() if pd.notna(header_row.iloc[col]) else ""
+            if h_val:
+                merged[col] = h_val
+            elif above is not None and pd.notna(above.iloc[col]):
+                merged[col] = above.iloc[col].strip()
+            else:
+                merged[col] = f"col_{col}"
+        header_row = pd.Series([merged[i] for i in range(len(header_row))])
+
+    data = raw.iloc[header_idx + 1:].copy()
+    data.columns = header_row.values
+    # Convert numeric columns to float
+    for col in data.columns:
+        if col != "Date":
+            data[col] = pd.to_numeric(data[col], errors="coerce")
+    return data
 
 
 # --- Pipeline runner ---

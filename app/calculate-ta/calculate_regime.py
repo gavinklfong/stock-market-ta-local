@@ -6,7 +6,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from common import main
+from common import main, read_yfinance_csv
 
 # Suppress arch/hmmlearn noise during fitting
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -247,56 +247,8 @@ def compute_regime_columns(closes, n):
     return result
 
 
-def _read_yfinance_csv(input_path):
-    """Read a yfinance CSV, handling 2-row or 3-row header formats.
-
-    yfinance CSVs have header rows like:
-      Row 0: Ticker,NG.L,NG.L,NG.L,NG.L,NG.L
-      Row 1: Price,Open,High,Low,Close,Volume
-      Row 2: Date,,,,,  (3-row only)
-      Row 3+: actual data
-    """
-    raw = pd.read_csv(input_path, header=None)
-
-    # Find the header row: the row where col[0] is "Date"
-    header_idx = None
-    for i in range(min(5, len(raw))):
-        val = str(raw.iloc[i, 0]).strip()
-        if val == "Date":
-            header_idx = i
-            break
-
-    if header_idx is None:
-        # Fallback: use first row as header (standard single-header CSV)
-        header_row = raw.iloc[0].astype(str)
-    else:
-        # For yfinance multi-row headers, the row above has Open/High/Low/Close/Volume
-        above = raw.iloc[header_idx - 1].astype(str) if header_idx > 0 else None
-        header_row = raw.iloc[header_idx].astype(str)
-
-        # Merge: use above-row values where the Date-row is empty/NaN
-        merged = {}
-        for col in range(len(header_row)):
-            h_val = header_row.iloc[col].strip() if pd.notna(header_row.iloc[col]) else ""
-            if h_val:
-                merged[col] = h_val
-            elif above is not None and pd.notna(above.iloc[col]):
-                merged[col] = above.iloc[col].strip()
-            else:
-                merged[col] = f"col_{col}"
-        header_row = pd.Series([merged[i] for i in range(len(header_row))])
-
-    data = raw.iloc[header_idx + 1:].copy()
-    data.columns = header_row.values
-    # Convert numeric columns to float
-    for col in data.columns:
-        if col != "Date":
-            data[col] = pd.to_numeric(data[col], errors="coerce")
-    return data
-
-
 def process_csv(input_path, output_path, total_files, current_file, _lock=None):
-    raw_df = _read_yfinance_csv(input_path)
+    raw_df = read_yfinance_csv(input_path)
     raw_df["Date"] = pd.to_datetime(raw_df["Date"])
     raw_df = raw_df.sort_values("Date").reset_index(drop=True)
     file_total = len(raw_df)

@@ -2,7 +2,7 @@ import os
 import math
 import pandas as pd
 
-from common import main
+from common import main, read_yfinance_csv
 
 
 def compute_ema(values, period):
@@ -195,7 +195,7 @@ def compute_trend_columns(highs, lows, closes, n):
 
 
 def process_csv(input_path, output_path, total_files, current_file, _lock=None):
-    raw_df = pd.read_csv(input_path)
+    raw_df = read_yfinance_csv(input_path)
     raw_df["Date"] = pd.to_datetime(raw_df["Date"])
     raw_df = raw_df.sort_values("Date").reset_index(drop=True)
     file_total = len(raw_df)
