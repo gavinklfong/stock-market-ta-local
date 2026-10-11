@@ -166,7 +166,7 @@ def main(
         output_dir: Override ta-data directory path.
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    base_dir = os.path.dirname(script_dir)
+    base_dir = os.path.dirname(os.path.dirname(script_dir))
 
     if input_dir is None:
         input_dir = os.path.join(base_dir, "data", "market-data")

@@ -10,7 +10,7 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # File and directory configurations
 input_csv = os.path.join(SCRIPT_DIR, "ticker_list.csv")
-output_dir = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "data", "market-data"))
+output_dir = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "..", "data", "market-data"))
 
 # Create output folder if it doesn't exist
 os.makedirs(output_dir, exist_ok=True)
