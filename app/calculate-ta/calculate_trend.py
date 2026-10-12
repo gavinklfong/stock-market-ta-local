@@ -204,19 +204,19 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     highs = raw_df["High"].tolist()
     lows = raw_df["Low"].tolist()
 
-    # Merge with existing TA data if available (preserves columns from prior modules)
+    # Use market data as the source of truth
+    file_total = len(raw_df)
+
+    # Start from market data, merge existing TA columns onto it
+    df = raw_df.copy()
     if os.path.exists(output_path):
-        df = pd.read_csv(output_path)
-        df["Date"] = pd.to_datetime(df["Date"])
-        df = df.sort_values("Date").reset_index(drop=True)
-        file_total = len(df)
-        # Recompute trend columns aligned to the sorted existing data
-        raw_df = raw_df.sort_values("Date").reset_index(drop=True)
-        closes = raw_df["Close"].tolist()
-        highs = raw_df["High"].tolist()
-        lows = raw_df["Low"].tolist()
-    else:
-        df = raw_df.copy()
+        existing_df = pd.read_csv(output_path)
+        existing_df["Date"] = pd.to_datetime(existing_df["Date"])
+        # Only merge TA-prefixed columns (skip market data columns to avoid duplicates)
+        ta_cols = [c for c in existing_df.columns if c.startswith("ta_")]
+        if ta_cols:
+            existing_ta = existing_df[["Date"] + ta_cols]
+            df = df.merge(existing_ta, on="Date", how="left")
 
     trend_cols = compute_trend_columns(highs, lows, closes, file_total)
     for col, values in trend_cols.items():

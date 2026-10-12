@@ -377,18 +377,19 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     lows = raw_df["Low"].tolist()
     n = file_total
 
-    # Merge with existing TA data if available
+    # Use market data as the source of truth
+    file_total = len(raw_df)
+    n = file_total
+
+    # Start from market data, merge existing TA columns onto it
+    df = raw_df.copy()
     if os.path.exists(output_path):
-        df = pd.read_csv(output_path)
-        df["Date"] = pd.to_datetime(df["Date"])
-        df = df.sort_values("Date").reset_index(drop=True)
-        file_total = len(df)
-        n = file_total
-        # Recompute structure columns aligned to the sorted existing data
-        raw_df = raw_df.sort_values("Date").reset_index(drop=True)
-        closes = raw_df["Close"].tolist()
-        highs = raw_df["High"].tolist()
-        lows = raw_df["Low"].tolist()
+        existing_df = pd.read_csv(output_path)
+        existing_df["Date"] = pd.to_datetime(existing_df["Date"])
+        # Only keep TA-prefixed columns (drop all non-TA columns to avoid duplicates)
+        ta_cols = [c for c in existing_df.columns if c.startswith("ta_")]
+        if ta_cols:
+            df = df.merge(existing_df[["Date"] + ta_cols], on="Date", how="left")
     else:
         df = raw_df.copy()
 

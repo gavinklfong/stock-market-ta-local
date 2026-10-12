@@ -140,18 +140,18 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     volumes = raw_df["Volume"].tolist()
     opens = raw_df["Open"].tolist()
 
-    # Merge with existing TA data if available (preserves columns from prior modules)
+    # Use market data as the source of truth
+    file_total = len(raw_df)
+
+    # Start from market data, merge existing TA columns onto it
+    df = raw_df.copy()
     if os.path.exists(output_path):
-        df = pd.read_csv(output_path)
-        df["Date"] = pd.to_datetime(df["Date"])
-        df = df.sort_values("Date").reset_index(drop=True)
-        file_total = len(df)
-        raw_df = raw_df.sort_values("Date").reset_index(drop=True)
-        highs = raw_df["High"].tolist()
-        lows = raw_df["Low"].tolist()
-        closes = raw_df["Close"].tolist()
-        volumes = raw_df["Volume"].tolist()
-        opens = raw_df["Open"].tolist()
+        existing_df = pd.read_csv(output_path)
+        existing_df["Date"] = pd.to_datetime(existing_df["Date"])
+        # Only keep TA-prefixed columns (drop all non-TA columns to avoid duplicates)
+        ta_cols = [c for c in existing_df.columns if c.startswith("ta_")]
+        if ta_cols:
+            df = df.merge(existing_df[["Date"] + ta_cols], on="Date", how="left")
     else:
         df = raw_df.copy()
 

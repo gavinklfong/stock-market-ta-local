@@ -142,17 +142,18 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
     closes = raw_df["Close"].tolist()
 
-    # Merge with existing TA data if available (preserves columns from prior modules)
+    # Use market data as the source of truth
+    file_total = len(raw_df)
+
+    # Start from market data, merge existing TA columns onto it
+    df = raw_df.copy()
     if os.path.exists(output_path):
-        df = pd.read_csv(output_path)
-        df["Date"] = pd.to_datetime(df["Date"])
-        df = df.sort_values("Date").reset_index(drop=True)
-        file_total = len(df)
-        # Recompute momentum columns aligned to the sorted existing data
-        raw_df = raw_df.sort_values("Date").reset_index(drop=True)
-        closes = raw_df["Close"].tolist()
-    else:
-        df = raw_df.copy()
+        existing_df = pd.read_csv(output_path)
+        existing_df["Date"] = pd.to_datetime(existing_df["Date"])
+        # Only keep TA-prefixed columns (drop all non-TA columns to avoid duplicates)
+        ta_cols = [c for c in existing_df.columns if c.startswith("ta_")]
+        if ta_cols:
+            df = df.merge(existing_df[["Date"] + ta_cols], on="Date", how="left")
 
     momentum_cols = compute_momentum_columns(closes, file_total)
     for col, values in momentum_cols.items():

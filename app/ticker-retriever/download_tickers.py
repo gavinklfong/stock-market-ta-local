@@ -3,7 +3,7 @@ import pandas as pd
 import yfinance as yf
 
 
-PERIOD = "20y"  # Download 30 years of data to ensure we cover at least 20 years
+PERIOD = "20y"
 
 # Resolve paths relative to this script's directory
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))

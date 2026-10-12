@@ -1,0 +1,4 @@
+# Dependencies for notebook/trend_analysis.ipynb
+# Install with: pip install -r notebook/requirements.txt
+
+matplotlib
