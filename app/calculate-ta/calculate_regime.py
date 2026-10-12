@@ -60,8 +60,11 @@ def compute_garch_volatility(closes, p=1, q=1):
         }
 
     try:
+        # rescale=True lets arch internally normalize y for the optimizer,
+        # suppressing the DataScaleWarning while keeping results in the
+        # original log-return scale.
         model = arch_model(r, vol="Garch", p=p, q=q, mean="Zero",
-                           dist="normal")
+                           dist="normal", rescale=True)
         result = model.fit(disp="off", options={"maxiter": 1000})
         cv = result.conditional_volatility
         cond_vol = cv.flatten() if hasattr(cv, "flatten") else np.asarray(cv).flatten()
