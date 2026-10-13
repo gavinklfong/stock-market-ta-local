@@ -90,21 +90,39 @@ def compute_cmf(highs, lows, closes, volumes, period=20):
     return result
 
 
-def compute_vwap(highs, lows, closes, volumes):
-    """Compute cumulative Volume-Weighted Average Price. Returns a list aligned with input."""
+def compute_vwap(highs, lows, closes, volumes, period=20):
+    """Compute rolling Volume-Weighted Average Price over a lookback window."""
     n = len(highs)
     result = [None] * n
-    if n < 1:
+    if n < period:
         return result
 
     cumulative_tp_vol = 0.0
     cumulative_vol = 0.0
 
-    for i in range(n):
+    # Initialize first window
+    for i in range(period):
         typical_price = (float(highs[i]) + float(lows[i]) + float(closes[i])) / 3.0
         vol = float(volumes[i])
         cumulative_tp_vol += typical_price * vol
         cumulative_vol += vol
+    if cumulative_vol > 0:
+        result[period - 1] = cumulative_tp_vol / cumulative_vol
+
+    # Slide window
+    for i in range(period, n):
+        # Remove oldest element from window
+        old_tp = (float(highs[i - period]) + float(lows[i - period]) + float(closes[i - period])) / 3.0
+        old_vol = float(volumes[i - period])
+        cumulative_tp_vol -= old_tp * old_vol
+        cumulative_vol -= old_vol
+
+        # Add new element
+        new_tp = (float(highs[i]) + float(lows[i]) + float(closes[i])) / 3.0
+        new_vol = float(volumes[i])
+        cumulative_tp_vol += new_tp * new_vol
+        cumulative_vol += new_vol
+
         if cumulative_vol > 0:
             result[i] = cumulative_tp_vol / cumulative_vol
 
@@ -167,6 +185,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volume",
-    description="volume indicators: OBV, CMF(20), VWAP, OFI, log volume",
+    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume",
     process_csv_fn=process_csv,
 )
