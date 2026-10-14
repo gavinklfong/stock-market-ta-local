@@ -227,7 +227,7 @@ def compute_structure(highs, lows, lookback=5):
     }
 
 
-def compute_support_resistance(highs, lows, swings, lookback=5, tolerance_pct=0.02):
+def compute_support_resistance(highs, lows, swings, lookback=100, tolerance_pct=0.02):
     """Compute nearest support and resistance levels based on swing points.
 
     Clusters nearby swing highs/lows within tolerance_pct of each other
@@ -237,7 +237,7 @@ def compute_support_resistance(highs, lows, swings, lookback=5, tolerance_pct=0.
         highs: list of high prices
         lows: list of low prices
         swings: dict from compute_structure() containing swing_high/low flags
-        lookback: number of recent bars to consider
+        lookback: number of recent bars to consider (default 100)
         tolerance_pct: price proximity threshold for clustering (2%)
 
     Returns:
@@ -247,9 +247,11 @@ def compute_support_resistance(highs, lows, swings, lookback=5, tolerance_pct=0.
     n = len(highs)
     swing_high_flags, swing_low_flags = swings["swing_high"], swings["swing_low"]
 
-    # Collect all swing high prices and their indices
-    swing_highs = [(i, highs[i]) for i in range(n) if swing_high_flags[i]]
-    swing_lows = [(i, lows[i]) for i in range(n) if swing_low_flags[i]]
+    # Collect recent swing high prices and their indices
+    # Note: swings["swing_high"] carries forward the last swing high price,
+    # so we check swing_high_idx[i] == i to identify actual swing bars
+    swing_highs = [(i, highs[i]) for i in range(max(0, n - lookback), n) if swings["swing_high_idx"][i] == i]
+    swing_lows = [(i, lows[i]) for i in range(max(0, n - lookback), n) if swings["swing_low_idx"][i] == i]
 
     # Cluster swing highs into resistance levels
     resistance_levels = _cluster_levels(swing_highs, tolerance_pct)
@@ -346,7 +348,7 @@ def compute_structure_columns(highs, lows, closes, n, lookback=5, tolerance_pct=
 
     structure = compute_structure(highs, lows, lookback)
     resistance, support = compute_support_resistance(
-        highs, lows, structure, lookback, tolerance_pct
+        highs, lows, structure, lookback=100, tolerance_pct=tolerance_pct
     )
 
     return {
