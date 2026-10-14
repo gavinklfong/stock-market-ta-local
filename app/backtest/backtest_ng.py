@@ -35,7 +35,13 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
     df = pd.read_csv(path)
     df["Date"] = pd.to_datetime(df["Date"])
     df = df.sort_values("Date").reset_index(drop=True)
-    df = df.set_index("Date")
+    # df = df.set_index("Date")
+    df.index = df["Date"]
+
+    # --- Filter to last 10 years ---
+    cutoff_date = pd.Timestamp("2023-10-15")
+    df = df[df["Date"] >= cutoff_date].reset_index(drop=True)
+    df.index = df["Date"]
     return df
 
 
@@ -118,8 +124,8 @@ def run_backtest(
         init_cash=init_cash,
         freq="1D",
         slippage=slippage,
-        size=1,
-        size_type=SizeType.Value,
+        size=1.0,
+        size_type=SizeType.Percent,
         fees=commission,
     )
     return pf
