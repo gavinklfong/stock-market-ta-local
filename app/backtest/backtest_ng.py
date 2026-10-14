@@ -65,10 +65,11 @@ def signal_rsi(df: pd.DataFrame):
 
 
 def signal_macd(df: pd.DataFrame):
-    """MACD histogram flip: positive = buy, negative = sell."""
-    hist = df["ta_macd_histogram"]
-    entry = (hist > 0) & (hist.shift(1) <= 0)
-    exit_ = (hist < 0) & (hist.shift(1) >= 0)
+    """MACD line crossover: line crosses above signal = buy, crosses below signal = sell."""
+    macd = df["ta_macd_line"]
+    signal = df["ta_macd_signal"]
+    entry = (macd > 0) & (signal > 0) & (macd > signal) & (macd.shift(1) <= signal.shift(1))
+    exit_ = (macd < signal)
     return entry.astype(int), exit_.astype(int) * -1
 
 
