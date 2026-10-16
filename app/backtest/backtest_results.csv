@@ -1,2 +1,6 @@
 Strategy,Total Return (%),Total Trades,Win Rate (%),Profit Factor,Max Drawdown (%),Final Net Value
-macd,-16.45,9,22.2,0.186,17.62,83546.0
+supertrend,-25.65,223,41.9,0.754,29.32,74354.0
+rsi,14.44,2,100.0,inf,18.16,114441.0
+macd,-12.05,24,30.4,0.622,23.59,87949.0
+ma_crossover,3.3,7,42.9,1.253,13.5,103297.0
+structure,33.12,11,60.0,9.698,12.09,133116.0

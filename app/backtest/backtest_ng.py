@@ -8,6 +8,13 @@ Strategies tested on data/ta-data/NG.L.csv:
   4. MA Crossover    — Buy MA20>MA50, sell MA20<MA50
   5. Structure       — Buy HH+HL (bullish structure), sell LL+LH (bearish)
 
+Outputs:
+  - Console: per-strategy metrics + comparison table
+  - app/backtest/quantstats/{strategy}.html — individual tearsheets
+  - app/backtest/quantstats/comparison.html — multi-strategy comparison
+  - app/backtest/equity_curves.html — Plotly equity curve plots
+  - app/backtest/backtest_results.csv — raw comparison table
+
 Usage:
   python app/backtest/backtest_ng.py              # run all strategies
   python app/backtest/backtest_ng.py --strategy supertrend  # single strategy
@@ -18,6 +25,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import quantstats as qs
 import vectorbt as vbt
 from vectorbt.portfolio.enums import SizeType
 
@@ -39,7 +47,7 @@ def load_data(path: Path = DATA_PATH) -> pd.DataFrame:
     df.index = df["Date"]
 
     # --- Filter to last 10 years ---
-    cutoff_date = pd.Timestamp("2023-10-15")
+    cutoff_date = pd.Timestamp("2024-10-15")
     df = df[df["Date"] >= cutoff_date].reset_index(drop=True)
     df.index = df["Date"]
     return df
@@ -65,11 +73,10 @@ def signal_rsi(df: pd.DataFrame):
 
 
 def signal_macd(df: pd.DataFrame):
-    """MACD line crossover: line crosses above signal = buy, crosses below signal = sell."""
-    macd = df["ta_macd_line"]
-    signal = df["ta_macd_signal"]
-    entry = (macd > 0) & (signal > 0) & (macd > signal) & (macd.shift(1) <= signal.shift(1))
-    exit_ = (macd < signal)
+    """MACD histogram: buy when histogram turns positive, sell when negative."""
+    hist = df["ta_macd_histogram"]
+    entry = (hist > 0) & (hist.shift(1) <= 0)
+    exit_ = (hist < 0) & (hist.shift(1) >= 0)
     return entry.astype(int), exit_.astype(int) * -1
 
 
@@ -188,6 +195,70 @@ def compare_all(df: pd.DataFrame, strategies: list[str] | None = None):
 
 
 # ---------------------------------------------------------------------------
+# Quantstats reports
+# ---------------------------------------------------------------------------
+def _extract_returns(
+    pf: vbt.Portfolio, df: pd.DataFrame
+) -> tuple[pd.Series, pd.Series]:
+    """Extract strategy daily returns and benchmark (buy-and-hold) returns."""
+    strategy_ret = pf.daily_returns().dropna()
+    benchmark_ret = df["Close"].pct_change().dropna()
+    # Align indices
+    common_idx = strategy_ret.index.intersection(benchmark_ret.index)
+    return strategy_ret.loc[common_idx], benchmark_ret.loc[common_idx]
+
+
+def generate_quantstats_report(
+    pf: vbt.Portfolio, df: pd.DataFrame, name: str
+) -> Path:
+    """Generate an HTML tearsheet for a single strategy and save it."""
+    strategy_ret, benchmark_ret = _extract_returns(pf, df)
+
+    out_path = ROOT / "app" / "backtest" / "quantstats" / f"{name}.html"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    qs.reports.html(
+        strategy_ret,
+        benchmark=benchmark_ret,
+        title=f"NG.L — {name.title().replace('_', ' ').title()}",
+        output=str(out_path),
+        figsize=(1200, 800),
+    )
+    print(f"  Tearsheet saved: {out_path}")
+    return out_path
+
+
+def generate_quantstats_comparison(
+    df: pd.DataFrame, strategies: list[str] | None = None
+) -> Path:
+    """Generate a multi-strategy comparison tearsheet."""
+    if strategies is None:
+        strategies = list(STRATEGIES.keys())
+
+    benchmark_ret = df["Close"].pct_change().dropna()
+
+    # Build DataFrame with one column per strategy
+    returns_df = pd.DataFrame(columns=strategies, index=benchmark_ret.index)
+    for name in strategies:
+        pf = run_backtest(df, name)
+        strat_ret, _ = _extract_returns(pf, df)
+        returns_df[name] = strat_ret
+
+    out_path = ROOT / "app" / "backtest" / "quantstats" / "comparison.html"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    qs.reports.html(
+        returns_df,
+        benchmark=benchmark_ret,
+        title="NG.L — Multi-Strategy Comparison",
+        output=str(out_path),
+        figsize=(1200, 800),
+    )
+    print(f"  Comparison tearsheet saved: {out_path}")
+    return out_path
+
+
+# ---------------------------------------------------------------------------
 # Drawdown & equity curves
 # ---------------------------------------------------------------------------
 def plot_comparison(df: pd.DataFrame, strategies: list[str] | None = None):
@@ -263,6 +334,20 @@ def main():
 
     # Run backtests and get comparison table
     table = compare_all(df, selected)
+
+    # --- Quantstats tearsheets ---
+    strategies = selected if selected else list(STRATEGIES.keys())
+    print(f"\n{'='*60}")
+    print("  Generating Quantstats Tearsheets ...")
+    print(f"{'='*60}")
+
+    # Individual strategy tearsheets
+    for name in strategies:
+        pf = run_backtest(df, name)
+        generate_quantstats_report(pf, df, name)
+
+    # Multi-strategy comparison
+    generate_quantstats_comparison(df, strategies)
 
     # Plot (non-interactive mode — writes HTML)
     plot_comparison(df, selected)
