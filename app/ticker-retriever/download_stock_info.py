@@ -32,7 +32,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # --- Path resolution ---
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-input_csv = os.path.join(SCRIPT_DIR, "ticker_list.csv")
+input_csv = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "..", "config", "ticker_list.csv"))
 output_dir = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "..", "data", "pe-data"))
 os.makedirs(output_dir, exist_ok=True)
 

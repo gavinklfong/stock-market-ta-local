@@ -9,7 +9,7 @@ PERIOD = "20y"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # File and directory configurations (defaults — can be overridden for testing)
-DEFAULT_INPUT_CSV = os.path.join(SCRIPT_DIR, "ticker_list.csv")
+DEFAULT_INPUT_CSV = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "..", "config", "ticker_list.csv"))
 DEFAULT_OUTPUT_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "..", "data", "market-data"))
 
 

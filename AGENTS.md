@@ -5,12 +5,17 @@
 ```
 app/
   ticker-retriever/     # Downloads daily OHLCV from Yahoo Finance → data/market-data/*.csv
-    download_tickers.py  # Bulk OHLCV download from ticker_list.csv
-    download-stock-info.py  # P/E ratio from quarterly/annual EPS → data/pe-data/*.csv
-    ticker_list.csv      # Ticker list: Company, Ticker, Major Industry / Sector
+    download_tickers.py  # Bulk OHLCV download from config/ticker_list.csv
+    download_stock_info.py  # P/E ratio from quarterly/annual EPS → data/pe-data/*.csv
+  ticker-pipeline/      # Prefect orchestration pipeline
+    run_pipeline.py
+    __init__.py
   calculate-ta/         # Modular TA indicator scripts → data/ta-data/*.csv (merged)
     common.py            # Shared: read_yfinance_csv(), main() pipeline runner, progress bars
     run_calculation.py   # Orchestrator — runs all modules in dependency order
+    README.md            # Module documentation
+config/
+  ticker_list.csv        # Ticker list: Company, Ticker, Major Industry / Sector
 data/
   market-data/          # Input: raw OHLCV CSVs (one per ticker) — gitignored
   pe-data/              # Output: P/E ratio CSVs (Date, Close, ta_eps_ttm, ta_pe)
@@ -24,7 +29,7 @@ data/
 python app/ticker-retriever/download_tickers.py
 
 # 1b. Download P/E ratios from quarterly/annual EPS → data/pe-data/*.csv
-python app/ticker-retriever/download-stock-info.py
+python app/ticker-retriever/download_stock_info.py
 
 # 2. Run all TA modules in order (or pick specific ones)
 python app/calculate-ta/run_calculation.py              # all, in dependency order
@@ -75,7 +80,7 @@ All output columns use `ta_` prefix (e.g. `ta_rsi14`, `ta_ema20`).
 
 - **Activate venv** before running anything.
 - **yfinance CSV header**: Two-row header (ticker name + price labels). `read_yfinance_csv()` auto-detects it — modules read columns by name only (`Date`, `Open`, `High`, `Low`, `Close`, `Volume`).
-- **Ticker list**: Edit `app/ticker-retriever/ticker_list.csv` (columns: Company, Ticker, Major Industry / Sector). Periods auto-converted (`BRK.B` → `BRK-B`). Suffixes like `.L` preserved.
+- **Ticker list**: Edit `config/ticker_list.csv` (columns: Company, Ticker, Major Industry / Sector). Periods auto-converted (`BRK.B` → `BRK-B`). Suffixes like `.L` preserved.
 - **Git-ignored**: `data/market-data/*.csv` (regenerated each download). `data/ta-data/` is NOT gitignored.
 - **Regime module deps**: `calculate_regime.py` requires `arch` and `hmmlearn` — heavy ML packages.
 - **Tests**: Run per-module with `pytest app/calculate-ta/test_calculate_*.py`.
