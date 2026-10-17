@@ -136,6 +136,12 @@ def merge_outputs(script_dir: Path, output_dir: Path) -> bool:
         n_cols = len([c for c in merged.columns if c != "Date"])
         print(f"  {ticker}.csv  ({len(merged)} rows, {n_cols} columns)")
 
+        # Remove intermediate per-module files
+        for fname in files:
+            fpath = output_dir / fname
+            fpath.unlink()
+            print(f"  Removed intermediate: {fname}")
+
     print("[MERGE] Complete.\n")
     return True
 
