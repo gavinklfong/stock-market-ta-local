@@ -7,7 +7,7 @@ app/
   download-market-data/     # Downloads OHLCV from Yahoo Finance
     download_tickers.py       # Bulk OHLCV → data/market-data/*.csv
     download_stock_info.py    # P/E ratios → data/pe-data/*.csv
-  ticker-pipeline/      # Prefect flow orchestrating the full pipeline
+  analysis-pipeline/    # Prefect flow orchestrating the full pipeline
   calculate-ta/         # TA indicator modules (see README.md for full docs)
     common.py               # Shared: read_yfinance_csv(), main() thread-pool runner
     run_calculation.py      # Orchestrator — runs modules in parallel, then merges
@@ -34,8 +34,8 @@ python app/calculate-ta/run_calculation.py trend momentum  # subset
 python app/calculate-ta/run_calculation.py --dry-run     # preview only
 
 # 3. Full Prefect pipeline (downloads + TA + merge analysis)
-python -m app.ticker_pipeline.run_pipeline
-python -m app.ticker_pipeline.run_pipeline trend momentum
+python -m app.analysis_pipeline.run_pipeline
+python -m app.analysis_pipeline.run_pipeline trend momentum
 
 # 4. Backtest (uses data/ta-data/NG.L.csv)
 python app/backtest/backtest_ng.py

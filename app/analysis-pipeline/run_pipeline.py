@@ -12,10 +12,10 @@ Steps 3 & 4 run sequentially after both downloads complete.
 
 Usage:
     # Run the flow locally (no server required):
-    python -m app.ticker_pipeline.run_pipeline
+    python -m app.analysis_pipeline.run_pipeline
 
     # CLI (passes args through to TA step):
-    python -m app.ticker_pipeline.run_pipeline trend momentum
+    python -m app.analysis_pipeline.run_pipeline trend momentum
 """
 
 from __future__ import annotations
