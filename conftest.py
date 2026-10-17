@@ -8,4 +8,4 @@ import sys
 #   `import download_tickers`
 _project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_project_root, "app", "calculate-ta"))
-sys.path.insert(0, os.path.join(_project_root, "app", "ticker-retriever"))
+sys.path.insert(0, os.path.join(_project_root, "app", "download-market-data"))

@@ -2,8 +2,8 @@
 """
 Orchestrate the full stock-data pipeline with Prefect:
 
-  1. Download OHLCV market data        (ticker-retriever/download_tickers.py)
-  2. Download P/E ratio data           (ticker-retriever/download_stock_info.py)
+  1. Download OHLCV market data        (download-market-data/download_tickers.py)
+  2. Download P/E ratio data           (download-market-data/download_stock_info.py)
   3. Run TA indicator calculations     (calculate-ta/run_calculation.py)
   4. Merge market + TA data into analysis (inline)
 
@@ -33,8 +33,8 @@ from prefect.task_runners import ThreadPoolTaskRunner
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # …/stock-market-ta-local
 APP_DIR = PROJECT_ROOT / "app"
 
-DOWNLOAD_TICKERS = APP_DIR / "ticker-retriever" / "download_tickers.py"
-DOWNLOAD_STOCK_INFO = APP_DIR / "ticker-retriever" / "download_stock_info.py"
+DOWNLOAD_TICKERS = APP_DIR / "download-market-data" / "download_tickers.py"
+DOWNLOAD_STOCK_INFO = APP_DIR / "download-market-data" / "download_stock_info.py"
 TA_RUN_CALCULATION = APP_DIR / "calculate-ta" / "run_calculation.py"
 
 

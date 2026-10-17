@@ -3,7 +3,7 @@
 Usage:
     python run_test.py            # all tests
     python run_test.py calculate-ta  # only TA module tests
-    python run_test.py ticker-retriever  # only download script tests
+    python run_test.py download-market-data  # only download script tests
 """
 
 import argparse
@@ -15,9 +15,9 @@ PROJECT_ROOT = Path(__file__).parent
 APP_DIR = PROJECT_ROOT / "app"
 
 MODULE_DIRS = {
-    "all": [str(APP_DIR / "calculate-ta" / "tests"), str(APP_DIR / "ticker-retriever" / "tests")],
+    "all": [str(APP_DIR / "calculate-ta" / "tests"), str(APP_DIR / "download-market-data" / "tests")],
     "calculate-ta": [str(APP_DIR / "calculate-ta" / "tests")],
-    "ticker-retriever": [str(APP_DIR / "ticker-retriever" / "tests")],
+    "download-market-data": [str(APP_DIR / "download-market-data" / "tests")],
 }
 
 
@@ -27,7 +27,7 @@ def main():
         "module",
         nargs="?",
         default="all",
-        choices=["all", "calculate-ta", "ticker-retriever"],
+        choices=["all", "calculate-ta", "download-market-data"],
         help="Which module's tests to run (default: all)",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")

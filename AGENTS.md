@@ -4,7 +4,7 @@
 
 ```
 app/
-  ticker-retriever/     # Downloads OHLCV from Yahoo Finance
+  download-market-data/     # Downloads OHLCV from Yahoo Finance
     download_tickers.py       # Bulk OHLCV → data/market-data/*.csv
     download_stock_info.py    # P/E ratios → data/pe-data/*.csv
   ticker-pipeline/      # Prefect flow orchestrating the full pipeline
@@ -25,8 +25,8 @@ data/
 
 ```bash
 # 1. Download data (activate venv first)
-python app/ticker-retriever/download_tickers.py
-python app/ticker-retriever/download_stock_info.py
+python app/download-market-data/download_tickers.py
+python app/download-market-data/download_stock_info.py
 
 # 2. TA indicators (all modules run in PARALLEL)
 python app/calculate-ta/run_calculation.py              # all 7 modules
@@ -44,7 +44,7 @@ python app/backtest/backtest_ng.py --strategy supertrend
 # 5. Tests
 python run_test.py                              # all tests
 python run_test.py calculate-ta                 # TA module tests only
-python run_test.py ticker-retriever             # download script tests only
+python run_test.py download-market-data             # download script tests only
 ```
 
 ## Architecture
@@ -83,5 +83,5 @@ All output columns use `ta_` prefix. Module details are in `app/calculate-ta/REA
 - **Ticker list**: Edit `config/ticker_list.csv` (columns: Ticker, Company, Major Industry / Sector). Periods auto-converted (`BRK.B` → `BRK-B`). Suffixes like `.L` preserved.
 - **Git-ignored**: `data/market-data/*.csv` is gitignored. Other `data/` subdirs contain tracked output files.
 - **Regime module**: Requires `arch` + `hmmlearn` (heavy ML packages). Install via `app/calculate-ta/requirements.txt`.
-- **Test files**: Located in `app/calculate-ta/tests/` and `app/ticker-retriever/tests/` subdirectories. Use `run_test.py` for the correct sys.path setup.
-- **`conftest.py`** adds `app/calculate-ta/` and `app/ticker-retriever/` to `sys.path` so tests can import sibling modules directly.
+- **Test files**: Located in `app/calculate-ta/tests/` and `app/download-market-data/tests/` subdirectories. Use `run_test.py` for the correct sys.path setup.
+- **`conftest.py`** adds `app/calculate-ta/` and `app/download-market-data/` to `sys.path` so tests can import sibling modules directly.
