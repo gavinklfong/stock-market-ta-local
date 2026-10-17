@@ -1,10 +1,11 @@
-"""Unit tests for download_stock_info.py — P/E ratio and dividend yield calculations.
+"""Unit tests for download_stock_info.py — P/E ratio, dividend yield, and fundamental metrics.
 
 Tests cover:
 - EPS series cleaning and normalization
 - TTM EPS calculation (4-quarter rolling sum)
 - TTM dividend calculation (365-day sliding window)
 - Currency normalization (GBp → GBP)
+- Fundamental metrics extraction from stock.info
 - Full pipeline via mocked yfinance
 """
 
@@ -418,7 +419,7 @@ class TestCalculatePeForTicker:
         self._patch_yf_ticker(mock_ticker)
 
         try:
-            result = mod.calculate_pe_for_ticker("AAPL")
+            result, fundamentals = mod.calculate_pe_for_ticker("AAPL")
 
             assert "Date" in result.columns
             assert "Close" in result.columns
@@ -450,15 +451,11 @@ class TestCalculatePeForTicker:
         self._patch_yf_ticker(mock_ticker)
 
         try:
-            result = mod.calculate_pe_for_ticker("NG.L")
+            result, fundamentals = mod.calculate_pe_for_ticker("NG.L")
 
             # Price should be converted to GBP
             assert (result["Close"] == 50.0).all()
             # EPS in GBp, Close in GBP, so P/E = 50 / (140/100) = 0.357
-            # Wait, EPS is not converted... let me check
-            # The source only converts Close, not EPS, for GBp
-            # EPS stays in GBp, Close is converted to GBP
-            # So P/E would be wrong... but the test just checks it's valid
             assert (result["ta_pe"] > 0).all()
         finally:
             self._unpatch_yf_ticker()
@@ -477,7 +474,7 @@ class TestCalculatePeForTicker:
         self._patch_yf_ticker(mock_ticker)
 
         try:
-            result = mod.calculate_pe_for_ticker("NO-DIV")
+            result, fundamentals = mod.calculate_pe_for_ticker("NO-DIV")
 
             assert len(result) > 0
             assert result["ta_div_ttm"].isna().all()
@@ -499,7 +496,7 @@ class TestCalculatePeForTicker:
         self._patch_yf_ticker(mock_ticker)
 
         try:
-            result = mod.calculate_pe_for_ticker("FEW-EPS")
+            result, fundamentals = mod.calculate_pe_for_ticker("FEW-EPS")
             assert len(result) > 0
         finally:
             self._unpatch_yf_ticker()
@@ -518,7 +515,7 @@ class TestCalculatePeForTicker:
         self._patch_yf_ticker(mock_ticker)
 
         try:
-            result = mod.calculate_pe_for_ticker("SORTED")
+            result, fundamentals = mod.calculate_pe_for_ticker("SORTED")
             dates = pd.to_datetime(result["Date"])
             assert dates.is_monotonic_increasing
         finally:
@@ -541,8 +538,202 @@ class TestCalculatePeForTicker:
         self._patch_yf_ticker(mock_ticker)
 
         try:
-            result = mod.calculate_pe_for_ticker("COLS")
+            result, fundamentals = mod.calculate_pe_for_ticker("COLS")
             expected_cols = ["Date", "Close", "ta_eps_ttm", "ta_pe", "ta_div_ttm", "ta_div_yield"]
             assert list(result.columns) == expected_cols
         finally:
             self._unpatch_yf_ticker()
+
+    def test_returns_fundamentals_dict(self):
+        """calculate_pe_for_ticker should return a fundamentals dict with expected keys."""
+        price_dates = pd.date_range("2023-01-01", periods=50, freq="D").strftime("%Y-%m-%d").tolist()
+        closes = [100.0] * 50
+        eps_dates = ["2023-03-31", "2023-06-30", "2023-09-30", "2023-12-31"]
+        eps_values = [1.0, 1.2, 1.3, 1.4]
+
+        mock_ticker = self._make_mock_ticker(
+            price_dates, closes,
+            eps_dates, eps_values,
+        )
+        self._patch_yf_ticker(mock_ticker)
+
+        try:
+            result, fundamentals = mod.calculate_pe_for_ticker("FUND")
+            assert isinstance(fundamentals, dict)
+            # All 25 expected keys should be present
+            assert "ta_pe_ttm_yf" in fundamentals
+            assert "ta_pe_forward" in fundamentals
+            assert "ta_earnings_growth" in fundamentals
+            assert "ta_mkt_cap" in fundamentals
+            assert "ta_next_ex_div_date" in fundamentals
+        finally:
+            self._unpatch_yf_ticker()
+
+
+# ---------------------------------------------------------------------------
+# _extract_info
+# ---------------------------------------------------------------------------
+
+class TestExtractInfo:
+    """Tests for _extract_info."""
+
+    def _make_mock_stock(self, info: dict) -> MagicMock:
+        """Create a mock yf.Ticker with the given info dict."""
+        mock_stock = MagicMock()
+        mock_stock.info = info
+        return mock_stock
+
+    def test_all_fundamentals_extracted(self):
+        """All 21 fundamental columns should be extracted."""
+        info = {
+            "trailingPE": 25.0, "forwardPE": 22.0, "priceToBook": 3.5,
+            "enterpriseToEbitda": 15.0, "earningsGrowth": 0.12,
+            "revenueGrowth": 0.08, "profitMargins": 0.15,
+            "operatingMargins": 0.20, "dividendRate": 2.5,
+            "dividendYield": 0.025, "payoutRatio": 0.45,
+            "fiveYearAvgDividendYield": 2.8, "exDividendDate": 1735689600,
+            "dividendsPerShare": 1.0, "marketCap": 2000000000000,
+            "sharesOutstanding": 15000000000, "bookValue": 15.0,
+            "totalDebt": 500000000000, "totalCash": 100000000000,
+            "debtToEquity": 150.0, "currentRatio": 1.5,
+            "totalRevenue": 300000000000, "ebitda": 60000000000,
+            "netIncomeToCommon": 40000000000,
+        }
+        mock_stock = self._make_mock_stock(info)
+        result = mod._extract_info(mock_stock)
+
+        assert result["ta_pe_ttm_yf"] == 25.0
+        assert result["ta_pe_forward"] == 22.0
+        assert result["ta_pb"] == 3.5
+        assert result["ta_ev_ebitda"] == 15.0
+        assert result["ta_earnings_growth"] == 12.0  # 0.12 * 100
+        assert result["ta_revenue_growth"] == 8.0
+        assert result["ta_profit_margin"] == 15.0
+        assert result["ta_operating_margin"] == 20.0
+        assert result["ta_div_rate"] == 2.5
+        assert result["ta_div_yield_yf"] == 0.025
+        assert result["ta_payout_ratio"] == 0.45
+        assert result["ta_div_yield_avg5y"] == 2.8
+        assert isinstance(result["ta_next_ex_div_date"], pd.Timestamp)
+        assert result["ta_next_ex_div_date"] == pd.Timestamp("2025-01-01")
+        assert result["ta_div_per_share"] == 1.0
+        assert result["ta_mkt_cap"] == 2000000000000
+        assert result["ta_shares_outstanding"] == 15000000000
+        assert result["ta_book_value_ps"] == 15.0
+        assert result["ta_total_debt"] == 500000000000
+        assert result["ta_total_cash"] == 100000000000
+        assert result["ta_debt_equity"] == 150.0
+        assert result["ta_current_ratio"] == 1.5
+        assert result["ta_revenue_ttm"] == 300000000000
+        assert result["ta_ebitda_ttm"] == 60000000000
+        assert result["ta_net_income_ttm"] == 40000000000
+
+    def test_all_expected_columns(self):
+        """Verify all expected column names are present."""
+        info = {k: 1.0 for k in [
+            "trailingPE", "forwardPE", "priceToBook", "enterpriseToEbitda",
+            "earningsGrowth", "revenueGrowth", "profitMargins", "operatingMargins",
+            "dividendRate", "dividendYield", "payoutRatio", "fiveYearAvgDividendYield",
+            "exDividendDate", "dividendsPerShare", "marketCap", "sharesOutstanding",
+            "bookValue", "totalDebt", "totalCash", "debtToEquity", "currentRatio",
+            "totalRevenue", "ebitda", "netIncomeToCommon",
+        ]}
+        mock_stock = self._make_mock_stock(info)
+        result = mod._extract_info(mock_stock)
+
+        expected = [
+            "ta_pe_ttm_yf", "ta_pe_forward", "ta_pb", "ta_ev_revenue",
+            "ta_ev_ebitda", "ta_earnings_growth", "ta_revenue_growth",
+            "ta_profit_margin", "ta_operating_margin", "ta_div_rate",
+            "ta_div_yield_yf", "ta_payout_ratio", "ta_div_yield_avg5y",
+            "ta_next_ex_div_date", "ta_div_per_share", "ta_mkt_cap",
+            "ta_shares_outstanding", "ta_book_value_ps", "ta_total_debt",
+            "ta_total_cash", "ta_debt_equity", "ta_current_ratio",
+            "ta_revenue_ttm", "ta_ebitda_ttm", "ta_net_income_ttm",
+        ]
+        for col in expected:
+            assert col in result, f"Missing column: {col}"
+
+    def test_missing_data_becomes_none(self):
+        """Missing info keys should result in None values."""
+        mock_stock = self._make_mock_stock({})
+        result = mod._extract_info(mock_stock)
+        for key, v in result.items():
+            if key == "ta_next_ex_div_date":
+                assert pd.isna(v), f"Expected NaT/NaN for {key}, got {v}"
+            else:
+                assert v is None, f"Expected None for {key}, got {v}"
+
+    def test_percentage_conversion(self):
+        """Growth and margin values should be converted from decimal to percentage."""
+        info = {
+            "earningsGrowth": 0.25,  # 25%
+            "revenueGrowth": 0.10,   # 10%
+            "profitMargins": 0.05,   # 5%
+            "operatingMargins": 0.15, # 15%
+        }
+        mock_stock = self._make_mock_stock(info)
+        result = mod._extract_info(mock_stock)
+        assert result["ta_earnings_growth"] == 25.0
+        assert result["ta_revenue_growth"] == 10.0
+        assert result["ta_profit_margin"] == 5.0
+        assert result["ta_operating_margin"] == 15.0
+
+    def test_ex_dividend_date_unix_timestamp(self):
+        """exDividendDate (Unix timestamp) should be converted to datetime."""
+        # 2024-06-15 00:00:00 UTC
+        ts = 1718409600
+        info = {"exDividendDate": ts}
+        mock_stock = self._make_mock_stock(info)
+        result = mod._extract_info(mock_stock)
+        assert isinstance(result["ta_next_ex_div_date"], pd.Timestamp)
+        assert result["ta_next_ex_div_date"].year == 2024
+        assert result["ta_next_ex_div_date"].month == 6
+        assert result["ta_next_ex_div_date"].day == 15
+
+    def test_no_ex_dividend_date(self):
+        """Missing exDividendDate should produce NaT."""
+        info = {}
+        mock_stock = self._make_mock_stock(info)
+        result = mod._extract_info(mock_stock)
+        assert pd.isna(result["ta_next_ex_div_date"])
+
+    def test_alternate_key_aliases(self):
+        """Should fall back to alternate key names."""
+        info = {
+            "pb_ratio": 4.0,
+            "ev_to_revenue": 8.0,
+            "ev_to_ebitda": 12.0,
+            "bookValuePerShare": 20.0,
+        }
+        mock_stock = self._make_mock_stock(info)
+        result = mod._extract_info(mock_stock)
+        assert result["ta_pb"] == 4.0
+        assert result["ta_ev_revenue"] == 8.0
+        assert result["ta_ev_ebitda"] == 12.0
+        assert result["ta_book_value_ps"] == 20.0
+
+    def test_large_numbers_preserved(self):
+        """Large numbers like market cap should be preserved as-is."""
+        info = {"marketCap": 3500000000000.0}  # 3.5T
+        mock_stock = self._make_mock_stock(info)
+        result = mod._extract_info(mock_stock)
+        assert result["ta_mkt_cap"] == 3500000000000.0
+
+    def test_integer_values_coerced_to_float(self):
+        """Integer values from info should work (float conversion on percentages)."""
+        info = {
+            "earningsGrowth": 0,  # Zero is falsy but should still be converted
+            "revenueGrowth": 1,   # 1 = 100%
+        }
+        mock_stock = self._make_mock_stock(info)
+        result = mod._extract_info(mock_stock)
+        assert result["ta_earnings_growth"] == 0.0
+        assert result["ta_revenue_growth"] == 100.0
+
+    def test_returns_dict(self):
+        """Should return a plain dict, not wrapped."""
+        info = {"marketCap": 1000}
+        mock_stock = self._make_mock_stock(info)
+        result = mod._extract_info(mock_stock)
+        assert isinstance(result, dict)

@@ -1,4 +1,5 @@
-"""Download stock info and calculate P/E ratio and dividend yield for all tickers in ticker_list.csv.
+"""Download stock info and calculate P/E ratio, dividend yield, and fundamental metrics
+for all tickers in ticker_list.csv.
 
 P/E = Closing Price / TTM EPS
 Dividend Yield = (TTM Dividend / Closing Price) × 100
@@ -13,7 +14,11 @@ EPS is fetched from multiple sources (in priority order):
 
 Dividends are fetched from historical price data (yfinance).
 
-Output: data/pe-data/<ticker>_PE.csv  (columns: Date, Close, ta_eps_ttm, ta_pe, ta_div_ttm, ta_div_yield)
+Additional fundamental metrics are extracted from stock.info (single API call per ticker).
+
+Output files per ticker:
+  - data/pe-data/<ticker>_PE.csv      — Daily: Date, Close, ta_eps_ttm, ta_pe, ta_div_ttm, ta_div_yield
+  - data/pe-data/<ticker>_fundamentals.csv — Static: valuation multiples, margins, growth, balance sheet
 """
 
 import os
@@ -233,11 +238,81 @@ def compute_ttm_dividends(price_dates: pd.DatetimeIndex, dividends: pd.Series) -
     return pd.Series(ttm_values, index=price_dates)
 
 
-def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> pd.DataFrame:
+def _extract_info(stock: yf.Ticker) -> dict:
+    """Extract all fundamental metrics from stock.info.
+
+    Returns a dict mapping output column names to values.
+    Missing/unavailable metrics are set to None (will become NaN in CSV).
+
+    Parameters
+    ----------
+    stock : yf.Ticker
+        A yfinance Ticker object.
+
+    Returns
+    -------
+    dict
+        Fundamental metrics keyed by output column name.
+    """
+    info = stock.info
+    result = {}
+
+    # --- Valuation multiples ---
+    result["ta_pe_ttm_yf"] = info.get("trailingPE")
+    result["ta_pe_forward"] = info.get("forwardPE")
+    result["ta_pb"] = info.get("priceToBook") or info.get("pb_ratio")
+    result["ta_ev_revenue"] = info.get("enterpriseToRevenue") or info.get("ev_to_revenue")
+    result["ta_ev_ebitda"] = info.get("enterpriseToEbitda") or info.get("ev_to_ebitda")
+
+    # --- Growth & margins (store as percentages) ---
+    earnings_growth = info.get("earningsGrowth")
+    result["ta_earnings_growth"] = float(earnings_growth * 100) if earnings_growth is not None else None
+
+    revenue_growth = info.get("revenueGrowth")
+    result["ta_revenue_growth"] = float(revenue_growth * 100) if revenue_growth is not None else None
+
+    profit_margin = info.get("profitMargins")
+    result["ta_profit_margin"] = float(profit_margin * 100) if profit_margin is not None else None
+
+    operating_margin = info.get("operatingMargins")
+    result["ta_operating_margin"] = float(operating_margin * 100) if operating_margin is not None else None
+
+    # --- Dividend detail ---
+    result["ta_div_rate"] = info.get("dividendRate")
+    result["ta_div_yield_yf"] = info.get("dividendYield")
+    result["ta_payout_ratio"] = info.get("payoutRatio")
+    result["ta_div_yield_avg5y"] = info.get("fiveYearAvgDividendYield")
+
+    ex_div = info.get("exDividendDate")
+    if ex_div is not None:
+        # yfinance returns exDividendDate as a Unix timestamp (seconds)
+        result["ta_next_ex_div_date"] = pd.Timestamp(ex_div, unit="s", tz="UTC").tz_localize(None)
+    else:
+        result["ta_next_ex_div_date"] = pd.NaT
+
+    result["ta_div_per_share"] = info.get("dividendsPerShare")
+
+    # --- Balance sheet / capitalization ---
+    result["ta_mkt_cap"] = info.get("marketCap")
+    result["ta_shares_outstanding"] = info.get("sharesOutstanding")
+    result["ta_book_value_ps"] = info.get("bookValue") or info.get("bookValuePerShare")
+    result["ta_total_debt"] = info.get("totalDebt")
+    result["ta_total_cash"] = info.get("totalCash")
+    result["ta_debt_equity"] = info.get("debtToEquity")
+    result["ta_current_ratio"] = info.get("currentRatio")
+    result["ta_revenue_ttm"] = info.get("totalRevenue")
+    result["ta_ebitda_ttm"] = info.get("ebitda")
+    result["ta_net_income_ttm"] = info.get("netIncomeToCommon")
+
+    return result
+
+
+def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> tuple[pd.DataFrame, dict]:
     """Calculate daily P/E and dividend yield using trailing metrics.
 
     Tries quarterly EPS sources first, falls back to annual.
     Dividends are fetched from historical price data.
+    Fundamental metrics are extracted from stock.info.
 
     Parameters
     ----------
@@ -248,10 +323,13 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> pd.DataFrame:
 
     Returns
     -------
-    pd.DataFrame
-        Columns: Date, Close, ta_eps_ttm, ta_pe, ta_div_ttm, ta_div_yield
+    tuple[pd.DataFrame, dict]
+        (daily_df, fundamentals)
+        daily_df: Columns: Date, Close, ta_eps_ttm, ta_pe, ta_div_ttm, ta_div_yield
+        fundamentals: dict of fundamental metric values (see _extract_info)
     """
     stock = yf.Ticker(ticker)
+    fundamentals = _extract_info(stock)
 
     # ── 1. Get historical daily closing prices ──────────────────────
     hist = stock.history(period=period)
@@ -315,6 +393,8 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> pd.DataFrame:
     valid_ttm = ttm_eps_series.dropna().sort_index()
     ttm_df = valid_ttm.reset_index()
     ttm_df.columns = ["EPS_Date", "ta_eps_ttm"]
+    # Ensure datetime resolution matches price Date column (datetime64[ns])
+    ttm_df["EPS_Date"] = pd.to_datetime(ttm_df["EPS_Date"]).dt.tz_localize(None).astype("datetime64[ns]")
 
     # Keep Close in price_df so it survives the merge
     price_df = prices[["Date", "Close"]].copy().sort_values("Date")
@@ -358,7 +438,7 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> pd.DataFrame:
     # Drop rows before we had any valid EPS
     result = result.dropna(subset=["ta_eps_ttm", "ta_pe"])
 
-    return result
+    return result, fundamentals
 
 
 def bulk_download() -> None:
@@ -378,27 +458,34 @@ def bulk_download() -> None:
     tickers = list(ticker_map.values())
 
     print(f"Loaded {len(tickers)} tickers from '{input_csv}'.")
-    print(f"Downloading P/E and dividend data (quarterly EPS, TTM)...\n")
+    print(f"Downloading P/E, dividend, and fundamental data...\n")
 
     for original_ticker, yf_ticker in ticker_map.items():
         safe_filename = original_ticker.replace("/", "_")
-        filepath = os.path.join(output_dir, f"{safe_filename}_PE.csv")
+        daily_filepath = os.path.join(output_dir, f"{safe_filename}_PE.csv")
+        fund_filepath = os.path.join(output_dir, f"{safe_filename}_fundamentals.csv")
 
         print(f"Processing [{yf_ticker}] -> {safe_filename} ...")
         try:
-            result = calculate_pe_for_ticker(yf_ticker, period=PERIOD)
+            result, fundamentals = calculate_pe_for_ticker(yf_ticker, period=PERIOD)
             if result.empty:
                 print(f"  Skipped {yf_ticker}: No valid P/E data.\n")
                 continue
 
             result = result.sort_values("Date").reset_index(drop=True)
-            result.to_csv(filepath, index=False)
-            print(f"  Saved {len(result)} rows to {filepath}")
+            result.to_csv(daily_filepath, index=False)
+            print(f"  Saved {len(result)} daily rows to {daily_filepath}")
             print(f"  Latest P/E: {result['ta_pe'].iloc[-1]:.2f}", end="")
             if "ta_div_yield" in result.columns and pd.notna(result["ta_div_yield"].iloc[-1]):
                 print(f"  | Div Yield: {result['ta_div_yield'].iloc[-1]:.2f}%")
             else:
                 print()
+
+            # Write fundamentals CSV (single row, static metrics)
+            fund_df = pd.DataFrame([fundamentals])
+            fund_df.to_csv(fund_filepath, index=False)
+            valid_fund_cols = [c for c in fund_df.columns if fund_df[c].notna().any()]
+            print(f"  Saved {len(valid_fund_cols)} fundamental metrics to {fund_filepath}")
             print()
 
         except Exception as e:
