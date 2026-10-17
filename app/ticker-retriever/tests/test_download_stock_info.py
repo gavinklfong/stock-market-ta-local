@@ -9,16 +9,11 @@ Tests cover:
 - Full pipeline via mocked yfinance
 """
 
-import os
-import sys
 from datetime import datetime
 
 import pytest
 import pandas as pd
 from unittest.mock import patch, MagicMock
-
-# Ensure the module is importable
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import download_stock_info as mod
 

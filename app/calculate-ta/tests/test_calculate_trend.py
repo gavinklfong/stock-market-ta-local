@@ -1,18 +1,14 @@
 """Unit tests for calculate_trend.py — verifies EMA, ATR, and SuperTrend calculations."""
 
-import os
-import sys
-import math
 import csv
+import math
+import os
 import random
 import tempfile
 from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
-
-# Ensure the module is importable
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from calculate_trend import (
     compute_ema,

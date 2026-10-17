@@ -1,7 +1,6 @@
 """Unit tests for download_tickers.py — verifies incremental download logic."""
 
 import os
-import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -9,9 +8,6 @@ from pathlib import Path
 import pytest
 import pandas as pd
 from unittest.mock import patch, MagicMock
-
-# Ensure the module is importable
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import download_tickers
 

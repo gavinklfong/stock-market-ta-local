@@ -1,5 +1,5 @@
-Company,Ticker,Major Industry / Sector
-National Grid,NG.L,Utilities
-FTSE 100 Index,^FTSE,Index
-HSBC plc,HSBA.L,Banking
-London Stock Exchange,LSE.L,Financial Services
+Ticker,Company,Major Industry / Sector
+NG.L,National Grid,Utilities
+^FTSE,FTSE 100 Index,Index
+HSBA.L,HSBC plc,Banking
+LSE.L,London Stock Exchange,Financial Services
