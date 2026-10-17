@@ -58,6 +58,9 @@ DESCRIPTIONS = {
     "return":      "future returns: 5d/10d/20d",
 }
 
+# Maximum number of threads for parallel execution (modules + merge).
+MAX_WORKERS = 8
+
 
 def find_script_dir() -> Path:
     """Return the directory containing calculate_*.py scripts."""
@@ -140,7 +143,6 @@ def merge_outputs(script_dir: Path, output_dir: Path) -> bool:
         for fname in files:
             fpath = output_dir / fname
             fpath.unlink()
-            print(f"  Removed intermediate: {fname}")
 
     print("[MERGE] Complete.\n")
     return True
@@ -191,21 +193,24 @@ def main():
             print(f"  (dry-run) Would run: python {script_dir / MODULES[name]}")
         sys.exit(0)
 
-    # Run all modules in parallel
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(order)) as executor:
-        futures = {
+    # Shared thread pool for parallel module execution and merge.
+    num_workers = min(len(order) + 1, MAX_WORKERS)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+        # Run all modules in parallel
+        module_futures = {
             executor.submit(run_module, name, script_dir): name
             for name in order
         }
         failed = []
-        for future in concurrent.futures.as_completed(futures):
-            name = futures[future]
+        for future in concurrent.futures.as_completed(module_futures):
+            name = module_futures[future]
             if not future.result():
                 failed.append(name)
 
-    # Merge per-module outputs into {ticker}.csv (only if all succeeded)
-    if not failed:
-        merge_outputs(script_dir, output_dir)
+        # Merge per-module outputs into {ticker}.csv (only if all succeeded)
+        if not failed:
+            merge_future = executor.submit(merge_outputs, script_dir, output_dir)
+            merge_future.result()  # wait for merge to complete
 
     print(f"\n{'='*60}")
     print(f"  Pipeline {'complete' if not failed else 'FAILED'}")
