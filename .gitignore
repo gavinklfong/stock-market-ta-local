@@ -41,3 +41,6 @@ Thumbs.db
 
 # Data (untracked files)
 data/market-data/*.csv
+
+data/
+data/**/*.csv

@@ -99,7 +99,7 @@ def run_ta_calculations(ta_args: Sequence[str] = ()) -> None:
 
 @task(name="merge-analysis-data")
 def merge_analysis_data() -> None:
-    """Merge market data and TA data into a single analysis CSV per ticker."""
+    """Merge market data, TA data, and P/E data into a single analysis CSV per ticker."""
     import sys
 
     import pandas as pd
@@ -110,6 +110,7 @@ def merge_analysis_data() -> None:
 
     market_dir = PROJECT_ROOT / "data" / "market-data"
     ta_dir = PROJECT_ROOT / "data" / "ta-data"
+    pe_dir = PROJECT_ROOT / "data" / "pe-data"
     analysis_dir = PROJECT_ROOT / "data" / "analysis-data"
     analysis_dir.mkdir(parents=True, exist_ok=True)
 
@@ -135,6 +136,21 @@ def merge_analysis_data() -> None:
         merged["Date"] = pd.to_datetime(merged["Date"])
         merged = merged.sort_values("Date").reset_index(drop=True)
         merged["Date"] = merged["Date"].dt.strftime("%Y-%m-%d")
+
+        # Merge P/E ratio data (per-date) from {ticker}_PE.csv
+        pe_file = pe_dir / f"{ticker}_PE.csv"
+        if pe_file.exists():
+            pe_df = pd.read_csv(pe_file)
+            # Align Date format to the merged DataFrame (YYYY-MM-DD strings)
+            pe_df["Date"] = pd.to_datetime(pe_df["Date"]).dt.strftime("%Y-%m-%d")
+            pe_merged = merged.merge(pe_df, on="Date", how="left")
+            # Keep the more complete Close column (from market data)
+            if "Close_x" in pe_merged.columns and "Close_y" in pe_merged.columns:
+                pe_merged["Close"] = pe_merged["Close_x"].combine_first(pe_merged["Close_y"])
+                pe_merged = pe_merged.drop(columns=["Close_x", "Close_y"])
+            merged = pe_merged
+
+        merged = merged.sort_values("Date").reset_index(drop=True)
 
         out_path = analysis_dir / f"{ticker}.csv"
         merged.to_csv(out_path, index=False)
