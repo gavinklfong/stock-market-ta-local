@@ -259,22 +259,11 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     closes = raw_df["Close"].tolist()
     n = file_total
 
-    # Use market data as the source of truth
-    file_total = len(raw_df)
-    n = file_total
-
-    # Merge with existing TA data if available (preserves columns from prior modules)
-    df = raw_df.copy()
-    if os.path.exists(output_path):
-        existing_df = pd.read_csv(output_path)
-        existing_df["Date"] = pd.to_datetime(existing_df["Date"])
-        # Only merge TA-prefixed columns (skip market data columns to avoid duplicates)
-        ta_cols = [c for c in existing_df.columns if c.startswith("ta_")]
-        if ta_cols:
-            existing_ta = existing_df[["Date"] + ta_cols]
-            df = df.merge(existing_ta, on="Date", how="left")
-
+    # Compute this module's TA columns only
     regime_cols = compute_regime_columns(closes, n)
+
+    # Build output: Date + own ta_ columns (no OHLCV, no other modules' columns)
+    df = pd.DataFrame({"Date": raw_df["Date"]})
     for col, values in regime_cols.items():
         df[col] = values
 

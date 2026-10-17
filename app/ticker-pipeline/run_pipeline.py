@@ -5,9 +5,10 @@ Orchestrate the full stock-data pipeline with Prefect:
   1. Download OHLCV market data        (ticker-retriever/download_tickers.py)
   2. Download P/E ratio data           (ticker-retriever/download_stock_info.py)
   3. Run TA indicator calculations     (calculate-ta/run_calculation.py)
+  4. Merge market + TA data into analysis (inline)
 
 Steps 1 & 2 run in parallel (independent downloads).
-Step 3 runs sequentially after both downloads complete.
+Steps 3 & 4 run sequentially after both downloads complete.
 
 Usage:
     # Run the flow locally (no server required):
@@ -96,6 +97,53 @@ def run_ta_calculations(ta_args: Sequence[str] = ()) -> None:
     print(f"  ✓ TA calculations completed (exit code {result.returncode})")
 
 
+@task(name="merge-analysis-data")
+def merge_analysis_data() -> None:
+    """Merge market data and TA data into a single analysis CSV per ticker."""
+    import sys
+
+    import pandas as pd
+
+    # Reuse the yfinance CSV parser (handles multi-row headers)
+    sys.path.insert(0, str(APP_DIR / "calculate-ta"))
+    from common import read_yfinance_csv  # noqa: E402
+
+    market_dir = PROJECT_ROOT / "data" / "market-data"
+    ta_dir = PROJECT_ROOT / "data" / "ta-data"
+    analysis_dir = PROJECT_ROOT / "data" / "analysis-data"
+    analysis_dir.mkdir(parents=True, exist_ok=True)
+
+    # Discover tickers present in both market-data and ta-data
+    market_files = {f.stem for f in market_dir.glob("*.csv")}
+    ta_files = {f.stem for f in ta_dir.glob("*.csv")}
+    tickers = sorted(market_files & ta_files)
+
+    if not tickers:
+        print("\n[MERGE] No matching market/TA files found, skipping.")
+        return
+
+    print(f"\n{'='*60}")
+    print(f"  ▶ Merge analysis data ({len(tickers)} ticker(s))")
+    print(f"{'='*60}")
+
+    for ticker in tickers:
+        market_df = read_yfinance_csv(str(market_dir / f"{ticker}.csv"))
+        ta_df = pd.read_csv(ta_dir / f"{ticker}.csv")
+
+        # Merge on Date (outer to keep all rows; most will align)
+        merged = market_df.merge(ta_df, on="Date", how="outer")
+        merged["Date"] = pd.to_datetime(merged["Date"])
+        merged = merged.sort_values("Date").reset_index(drop=True)
+        merged["Date"] = merged["Date"].dt.strftime("%Y-%m-%d")
+
+        out_path = analysis_dir / f"{ticker}.csv"
+        merged.to_csv(out_path, index=False)
+        n_cols = len([c for c in merged.columns if c != "Date"])
+        print(f"  {ticker}.csv  ({len(merged)} rows, {n_cols} data columns)")
+
+    print(f"[MERGE] Output directory: {analysis_dir}\n")
+
+
 # ---------------------------------------------------------------------------
 # Prefect flow
 # ---------------------------------------------------------------------------
@@ -104,7 +152,8 @@ def run_ta_calculations(ta_args: Sequence[str] = ()) -> None:
     name="stock-data-pipeline",
     description=(
         "Downloads market data (OHLCV + P/E) in parallel, "
-        "then runs TA indicator calculations."
+        "runs TA indicator calculations, then merges market + TA data "
+        "into per-ticker analysis CSVs."
     ),
     task_runner=ThreadPoolTaskRunner,
 )
@@ -128,6 +177,9 @@ def run_pipeline(ta_args: Sequence[str] = ()) -> None:
 
     # -- Step 3: TA calculations (depends on downloads) -------------------
     run_ta_calculations(ta_args=ta_args)
+
+    # -- Step 4: merge market + TA data into analysis ---------------------
+    merge_analysis_data()
 
     print(f"\n{'='*60}")
     print("  ✓  Full pipeline completed successfully.")

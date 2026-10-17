@@ -116,18 +116,27 @@ def read_yfinance_csv(input_path: str) -> pd.DataFrame:
         # Fallback: use first row as header (standard single-header CSV)
         header_row = raw.iloc[0].astype(str)
     else:
-        # For yfinance multi-row headers, the row above has Open/High/Low/Close/Volume
-        above = raw.iloc[header_idx - 1].astype(str) if header_idx > 0 else None
+        # For yfinance multi-row headers, look up to 2 rows above for column names:
+        #   row above Date: may have ticker info
+        #   row above that: usually has the actual column names
         header_row = raw.iloc[header_idx].astype(str)
+        above = raw.iloc[header_idx - 1].astype(str) if header_idx > 0 else None
+        above2 = raw.iloc[header_idx - 2].astype(str) if header_idx > 1 else None
 
-        # Merge: use above-row values where the Date-row is empty/NaN
+        # Merge: prefer Date-row values, then above2 (actual column names), then above
         merged = {}
         for col in range(len(header_row)):
             h_val = header_row.iloc[col].strip() if pd.notna(header_row.iloc[col]) else ""
             if h_val:
                 merged[col] = h_val
+            elif above2 is not None and pd.notna(above2.iloc[col]):
+                v = above2.iloc[col].strip()
+                if v:
+                    merged[col] = v
             elif above is not None and pd.notna(above.iloc[col]):
-                merged[col] = above.iloc[col].strip()
+                v = above.iloc[col].strip()
+                if v:
+                    merged[col] = v
             else:
                 merged[col] = f"col_{col}"
         header_row = pd.Series([merged[i] for i in range(len(header_row))])
@@ -157,8 +166,8 @@ def main(
     writing the full pipeline boilerplate.
 
     Args:
-        module_name: Short name for display (e.g. "calculate_ta").
-        description: Human-readable description (e.g. "Core indicators").
+        module_name: Short name for display (e.g. "calculate_trend").
+        description: Human-readable description (e.g. "trend indicators").
         process_csv_fn: Callable(input_path, output_path, total_files, current_file)
             that reads a CSV, computes indicators, writes output, returns row count.
         max_workers: Thread pool size (default 10).
@@ -167,6 +176,9 @@ def main(
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     base_dir = os.path.dirname(os.path.dirname(script_dir))
+
+    # Derive output filename suffix from module name (e.g. "calculate_trend" -> "trend")
+    suffix = module_name.replace("calculate_", "")
 
     if input_dir is None:
         input_dir = os.path.join(base_dir, "data", "market-data")
@@ -194,7 +206,9 @@ def main(
     def process_file(args):
         idx, filename = args
         input_path = os.path.join(input_dir, filename)
-        output_path = os.path.join(output_dir, filename)
+        # Output: {ticker}_ta_{suffix}.csv  (e.g. AAPL_ta_trend.csv)
+        ticker = filename[:-4]  # strip .csv
+        output_path = os.path.join(output_dir, f"{ticker}_ta_{suffix}.csv")
         total_files = len(csv_files)
 
         try:

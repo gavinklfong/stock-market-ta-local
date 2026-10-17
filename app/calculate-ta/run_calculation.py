@@ -1,29 +1,32 @@
 #!/usr/bin/env python
 """Orchestrator for all calculate_*.py TA modules.
 
-Runs the full technical-analysis pipeline in the recommended dependency order:
+Runs all TA indicator modules in parallel (modules are independent):
 
-    1. calculate_trend.py       – EMA, SuperTrend, MA, slopes, price/MA ratio
-    2. calculate_momentum.py    – RSI, MACD, ROC
-    3. calculate_volume.py      – OBV, CMF, VWAP, OFI, log volume
-    4. calculate_volatility.py  – ATR, Bollinger Bands
-    5. calculate_regime.py      – GARCH, HMM regime, log return
-    6. calculate_structure.py   – Swing points, HH/HL/LH/LL, BOS, CHoCH, S/R
-    7. calculate_return.py      – Forward 5d/10d/20d returns
+    calculate_trend.py       – EMA, SuperTrend, MA, slopes, price/MA ratio
+    calculate_momentum.py    – RSI, MACD, ROC
+    calculate_volume.py      – OBV, CMF, VWAP, OFI, log volume
+    calculate_volatility.py  – ATR, Bollinger Bands
+    calculate_regime.py      – GARCH, HMM regime, log return
+    calculate_structure.py   – Swing points, HH/HL/LH/LL, BOS, CHoCH, S/R
+    calculate_return.py      – Forward 5d/10d/20d returns
 
-All modules read from data/market-data/*.csv and write (merge-add) to
-data/ta-data/*.csv.
+Each module reads from data/market-data/*.csv and writes its own file to
+data/ta-data/{ticker}_ta_{type}.csv.
 
 Usage:
-    python run_calculation.py                          # run all, in order
+    python run_calculation.py                          # run all, in parallel
     python run_calculation.py trend momentum           # run specific modules
     python run_calculation.py --help                   # show usage
 """
 
 import argparse
+import concurrent.futures
 import subprocess
 import sys
 from pathlib import Path
+
+import pandas as pd
 
 MODULES = {
     "trend":       "calculate_trend.py",
@@ -89,9 +92,57 @@ def run_module(module_name: str, script_dir: Path, *, dry_run: bool = False) -> 
     return True
 
 
+def merge_outputs(script_dir: Path, output_dir: Path) -> bool:
+    """Merge all per-module CSVs into a single {ticker}.csv per ticker.
+
+    After parallel modules write {ticker}_ta_{type}.csv, this function
+    collects them by ticker, merges on Date, and writes {ticker}.csv.
+
+    Returns True on success, False on failure.
+    """
+    # Gather per-module files grouped by ticker
+    ticker_files: dict[str, list[str]] = {}
+    for f in output_dir.glob("*_ta_*.csv"):
+        parts = f.name.rsplit("_ta_", 1)
+        if len(parts) != 2:
+            continue
+        ticker = parts[0]
+        ticker_files.setdefault(ticker, []).append(f.name)
+
+    if not ticker_files:
+        print("[MERGE] No per-module output files found, skipping merge.")
+        return True
+
+    print(f"\n{'='*60}")
+    print(f"  [MERGE] Merging {len(ticker_files)} ticker(s)")
+    print(f"{'='*60}")
+
+    for ticker, files in sorted(ticker_files.items()):
+        merged = None
+        for fname in sorted(files):
+            df = pd.read_csv(output_dir / fname)
+            df["Date"] = pd.to_datetime(df["Date"])
+            if merged is None:
+                merged = df.sort_values("Date").reset_index(drop=True)
+            else:
+                # Merge on Date, keep only Date + ta_ columns from new file
+                ta_cols = [c for c in df.columns if c.startswith("ta_")]
+                new_cols = df[["Date"] + ta_cols]
+                merged = merged.merge(new_cols, on="Date", how="left")
+
+        merged["Date"] = merged["Date"].dt.strftime("%Y-%m-%d")
+        merged = merged.sort_values("Date").reset_index(drop=True)
+        merged.to_csv(output_dir / f"{ticker}.csv", index=False)
+        n_cols = len([c for c in merged.columns if c != "Date"])
+        print(f"  {ticker}.csv  ({len(merged)} rows, {n_cols} columns)")
+
+    print("[MERGE] Complete.\n")
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Run all TA indicator modules in dependency order.",
+        description="Run all TA indicator modules in parallel.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"\nAvailable modules:\n"
                + "\n".join(f"  {name:12s}  {DESCRIPTIONS[name]}" for name in ALL_ORDER),
@@ -103,7 +154,7 @@ def main():
         help=(
             "Modules to run (default: all). "
             f"Available: {', '.join(MODULES.keys())}. "
-            f"Order is always enforced as: {' → '.join(ALL_ORDER)}."
+            "All modules run in parallel."
         ),
     )
     parser.add_argument(
@@ -114,8 +165,9 @@ def main():
     args = parser.parse_args()
 
     script_dir = find_script_dir()
+    output_dir = script_dir.parent.parent / "data" / "ta-data"
 
-    # Resolve requested modules → ordered list
+    # Resolve requested modules → ordered list (for display only)
     if args.modules:
         order = [m for m in ALL_ORDER if m in args.modules]
     else:
@@ -124,13 +176,30 @@ def main():
     print(f"\nTA Pipeline Runner")
     print(f"{'='*60}")
     print(f"  Scripts directory : {script_dir}")
-    print(f"  Modules to run    : {' → '.join(order)}")
+    print(f"  Output directory  : {output_dir}")
+    print(f"  Modules to run    : {', '.join(order)} (parallel)")
     print(f"{'='*60}")
 
-    failed = []
-    for name in order:
-        if not run_module(name, script_dir, dry_run=args.dry_run):
-            failed.append(name)
+    if args.dry_run:
+        for name in order:
+            print(f"  (dry-run) Would run: python {script_dir / MODULES[name]}")
+        sys.exit(0)
+
+    # Run all modules in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(order)) as executor:
+        futures = {
+            executor.submit(run_module, name, script_dir): name
+            for name in order
+        }
+        failed = []
+        for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
+            if not future.result():
+                failed.append(name)
+
+    # Merge per-module outputs into {ticker}.csv (only if all succeeded)
+    if not failed:
+        merge_outputs(script_dir, output_dir)
 
     print(f"\n{'='*60}")
     print(f"  Pipeline {'complete' if not failed else 'FAILED'}")
