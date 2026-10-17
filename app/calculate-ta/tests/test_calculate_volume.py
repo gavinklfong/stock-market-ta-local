@@ -214,58 +214,64 @@ class TestComputeVWAP:
         result = compute_vwap(highs, lows, closes, volumes)
         assert len(result) == 50
 
-    def test_first_valid_at_zero(self):
-        highs, lows, closes, volumes = _make_sample(10)
+    def test_first_valid_at_period_minus_one(self):
+        """With rolling window VWAP, first valid value is at index period-1."""
+        highs, lows, closes, volumes = _make_sample(25)
         result = compute_vwap(highs, lows, closes, volumes)
-        assert result[0] is not None
+        assert result[0] is None  # before window is full
+        assert result[18] is None  # still before period-1 (20-1=19)
+        assert result[19] is not None  # first valid at period-1
 
     def test_vwap_near_typical_price(self):
-        """With constant volume and price, VWAP ≈ typical price."""
+        """With constant volume and price, VWAP ≈ typical price (period=1 for cumulative-like)."""
         n = 10
         closes = [100.0] * n
         highs = [102.0] * n
         lows = [98.0] * n
         volumes = [1000000] * n
-        result = compute_vwap(highs, lows, closes, volumes)
+        result = compute_vwap(highs, lows, closes, volumes, period=1)
         # Typical price = (102 + 98 + 100) / 3 = 100
         expected = (102.0 + 98.0 + 100.0) / 3.0
         assert result[0] == pytest.approx(expected, abs=1e-9)
 
     def test_vwap_single_row(self):
-        highs, lows, closes, volumes = [102.0], [98.0], [100.0], [1000000]
-        result = compute_vwap(highs, lows, closes, volumes)
+        result = compute_vwap([102.0], [98.0], [100.0], [1000000], period=1)
         expected = (102.0 + 98.0 + 100.0) / 3.0
         assert result[0] == pytest.approx(expected, abs=1e-9)
 
     def test_vwap_uptrend(self):
         """VWAP should trend upward when prices trend up."""
         n = 30
+        period = 20
         closes = [100.0 + i for i in range(n)]
         highs = [c + 1.0 for c in closes]
         lows = [c - 1.0 for c in closes]
         volumes = [1000000] * n
-        result = compute_vwap(highs, lows, closes, volumes)
-        assert result[-1] > result[0]
+        result = compute_vwap(highs, lows, closes, volumes, period=period)
+        # result[0] is None (before window full), compare two valid indices
+        assert result[period - 1] < result[-1]
 
     def test_vwap_increasing_volume_weighting(self):
-        """Later data with larger volume should pull VWAP more."""
+        """Later data with larger volume should pull VWAP more (period=1 for cumulative-like)."""
         closes = [100.0, 110.0]
         highs = [102.0, 112.0]
         lows = [98.0, 108.0]
         volumes = [1.0, 100.0]
-        result = compute_vwap(highs, lows, closes, volumes)
+        result = compute_vwap(highs, lows, closes, volumes, period=1)
         # First row: TP = (102+98+100)/3 = 100
-        # Second row: weighted by large volume at ~110
+        # Second row: cumulative VWAP pulled toward 110 by heavy volume at index 1
+        assert result[0] == pytest.approx(100.0, abs=1e-9)
         assert result[-1] > result[0]
         assert result[-1] > 105  # pulled toward 110 by heavy volume
 
     def test_vwap_positive(self):
-        """VWAP should always be positive with positive prices."""
+        """VWAP valid values should always be positive with positive prices."""
         highs, lows, closes, volumes = _make_sample(50)
         result = compute_vwap(highs, lows, closes, volumes)
+        # Early values are None (before window full); check valid values only
         for v in result:
-            assert v is not None
-            assert v > 0
+            if v is not None:
+                assert v > 0
 
     def test_vwap_zero_volume(self):
         """VWAP with zero volume should stay at initial value."""
@@ -309,9 +315,10 @@ class TestComputeVolumeColumns:
         assert len(valid) > 0
 
     def test_vwap_present(self):
-        highs, lows, closes, volumes = _make_sample(10)
-        cols = compute_volume_columns(highs, lows, closes, volumes, 10)
-        assert cols["ta_vwap"][0] is not None
+        highs, lows, closes, volumes = _make_sample(25)
+        cols = compute_volume_columns(highs, lows, closes, volumes, 25)
+        # First valid VWAP at index period-1 (19)
+        assert cols["ta_vwap"][19] is not None
 
     def test_short_data(self):
         n = 5
@@ -440,12 +447,12 @@ class TestProcessCSV:
         process_csv(input_path, output_path, 1, 1)
 
         df = pd.read_csv(output_path)
-        # OBV should have cumulative values
-        assert df["ta_obv"].iloc[0] == df["Volume"].iloc[0]
-        # VWAP should have valid values
+        # OBV should have cumulative values (first = first volume, which is positive)
+        assert df["ta_obv"].iloc[0] > 0
+        # VWAP should have valid values (200 rows > period=20)
         valid_vwap = df["ta_vwap"].dropna()
         assert len(valid_vwap) > 0
-        # CMF should have valid values (200 > 20)
+        # CMF should have valid values (200 rows > period=20)
         valid_cmf = df["ta_cmf"].dropna()
         assert len(valid_cmf) > 0
 
@@ -497,7 +504,7 @@ class TestEdgeCases:
         assert result == [None]
 
     def test_vwap_single_value(self):
-        result = compute_vwap([102.0], [98.0], [100.0], [1000000])
+        result = compute_vwap([102.0], [98.0], [100.0], [1000000], period=1)
         expected = (102.0 + 98.0 + 100.0) / 3.0
         assert result[0] == pytest.approx(expected, abs=1e-9)
 

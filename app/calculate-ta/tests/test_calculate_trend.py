@@ -487,27 +487,17 @@ class TestProcessCSV:
             for col in expected_cols:
                 assert col in headers, f"Missing column: {col}"
 
-    def test_process_csv_preserves_existing_columns(self):
-        """When merging with existing output, original columns should be preserved."""
+    def test_process_csv_creates_own_columns_only(self):
+        """process_csv writes only Date + its own ta columns.
+
+        Column merging across modules is handled by run_calculation.py,
+        not inside individual modules.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             input_path = os.path.join(tmpdir, "input.csv")
             output_path = os.path.join(tmpdir, "output.csv")
 
             base = date(2024, 1, 1)
-            # Write an existing output with a custom column
-            _make_csv(output_path, [
-                [(base + timedelta(days=d)).strftime("%Y-%m-%d"), 100 + d, 105 + d, 95 + d, 102 + d, 1000, 50 + d]
-                for d in range(60)
-            ])
-            # Add a header that includes the custom column
-            with open(output_path, "r") as f:
-                lines = f.readlines()
-            # Rewrite with proper header
-            with open(output_path, "w") as f:
-                f.write("Date,Open,High,Low,Close,Volume,custom_col\n")
-                for line in lines[1:]:
-                    f.write(line.strip() + ",existing\n")
-
             _make_csv(input_path, [
                 [(base + timedelta(days=d)).strftime("%Y-%m-%d"), 100 + d, 105 + d, 95 + d, 102 + d, 1000]
                 for d in range(60)
@@ -519,8 +509,13 @@ class TestProcessCSV:
                 reader = csv.reader(f)
                 headers = next(reader)
 
-            assert "custom_col" in headers, "Custom column should be preserved"
-            assert "existing" not in headers, "Malformed column name should not appear"
+            expected_cols = {"Date", "ta_ema20", "ta_ema50", "ta_ema200",
+                             "ta_supertrend", "ta_supertrend_direction",
+                             "ta_supertrend_upper", "ta_supertrend_lower",
+                             "ta_ma20", "ta_ma50", "ta_sma10",
+                             "ta_ma20_slope", "ta_ma50_slope",
+                             "ta_price_ma20_ratio"}
+            assert set(headers) == expected_cols
 
     def test_process_csv_with_realistic_data(self):
         """Test with realistic OHLCV data to ensure no errors."""

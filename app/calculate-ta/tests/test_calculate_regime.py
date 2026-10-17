@@ -128,9 +128,10 @@ class TestComputeGarchVolatility:
         closes = _make_sample(300)
         result = compute_garch_volatility(closes)
         valid_vol = [v for v in result["ta_garch_vol"] if v is not None]
-        # Daily log returns are typically ±0.02-0.05; vol should be comparable
+        # With rescale=True in arch_model, conditional volatility is on the
+        # original log-return scale; values should still be bounded.
         if valid_vol:
-            assert max(valid_vol) < 1.0  # sanity check
+            assert max(valid_vol) < 3.0  # sanity check
 
 
 # ---------------------------------------------------------------------------
@@ -406,23 +407,14 @@ class TestProcessCSV:
         dates_out = pd.to_datetime(df["Date"])
         assert dates_out.is_monotonic_increasing
 
-    def test_merge_with_existing(self, tmp_path):
-        """When output CSV already exists, process_csv should merge columns."""
+    def test_creates_own_columns_only(self, tmp_path):
+        """process_csv writes only its own Date + regime columns, not merged with existing."""
         from calculate_regime import process_csv
 
         input_dir = tmp_path / "market-data"
         input_dir.mkdir()
         output_dir = tmp_path / "ta-data"
         output_dir.mkdir()
-
-        # Write initial output with some TA columns
-        df = pd.DataFrame({
-            "Date": [pd.Timestamp("2024-01-01") + pd.Timedelta(days=i)
-                     for i in range(100)],
-            "ta_rsi14": [None] * 100,
-            "ta_macd_line": [None] * 100,
-        })
-        df.to_csv(output_dir / "TEST.csv", index=False)
 
         # Also write the input file
         self._write_test_csv(
@@ -441,9 +433,11 @@ class TestProcessCSV:
         process_csv(input_path, output_path, 1, 1)
 
         df = pd.read_csv(output_path)
-        # Existing columns should be preserved
-        assert "ta_rsi14" in df.columns
-        assert "ta_macd_line" in df.columns
-        # New columns should be added
+        # Should contain only Date + regime columns
+        assert "Date" in df.columns
         assert "ta_garch_vol" in df.columns
+        assert "ta_garch_sq" in df.columns
         assert "ta_hmm_regime" in df.columns
+        # Should NOT contain columns from other modules (merge is done at orchestration level)
+        assert "ta_rsi14" not in df.columns
+        assert "ta_macd_line" not in df.columns

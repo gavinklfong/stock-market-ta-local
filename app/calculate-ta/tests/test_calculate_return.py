@@ -326,7 +326,12 @@ class TestProcessCSV:
         dates_out = pd.to_datetime(df["Date"])
         assert dates_out.is_monotonic_increasing
 
-    def test_merge_preserves_prior_columns(self, tmp_path):
+    def test_creates_own_columns_only(self, tmp_path):
+        """process_csv writes only Date + its own ta_return columns.
+
+        Column merging across modules is handled by run_calculation.py,
+        not inside individual modules.
+        """
         import threading
         from calculate_return import process_csv
 
@@ -349,7 +354,7 @@ class TestProcessCSV:
         input_path = str(input_dir / "TEST.csv")
         output_path = str(output_dir / "TEST.csv")
 
-        # Simulate prior module writing some columns
+        # Simulate a prior module writing other columns
         prior_df = pd.DataFrame({
             "Date": [pd.Timestamp("2024-01-01") + pd.Timedelta(days=i) for i in range(50)],
             "ta_atr14": [5.0 + i * 0.1 for i in range(50)],
@@ -357,15 +362,17 @@ class TestProcessCSV:
         prior_df = prior_df.sort_values("Date").reset_index(drop=True)
         prior_df.to_csv(output_path, index=False)
 
-        # Run process_csv — should merge return columns into existing file
         process_csv(input_path, output_path, 1, 1)
 
         df = pd.read_csv(output_path)
         assert "ta_return_5d" in df.columns
         assert "ta_return_10d" in df.columns
         assert "ta_return_20d" in df.columns
-        # Prior column should be preserved
-        assert "ta_atr14" in df.columns
+        # Prior columns are NOT preserved — each module writes only its own
+        assert "ta_atr14" not in df.columns
+        # Only Date and ta_return_* columns should be present
+        allowed = {"Date", "ta_return_5d", "ta_return_10d", "ta_return_20d"}
+        assert set(df.columns) == allowed
 
     def test_last_rows_have_none_for_longer_horizons(self, tmp_path):
         import threading
