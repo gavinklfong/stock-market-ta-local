@@ -1,6 +1,7 @@
-"""Download stock info and calculate P/E ratio for all tickers in ticker_list.csv.
+"""Download stock info and calculate P/E ratio and dividend yield for all tickers in ticker_list.csv.
 
 P/E = Closing Price / TTM EPS
+Dividend Yield = (TTM Dividend / Closing Price) × 100
 
 Since EPS is reported quarterly/semi-annually and prices are daily,
 we forward-fill the most recent TTM EPS for each date.
@@ -10,7 +11,9 @@ EPS is fetched from multiple sources (in priority order):
   2. earnings_dates         — Reported EPS from earnings calendar (more coverage)
   3. income_stmt            — annual Diluted EPS fallback
 
-Output: data/pe-data/<ticker>_PE.csv  (columns: Date, Close, ta_eps_ttm, ta_pe)
+Dividends are fetched from historical price data (yfinance).
+
+Output: data/pe-data/<ticker>_PE.csv  (columns: Date, Close, ta_eps_ttm, ta_pe, ta_div_ttm, ta_div_yield)
 """
 
 import os
@@ -139,10 +142,102 @@ def compute_annual_eps_series(eps_series: pd.Series) -> pd.Series:
     return eps_series.copy()
 
 
-def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> pd.DataFrame:
-    """Calculate daily P/E using trailing EPS.
+def fetch_historical_dividends(stock: yf.Ticker, period: str = "15y") -> pd.Series:
+    """Get historical dividend data from yfinance.
 
-    Tries quarterly sources first, falls back to annual.
+    Dividends are extracted from the 'Dividends' column of the
+    historical price data. Only non-zero payouts are returned.
+
+    Parameters
+    ----------
+    stock : yf.Ticker
+        A yfinance Ticker object.
+    period : str
+        How far back to get price data (passed to yfinance).
+
+    Returns
+    -------
+    pd.Series
+        Dividend amounts indexed by ex-dividend date, sorted ascending.
+        Empty Series if no dividend data available.
+    """
+    hist = stock.history(period=period)
+    if hist.empty:
+        return pd.Series(dtype=float)
+
+    dividends = hist["Dividends"].copy()
+    if dividends.empty:
+        return pd.Series(dtype=float)
+
+    # Only keep actual dividend payouts (non-zero)
+    dividends = dividends[dividends > 0]
+    if dividends.empty:
+        return pd.Series(dtype=float)
+
+    # Normalize index: tz-naive, sorted ascending
+    dividends.index = pd.to_datetime(dividends.index).tz_localize(None)
+    return dividends.sort_index()
+
+
+def compute_ttm_dividends(price_dates: pd.DatetimeIndex, dividends: pd.Series) -> pd.Series:
+    """Calculate trailing twelve months (TTM) dividend sum for each price date.
+
+    For each price date, sums all dividends paid within the preceding
+    365 days (inclusive). Uses a two-pointer sliding window for efficiency.
+
+    Parameters
+    ----------
+    price_dates : pd.DatetimeIndex
+        Daily price dates (index), sorted ascending.
+    dividends : pd.Series
+        Dividend amounts indexed by ex-dividend date, sorted ascending.
+
+    Returns
+    -------
+    pd.Series
+        TTM dividend sum for each price date. NaN if no dividends in
+        the last 365 days.
+    """
+    if dividends.empty:
+        return pd.Series([None] * len(price_dates), index=price_dates)
+
+    div_dates = dividends.index
+    div_amounts = dividends.values.astype(float)
+
+    n = len(price_dates)
+    ttm_values = [None] * n
+
+    # Sliding window: find all dividends within [date - 365d, date]
+    window = pd.Timedelta(days=365)
+    left = 0  # index into div_dates
+
+    for i, price_date in enumerate(price_dates):
+        cutoff = price_date - window
+
+        # Advance left pointer to skip dividends older than 365 days
+        while left < len(div_dates) and div_dates[left] < cutoff:
+            left += 1
+
+        # All dividends from `left` to current position (inclusive) that
+        # are <= price_date contribute to TTM sum
+        right = 0
+        while right < len(div_dates) and div_dates[right] <= price_date:
+            right += 1
+
+        # Sum dividends in [left, right)
+        if right > left:
+            ttm_values[i] = float(div_amounts[left:right].sum())
+        else:
+            ttm_values[i] = None
+
+    return pd.Series(ttm_values, index=price_dates)
+
+
+def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> pd.DataFrame:
+    """Calculate daily P/E and dividend yield using trailing metrics.
+
+    Tries quarterly EPS sources first, falls back to annual.
+    Dividends are fetched from historical price data.
 
     Parameters
     ----------
@@ -154,7 +249,7 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> pd.DataFrame:
     Returns
     -------
     pd.DataFrame
-        Columns: Date, Close, ta_eps_ttm, ta_pe
+        Columns: Date, Close, ta_eps_ttm, ta_pe, ta_div_ttm, ta_div_yield
     """
     stock = yf.Ticker(ticker)
 
@@ -166,7 +261,7 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> pd.DataFrame:
     prices = hist[["Close"]].copy()
     prices.index.name = "Date"
     prices = prices.reset_index()
-    prices["Date"] = pd.to_datetime(prices["Date"]).dt.tz_localize(None)
+    prices["Date"] = pd.to_datetime(prices["Date"]).dt.tz_localize(None).astype("datetime64[ns]")
 
     # Normalize price to currency (GBp → GBP for UK stocks)
     currency = stock.info.get("currency", "")
@@ -235,8 +330,31 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> pd.DataFrame:
     # ── 5. Calculate P/E ────────────────────────────────────────────
     merged["ta_pe"] = merged["Close"] / merged["ta_eps_ttm"]
 
-    # ── 6. Clean up ─────────────────────────────────────────────────
-    result = merged[["Date", "Close", "ta_eps_ttm", "ta_pe"]].copy()
+    # ── 6. Calculate dividend yield (if data available) ─────────────
+    div_series = fetch_historical_dividends(stock, period=period)
+    if not div_series.empty:
+        # Normalize dividend currency (GBp → GBP for UK stocks)
+        if currency == "GBp":
+            div_series = div_series / 100
+        print(f"  Dividend payouts: {len(div_series)} in last {period}")
+
+        # Compute TTM dividend sum for each price date
+        ttm_div = compute_ttm_dividends(merged["Date"], div_series)
+
+        # Merge TTM dividends into the result
+        ttm_div_df = ttm_div.reset_index()
+        ttm_div_df.columns = ["Date", "ta_div_ttm"]
+        merged = pd.merge(merged, ttm_div_df, on="Date", how="left")
+
+        # Calculate dividend yield: (TTM Div / Close) × 100
+        merged["ta_div_yield"] = (merged["ta_div_ttm"] / merged["Close"]) * 100
+    else:
+        print(f"  No dividend data for {ticker}")
+        merged["ta_div_ttm"] = float("nan")
+        merged["ta_div_yield"] = float("nan")
+
+    # ── 7. Clean up ─────────────────────────────────────────────────
+    result = merged[["Date", "Close", "ta_eps_ttm", "ta_pe", "ta_div_ttm", "ta_div_yield"]].copy()
     # Drop rows before we had any valid EPS
     result = result.dropna(subset=["ta_eps_ttm", "ta_pe"])
 
@@ -260,7 +378,7 @@ def bulk_download() -> None:
     tickers = list(ticker_map.values())
 
     print(f"Loaded {len(tickers)} tickers from '{input_csv}'.")
-    print(f"Downloading P/E data (quarterly EPS, TTM)...\n")
+    print(f"Downloading P/E and dividend data (quarterly EPS, TTM)...\n")
 
     for original_ticker, yf_ticker in ticker_map.items():
         safe_filename = original_ticker.replace("/", "_")
@@ -276,7 +394,12 @@ def bulk_download() -> None:
             result = result.sort_values("Date").reset_index(drop=True)
             result.to_csv(filepath, index=False)
             print(f"  Saved {len(result)} rows to {filepath}")
-            print(f"  Latest P/E: {result['ta_pe'].iloc[-1]:.2f}\n")
+            print(f"  Latest P/E: {result['ta_pe'].iloc[-1]:.2f}", end="")
+            if "ta_div_yield" in result.columns and pd.notna(result["ta_div_yield"].iloc[-1]):
+                print(f"  | Div Yield: {result['ta_div_yield'].iloc[-1]:.2f}%")
+            else:
+                print()
+            print()
 
         except Exception as e:
             print(f"  Error processing {yf_ticker}: {e}\n")
