@@ -4,83 +4,84 @@
 
 ```
 app/
-  ticker-retriever/     # Downloads daily OHLCV from Yahoo Finance → data/market-data/*.csv
-    download_tickers.py  # Bulk OHLCV download from config/ticker_list.csv
-    download_stock_info.py  # P/E ratio from quarterly/annual EPS → data/pe-data/*.csv
-  ticker-pipeline/      # Prefect orchestration pipeline
-    run_pipeline.py
-    __init__.py
-  calculate-ta/         # Modular TA indicator scripts → data/ta-data/*.csv (merged)
-    common.py            # Shared: read_yfinance_csv(), main() pipeline runner, progress bars
-    run_calculation.py   # Orchestrator — runs all modules in dependency order
-    README.md            # Module documentation
+  ticker-retriever/     # Downloads OHLCV from Yahoo Finance
+    download_tickers.py       # Bulk OHLCV → data/market-data/*.csv
+    download_stock_info.py    # P/E ratios → data/pe-data/*.csv
+  ticker-pipeline/      # Prefect flow orchestrating the full pipeline
+  calculate-ta/         # TA indicator modules (see README.md for full docs)
+    common.py               # Shared: read_yfinance_csv(), main() thread-pool runner
+    run_calculation.py      # Orchestrator — runs modules in parallel, then merges
+  backtest/               # VectorBT backtesting (NG.L-focused)
 config/
-  ticker_list.csv        # Ticker list: Company, Ticker, Major Industry / Sector
+  ticker_list.csv         # Tickers: Company, Ticker, Sector
 data/
-  market-data/          # Input: raw OHLCV CSVs (one per ticker) — gitignored
-  pe-data/              # Output: P/E ratio CSVs (Date, Close, ta_eps_ttm, ta_pe)
-  ta-data/              # Output: progressively enriched CSVs
+  market-data/            # Input: raw OHLCV CSVs (gitignored, regenerated)
+  pe-data/                # Output: {ticker}_PE.csv, {ticker}_fundamentals.csv
+  ta-data/                # Output: {ticker}_ta_{type}.csv + merged {ticker}.csv
+  analysis-data/          # Final merged CSVs (market + TA + P/E)
 ```
 
 ## Commands
 
 ```bash
-# 1. Download market data (activate venv first)
+# 1. Download data (activate venv first)
 python app/ticker-retriever/download_tickers.py
-
-# 1b. Download P/E ratios from quarterly/annual EPS → data/pe-data/*.csv
 python app/ticker-retriever/download_stock_info.py
 
-# 2. Run all TA modules in order (or pick specific ones)
-python app/calculate-ta/run_calculation.py              # all, in dependency order
+# 2. TA indicators (all modules run in PARALLEL)
+python app/calculate-ta/run_calculation.py              # all 7 modules
 python app/calculate-ta/run_calculation.py trend momentum  # subset
+python app/calculate-ta/run_calculation.py --dry-run     # preview only
 
-# 3. Or run individual modules
-python app/calculate-ta/calculate_trend.py
-python app/calculate-ta/calculate_momentum.py
-python app/calculate-ta/calculate_volume.py
-python app/calculate-ta/calculate_volatility.py
-python app/calculate-ta/calculate_regime.py
-python app/calculate-ta/calculate_structure.py
-python app/calculate-ta/calculate_return.py
+# 3. Full Prefect pipeline (downloads + TA + merge analysis)
+python -m app.ticker_pipeline.run_pipeline
+python -m app.ticker_pipeline.run_pipeline trend momentum
+
+# 4. Backtest (uses data/ta-data/NG.L.csv)
+python app/backtest/backtest_ng.py
+python app/backtest/backtest_ng.py --strategy supertrend
+
+# 5. Tests
+python run_test.py                              # all tests
+python run_test.py calculate-ta                 # TA module tests only
+python run_test.py ticker-retriever             # download script tests only
 ```
-
-## Pipeline dependency order
-
-```
-trend → momentum → volume → volatility → regime → structure → return
-```
-
-- **`calculate_trend.py`** must run first — it creates the initial TA CSV from raw market data.
-- **`calculate_return.py`** is independent — it only needs raw OHLCV, can run anytime.
-- All other modules read from `data/market-data/` and merge-add columns to `data/ta-data/*.csv`.
-
-## What each module computes
-
-| Module | Indicators |
-|--------|-----------|
-| `calculate_trend.py` | EMA20/50/200, SuperTrend (+ direction/upper/lower bands), SMA10/20/50, MA slopes (20/50), price/MA20 ratio |
-| `calculate_momentum.py` | RSI(14), MACD (+ signal + histogram), ROC(20) |
-| `calculate_volume.py` | OBV, CMF(20), VWAP, OFI, log volume |
-| `calculate_volatility.py` | ATR(14), Bollinger Bands(20,2) |
-| `calculate_regime.py` | GARCH(1,1) vol forecast, 3-state HMM regime, log return |
-| `calculate_structure.py` | Swing highs/lows, HH/HL/LH/LL, BOS, CHoCH, nearest support/resistance |
-| `calculate_return.py` | Forward returns: 5d/10d/20d |
-
-All output columns use `ta_` prefix (e.g. `ta_rsi14`, `ta_ema20`).
 
 ## Architecture
 
-- **Modular pipeline**: Each module's `process_csv()` detects if the output CSV exists and merges (preserves prior columns).
-- **Shared infrastructure**: `common.py` exports `main()` (ThreadPoolExecutor, max_workers=10), `read_yfinance_csv()`, and progress helpers.
-- **Adding a new module**: Copy the pattern from an existing `calculate_*.py` — implement `compute_*`, `compute_*_columns()`, `process_csv()`, and call `main()` from the `if __name__ == "__main__"` block. Register the module in `run_calculation.py` MODULES/ALL_ORDER dicts.
-- **Output**: One CSV per ticker in `data/ta-data/`, sorted by `Date`.
+- **All 7 TA modules are independent** — each reads raw OHLCV from `data/market-data/`. No inter-module dependency.
+- **Parallel execution**: `run_calculation.py` runs modules via `ThreadPoolExecutor(max_workers=7)`, then merges outputs.
+- **Output files**: Per-module output `{ticker}_ta_{type}.csv` (Date + only that module's `ta_` columns), merged into `{ticker}.csv` (Date + all `ta_` columns).
+- **Full pipeline**: Prefect flow downloads OHLCV + P/E in parallel → runs TA → merges market+TA+PE into `data/analysis-data/{ticker}.csv`.
+
+## Adding a new module
+
+1. Create `app/calculate-ta/calculate_<name>.py` with:
+   - `compute_<name>_columns(...)` → dict of `col_name → list`
+   - `process_csv(input_path, output_path, total_files, current_file)` → row count
+   - Call `main()` from `common.py` at the bottom
+2. Register in `run_calculation.py` `MODULES` and `ALL_ORDER` dicts.
+
+## TA module index
+
+| Module | Key indicators |
+|--------|---------------|
+| `calculate_trend.py` | EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA20 ratio |
+| `calculate_momentum.py` | RSI(14), MACD (line/signal/histogram), ROC(20) |
+| `calculate_volume.py` | OBV, CMF(20), VWAP(20), OFI, log volume |
+| `calculate_volatility.py` | ATR(14), Bollinger Bands(20,2) |
+| `calculate_regime.py` | GARCH(1,1) vol forecast, 3-state HMM regime |
+| `calculate_structure.py` | Swing highs/lows, HH/HL/LH/LL, BOS, CHoCH, S/R |
+| `calculate_return.py` | Forward returns: 5d/10d/20d |
+
+All output columns use `ta_` prefix. Module details are in `app/calculate-ta/README.md`.
 
 ## Gotchas
 
 - **Activate venv** before running anything.
-- **yfinance CSV header**: Two-row header (ticker name + price labels). `read_yfinance_csv()` auto-detects it — modules read columns by name only (`Date`, `Open`, `High`, `Low`, `Close`, `Volume`).
-- **Ticker list**: Edit `config/ticker_list.csv` (columns: Company, Ticker, Major Industry / Sector). Periods auto-converted (`BRK.B` → `BRK-B`). Suffixes like `.L` preserved.
-- **Git-ignored**: `data/market-data/*.csv` (regenerated each download). `data/ta-data/` is NOT gitignored.
-- **Regime module deps**: `calculate_regime.py` requires `arch` and `hmmlearn` — heavy ML packages.
-- **Tests**: Run per-module with `pytest app/calculate-ta/test_calculate_*.py`.
+- **yfinance CSV header**: Two-row (sometimes three-row) header. `read_yfinance_csv()` auto-detects it. Modules read columns by name only (`Date`, `Open`, `High`, `Low`, `Close`, `Volume`).
+- **Ticker list**: Edit `config/ticker_list.csv` (columns: Ticker, Company, Major Industry / Sector). Periods auto-converted (`BRK.B` → `BRK-B`). Suffixes like `.L` preserved.
+- **Git-ignored**: `data/market-data/*.csv` is gitignored. Other `data/` subdirs contain tracked output files.
+- **Regime module**: Requires `arch` + `hmmlearn` (heavy ML packages). Install via `app/calculate-ta/requirements.txt`.
+- **Test files**: Located in `app/calculate-ta/tests/` and `app/ticker-retriever/tests/` subdirectories. Use `run_test.py` for the correct sys.path setup.
+- **`conftest.py`** adds `app/calculate-ta/` and `app/ticker-retriever/` to `sys.path` so tests can import sibling modules directly.
