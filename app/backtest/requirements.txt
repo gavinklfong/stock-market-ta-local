@@ -1,0 +1,23 @@
+# Direct dependencies for app/backtest/backtest_ng.py
+# Installed via: pip install -r requirements.txt
+#
+# Direct imports: numpy, pandas, quantstats, vectorbt, plotly
+# Already present in venv: numpy, pandas, plotly
+# New installs required: vectorbt, quantstats (and their transitive deps)
+
+vectorbt>=1.1.2
+quantstats>=0.0.86
+
+# --- Transitive dependencies (auto-resolved by pip) ---
+# vectorbt pulls in: numpy, pandas, scipy, matplotlib, plotly, scikit-learn,
+#   requests, pytz, ipywidgets (which pulls in ipython, comm, traitlets,
+#   widgetsnbextension, jupyterlab_widgets)
+# quantstats pulls in: seaborn, yfinance
+# matplotlib pulls in: contourpy, cycler, fonttools, kiwisolver, packaging,
+#   pillow, pyparsing, numpy
+# scikit-learn pulls in: joblib, threadpoolctl, numpy
+# yfinance pulls in: beautifulsoup4, curl_cffi, lxml, multitasking, peewee,
+#   platformdirs, protobuf, requests, websockets
+# seaborn pulls in: matplotlib, numpy, pandas, scipy
+# ipython pulls in: jedi, prompt_toolkit, matplotlib-inline, pexpect,
+#   psutil, pygments, stack_data, traitlets

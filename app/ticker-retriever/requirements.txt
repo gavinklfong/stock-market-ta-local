@@ -1,2 +1,16 @@
+# Direct dependencies
 yfinance>=0.2.40
 pandas>=2.0.0
+
+# Transitive dependencies (required by yfinance at runtime)
+beautifulsoup4>=4.11.1
+curl_cffi>=0.15
+lxml>=4.9.0
+multitasking>=0.0.7
+numpy>=1.16.5
+peewee>=3.16.2
+platformdirs>=2.0.0
+protobuf>=3.19.0
+pytz>=2022.5
+requests>=2.31
+websockets>=13
