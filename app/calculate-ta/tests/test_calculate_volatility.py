@@ -1,4 +1,4 @@
-"""Unit tests for calculate_volatility.py — ATR, Bollinger Bands, Band Width, %B."""
+"""Unit tests for calculate_volatility.py — ATR, Bollinger Bands, Band Width, %B, Historical Volatility."""
 
 import math
 import os
@@ -11,6 +11,7 @@ import pytest
 from calculate_volatility import (
     compute_atr,
     compute_bollinger_bands,
+    compute_historical_volatility,
     compute_volatility_columns,
 )
 
@@ -366,3 +367,113 @@ class TestBollingerPercentB:
         # With tight prices, %B should be reasonable (not NaN or Inf)
         for v in valid_pctb:
             assert math.isfinite(v)
+
+
+# ---------------------------------------------------------------------------
+# TestComputeHistoricalVolatility
+# ---------------------------------------------------------------------------
+
+
+class TestComputeHistoricalVolatility:
+    def test_length(self):
+        closes = _make_sample(n=50)[2]
+        result = compute_historical_volatility(closes, period=20)
+        assert len(result) == 50
+
+    def test_first_values_are_none(self):
+        """HV needs at least `period` log returns; first valid at index `period`."""
+        closes = _make_sample(n=50)[2]
+        result = compute_historical_volatility(closes, period=20)
+        for i in range(20):
+            assert result[i] is None
+
+    def test_returns_positive_for_varying_prices(self):
+        """HV should be positive when prices vary."""
+        closes = _make_sample(n=100)[2]
+        result = compute_historical_volatility(closes, period=20)
+        valid = [v for v in result if v is not None]
+        assert len(valid) > 0
+        for v in valid:
+            assert v > 0
+
+    def test_zero_for_constant_prices(self):
+        """With constant prices, log returns are 0 so HV should be 0."""
+        closes = [100.0] * 50
+        result = compute_historical_volatility(closes, period=20)
+        for i in range(20, len(closes)):
+            assert result[i] == pytest.approx(0.0)
+
+    def test_short_series_returns_all_none(self):
+        """When series is shorter than period + 1, all values are None."""
+        closes = [100.0, 101.0, 102.0]
+        result = compute_historical_volatility(closes, period=20)
+        assert all(v is None for v in result)
+
+    def test_annualization(self):
+        """Annualized HV should be non_annualized * sqrt(252)."""
+        np.random.seed(42)
+        closes = [100.0]
+        for _ in range(49):
+            closes.append(closes[-1] * (1 + np.random.normal(0, 0.01)))
+        result_ann = compute_historical_volatility(closes, period=20, annualize=True)
+        result_raw = compute_historical_volatility(closes, period=20, annualize=False)
+        valid_ann = [v for v in result_ann if v is not None]
+        valid_raw = [v for v in result_raw if v is not None]
+        assert len(valid_ann) > 0
+        assert len(valid_raw) > 0
+        for a, r in zip(valid_ann, valid_raw):
+            assert a == pytest.approx(r * math.sqrt(252))
+
+    def test_increasing_hvol_with_widening_volatility(self):
+        """HV should increase when price volatility increases over time."""
+        np.random.seed(99)
+        closes = [100.0]
+        for i in range(49):
+            vol = 0.005 + i * 0.001  # volatility ramps up
+            closes.append(closes[-1] * (1 + np.random.normal(0, vol)))
+        result = compute_historical_volatility(closes, period=20)
+        valid = [v for v in result if v is not None]
+        assert len(valid) > 0
+        # Last value should be higher than first (generally)
+        assert valid[-1] > valid[0]
+
+    def test_first_valid_value(self):
+        """Verify first valid HV value against manual calculation."""
+        np.random.seed(42)
+        closes = [100.0]
+        for _ in range(49):
+            closes.append(closes[-1] * (1 + np.random.normal(0, 0.01)))
+        period = 20
+        result = compute_historical_volatility(closes, period=period, annualize=False)
+        # Manually compute: log returns for the window
+        log_returns = [math.log(closes[i] / closes[i - 1]) for i in range(1, period + 1)]
+        mean = sum(log_returns) / period
+        variance = sum((r - mean) ** 2 for r in log_returns) / period
+        expected = math.sqrt(variance)  # non-annualized
+        assert result[period] == pytest.approx(expected)
+
+
+# ---------------------------------------------------------------------------
+# TestComputeVolatilityColumnsWithHvol
+# ---------------------------------------------------------------------------
+
+
+class TestComputeVolatilityColumnsWithHvol:
+    def test_returns_hvol20_key(self):
+        highs, lows, closes = _make_sample(n=50)
+        result = compute_volatility_columns(highs, lows, closes, 50)
+        assert "ta_hvol20" in result
+
+    def test_hvol20_none_before_period(self):
+        highs, lows, closes = _make_sample(n=50)
+        result = compute_volatility_columns(highs, lows, closes, 50)
+        for i in range(20):
+            assert result["ta_hvol20"][i] is None
+
+    def test_hvol20_positive_with_varying_prices(self):
+        highs, lows, closes = _make_sample(n=100)
+        result = compute_volatility_columns(highs, lows, closes, 100)
+        valid_hvol = [v for v in result["ta_hvol20"] if v is not None]
+        assert len(valid_hvol) > 0
+        for v in valid_hvol:
+            assert v > 0

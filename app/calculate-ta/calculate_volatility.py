@@ -4,6 +4,9 @@ import pandas as pd
 
 from common import main, read_yfinance_csv
 
+# Standard trading days per year for annualization
+_ANNUALIZATION_FACTOR = 252
+
 
 def compute_atr(highs, lows, closes, period=14):
     """Compute Wilder's ATR. Returns list aligned with input."""
@@ -59,6 +62,40 @@ def compute_bollinger_bands(closes, period=20, num_std=2.0):
     return {"upper": upper, "middle": middle, "lower": lower}
 
 
+def compute_historical_volatility(closes, period=20, annualize=True):
+    """Compute Historical Volatility from log returns.
+
+    HV is the standard deviation of log returns over *period* bars,
+    optionally annualised by multiplying by sqrt(252).
+
+    Returns a list aligned with *closes*; ``None`` where insufficient data.
+    """
+    n = len(closes)
+    result = [None] * n
+
+    if n < period + 1:
+        return result
+
+    # Build log returns: ln(close[i] / close[i-1])
+    log_returns = [0.0] * n
+    for i in range(1, n):
+        if closes[i] > 0 and closes[i - 1] > 0:
+            log_returns[i] = math.log(closes[i] / closes[i - 1])
+        else:
+            log_returns[i] = 0.0
+
+    factor = math.sqrt(_ANNUALIZATION_FACTOR) if annualize else 1.0
+
+    for i in range(period, n):
+        window = log_returns[i - period + 1: i + 1]
+        mean = sum(window) / period
+        variance = sum((r - mean) ** 2 for r in window) / period
+        std = math.sqrt(variance)
+        result[i] = std * factor
+
+    return result
+
+
 def compute_volatility_columns(highs, lows, closes, n):
     """Compute all volatility indicator columns for a single ticker's data."""
     ta_atr = compute_atr(highs, lows, closes, 14) if n >= 15 else [None] * n
@@ -79,6 +116,8 @@ def compute_volatility_columns(highs, lows, closes, n):
                 and bb["upper"][i] != bb["lower"][i]):
             ta_bband_pctb[i] = (closes[i] - bb["lower"][i]) / (bb["upper"][i] - bb["lower"][i])
 
+    ta_hvol20 = compute_historical_volatility(closes) if n >= 21 else [None] * n
+
     return {
         "ta_atr14": ta_atr,
         "ta_normalized_atr14": ta_normalized_atr14,
@@ -87,6 +126,7 @@ def compute_volatility_columns(highs, lows, closes, n):
         "ta_bband_lower": bb["lower"],
         "ta_bband_width": ta_bband_width,
         "ta_bband_pctb": ta_bband_pctb,
+        "ta_hvol20": ta_hvol20,
     }
 
 
@@ -116,6 +156,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volatility",
-    description="volatility indicators: ATR(14), Bollinger Bands(20,2), Band Width(20), %B(20)",
+    description="volatility indicators: ATR(14), Bollinger Bands(20,2), Band Width(20), %B(20), Historical Volatility(20, annualized)",
     process_csv_fn=process_csv,
 )

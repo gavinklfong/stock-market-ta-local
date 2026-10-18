@@ -53,6 +53,7 @@ All technical indicators are grouped by analysis category below. Each module pro
 | | `ta_normalized_atr14` | ATR / Close — volatility as a percentage of price |
 | | `ta_bband_upper`, `ta_bband_lower` | Bollinger Bands upper/lower (20-period, 2σ) |
 | | `ta_bband_middle` | Bollinger middle = SMA(20) |
+| | `ta_hvol20` | Historical Volatility (20-period log-return std dev, annualized) |
 | **Regime** | `ta_hmm_regime` | HMM regime state: 0 = Bull, 1 = Bear, 2 = Volatile |
 | | `ta_hmm_regime_prob_0/1/2` | Posterior probability for Bull, Bear, Volatile |
 | | `ta_garch_vol`, `ta_garch_sq` | GARCH(1,1) conditional volatility and variance |
@@ -186,14 +187,16 @@ All technical indicators are grouped by analysis category below. Each module pro
 | `ta_bband_upper` | float | Bollinger Bands upper (20, 2σ) |
 | `ta_bband_middle` | float | Bollinger Bands middle = SMA(20) |
 | `ta_bband_lower` | float | Bollinger Bands lower (20, 2σ) |
+| `ta_hvol20` | float | Historical Volatility (20-period, annualized) |
 
 **Calculation logic:**
 
 - **ATR(14)** — Wilder's ATR. True Range = `max(High − Low, |High − prev_close|, |Low − prev_close|)`. First TR = High − Low (no prior close). Seed ATR = SMA of first 14 TRs. Subsequent: `TR × k + prev_ATR × (1−k)` where `k = 2/(14+1)`.
 - **Normalized ATR** — `ATR / Close`, giving ATR as a fraction of price.
 - **Bollinger Bands(20, 2)** — Middle = SMA(20). Upper/Lower = Middle ± 2 × population standard deviation of the 20-bar window.
+- **Historical Volatility(20)** — Standard deviation of 20-period log returns, annualized by multiplying by √252. Log return = `ln(close[t] / close[t−1])`. Population std dev (not sample). Returns `None` for the first 20 bars.
 
-**Minimum data:** 15 bars for ATR; 20 bars for Bollinger Bands.
+**Minimum data:** 15 bars for ATR; 20 bars for Bollinger Bands; 21 bars for Historical Volatility.
 
 ---
 
