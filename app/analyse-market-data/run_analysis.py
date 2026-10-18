@@ -114,6 +114,28 @@ def analyse_ticker(df):
         ("HMM Regime", regime is not None, f"{regime_labels.get(regime, 'Unknown')} ({_fmt(hmm_0,1)}/{_fmt(hmm_1,1)}/{_fmt(hmm_2,1)})"),
     ]
 
+    # Previous day values for comparison
+    L_prev = df.iloc[-2]
+    prev_close = _v(L_prev, "Close") or _v(L_prev, "Adj Close")
+    prev_rsi = _v(L_prev, "ta_rsi14")
+    prev_macd_hist = _v(L_prev, "ta_macd_histogram")
+    prev_macd_line = _v(L_prev, "ta_macd_line")
+    prev_macd_signal = _v(L_prev, "ta_macd_signal")
+    prev_ema20 = _v(L_prev, "ta_ema20")
+    prev_ema50 = _v(L_prev, "ta_ema50")
+    prev_ema200 = _v(L_prev, "ta_ema200")
+    prev_st_dir = _v(L_prev, "ta_supertrend_direction")
+    prev_cmf = _v(L_prev, "ta_cmf")
+    prev_atr = _v(L_prev, "ta_atr14")
+    prev_norm_atr = _v(L_prev, "ta_normalized_atr14")
+    prev_rroc = _v(L_prev, "ta_roc20")
+    prev_regime = _v(L_prev, "ta_hmm_regime")
+    prev_volume = _v(L_prev, "Volume")
+
+    # Price change
+    price_chg = close - prev_close if close and prev_close else None
+    price_chg_pct = (price_chg / prev_close * 100) if price_chg and prev_close else None
+
     # Changes
     L2 = df.iloc[-3] if len(df) > 2 else P
     changes = []
@@ -137,6 +159,12 @@ def analyse_ticker(df):
         "trend": trend_items, "momentum": momentum_items, "volume": volume_items,
         "volatility": volatility_items, "regime": regime_items,
         "changes": changes, "df": df,
+        # Previous day comparison
+        "prev_close": prev_close, "prev_rsi": prev_rsi, "prev_macd_hist": prev_macd_hist,
+        "prev_ema20": prev_ema20, "prev_ema50": prev_ema50, "prev_ema200": prev_ema200,
+        "prev_st_dir": prev_st_dir, "prev_cmf": prev_cmf, "prev_atr": prev_atr,
+        "prev_norm_atr": prev_norm_atr, "prev_roc": prev_rroc, "prev_regime": prev_regime,
+        "prev_volume": prev_volume, "price_chg": price_chg, "price_chg_pct": price_chg_pct,
     }
 
 
@@ -211,8 +239,108 @@ def build_charts(name, df):
 
 # --- HTML Generation ---
 
+def _change_icon(cur, prev):
+    """Return icon for value change: green up, red down, yellow flat."""
+    if cur is None or prev is None:
+        return "\U0001f7e9"
+    if cur > prev:
+        return "\u2705"
+    elif cur < prev:
+        return "\U0001f534"
+    return "\U0001f7e9"
+
+
+def _price_icon(chg_pct):
+    if chg_pct is None:
+        return "\U0001f7e9"
+    return "\u2705" if chg_pct > 0 else "\U0001f534" if chg_pct < 0 else "\U0001f7e9"
+
+
+def _summary_table_html(report):
+    """Generate the first summary table with current vs previous values and icons."""
+    def cell(val, d=2):
+        if val is None:
+            return "<td style='color:#999'>N/A</td>"
+        if isinstance(val, str):
+            return f"<td>{val}</td>"
+        return f"<td>{val:.{d}f}</td>"
+
+    close = report["close"]
+    rsi = report["rsi"]
+    macd_hist = report["macd_hist"]
+    st_dir = report["trend"][1][1]  # st_bullish bool or None
+    ema_trend = report["trend"][0][1]  # ema_bullish bool or None
+    cmf = report["volume"][1][1]  # cmf_pos bool
+    atr_pct = report["volatility"][0][2].split("%")[0].strip() if report["volatility"][0][2] and "%" in report["volatility"][0][2] else None
+    roc = report["momentum"][3][1]  # roc bullish bool
+    regime = report["regime"][0][2].split("(")[0].strip()  # "Bull", "Bear", "Volatile"
+
+    # Format price change
+    pchg = report.get("price_chg")
+    pchg_pct = report.get("price_chg_pct")
+    if pchg is not None and pchg_pct is not None:
+        price_detail = f"{pchg:+.2f} ({pchg_pct:+.2f}%)"
+    else:
+        price_detail = f"{_fmt(close)}"
+
+    # Format SuperTrend direction
+    st_cur = "Uptrend" if st_dir == True else "Downtrend" if st_dir == False else "N/A"
+    st_prev = "Uptrend" if report.get("prev_st_dir") == 1 else "Downtrend" if report.get("prev_st_dir") == 0 else "N/A"
+
+    # Format MACD direction
+    macd_cur = "Bullish" if macd_hist and macd_hist > 0 else "Bearish" if macd_hist is not None else "N/A"
+    macd_prev = "Bullish" if report.get("prev_macd_hist") and report["prev_macd_hist"] > 0 else "Bearish" if report.get("prev_macd_hist") is not None else "N/A"
+
+    # Format RSI state
+    rsi_state = ""
+    if rsi is not None:
+        if rsi > 70:
+            rsi_state = " (Overbought)"
+        elif rsi < 30:
+            rsi_state = " (Oversold)"
+    prev_rsi_state = ""
+    if report.get("prev_rsi") is not None:
+        pv = report["prev_rsi"]
+        if pv > 70:
+            prev_rsi_state = " (Overbought)"
+        elif pv < 30:
+            prev_rsi_state = " (Oversold)"
+
+    # Format EMA trend
+    ema_cur = "Bullish" if ema_trend == True else "Bearish" if ema_trend == False else "N/A"
+    ema_prev = "Bullish" if report.get("prev_ema20") and report.get("prev_ema50") and report.get("prev_ema200") and report["prev_ema20"] > report["prev_ema50"] > report["prev_ema200"] else "Bearish" if report.get("prev_ema20") and report.get("prev_ema50") and report.get("prev_ema200") and report["prev_ema20"] < report["prev_ema50"] < report["prev_ema200"] else "N/A"
+
+    # Format regime
+    regime_labels = {0: "Bull", 1: "Bear", 2: "Volatile"}
+    regime_cur = regime
+    regime_prev_label = regime_labels.get(int(report.get("prev_regime", -1)), "N/A")
+
+    def cmp_row(label, cur_val, prev_val, cur_icon, prev_icon):
+        return f"<tr><td>{label}</td>{cell(cur_val)}<td>{cur_icon}</td>{cell(prev_val)}<td>{prev_icon}</td></tr>"
+
+    return f"""
+<div class="summary-table" style="background:#fff;border-radius:8px;padding:16px;margin:12px 0;box-shadow:0 1px 3px rgba(0,0,0,0.1)">
+<h3 style="margin-top:0;color:#333">Quick Summary</h3>
+<table style="border-collapse:collapse;width:100%">
+<thead><tr style="border-bottom:2px solid #2196f3"><th style="text-align:left;padding:8px;color:#333">Metric</th><th style="text-align:center;padding:8px;color:#333">Today</th><th style="text-align:center;padding:8px;color:#333">📊</th><th style="text-align:center;padding:8px;color:#333">Prev</th><th style="text-align:center;padding:8px;color:#333">📊</th></tr></thead>
+<tbody>
+{cmp_row("Close", f"{_fmt(close)} ({pchg:+.2f} / {pchg_pct:+.2f}%)" if pchg_pct is not None else f"{_fmt(close)}", _fmt(report.get("prev_close")), _price_icon(report.get("price_chg_pct")), "\U0001f7e9")}
+{cmp_row("RSI(14)", f"{_fmt(rsi,1)}{rsi_state}", _fmt(report.get("prev_rsi")) + prev_rsi_state, _change_icon(rsi, report.get("prev_rsi")), _change_icon(report.get("prev_rsi"), rsi))}
+{cmp_row("MACD Hist", macd_cur, macd_prev, _emoji(macd_hist > 0 if macd_hist else None), _emoji(report.get("prev_macd_hist") and report["prev_macd_hist"] > 0 if report.get("prev_macd_hist") else None))}
+{cmp_row("SuperTrend", st_cur, st_prev, _emoji(st_dir), _emoji(report.get("prev_st_dir") == 1))}
+{cmp_row("EMA Trend", ema_cur, ema_prev, _emoji(ema_trend), _emoji(report.get("prev_ema20") and report.get("prev_ema50") and report.get("prev_ema200")))}
+{cmp_row("CMF(20)", "Positive" if cmf else "Negative" if cmf is not None else "N/A", "Positive" if report.get("prev_cmf") else "Negative" if report.get("prev_cmf") is not None else "N/A", _emoji(cmf), _emoji(report.get("prev_cmf")))}
+{cmp_row("Regime", regime_cur, regime_prev_label, "\U0001f7e9", "\U0001f7e9")}
+{cmp_row("ROC(20)", "Positive" if roc else "Negative" if roc is not None else "N/A", "Positive" if report.get("prev_roc") else "Negative" if report.get("prev_roc") is not None else "N/A", _emoji(roc), _emoji(report.get("prev_roc")))}
+</tbody>
+</table>
+</div>"""
+
+
 def _card_html(report):
     """Generate HTML for a single ticker summary card."""
+    summary_html = _summary_table_html(report)
+
     def row(emoji, label, val):
         return f"<tr><td>{emoji or ''}</td><td><b>{label}</b></td><td>{val}</td></tr>"
 
@@ -232,6 +360,7 @@ def _card_html(report):
 <div class="card">
 <h3>{report['ticker']} -- {report['date']} -- Close: {_fmt(report['close'])}</h3>
 {changes_html}
+{summary_html}
 <table>{trend_html}{mom_html}{vol_html}{vola_html}{reg_html}</table>
 </div>"""
 
