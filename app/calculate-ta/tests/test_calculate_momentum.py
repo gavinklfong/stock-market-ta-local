@@ -8,12 +8,14 @@ import pandas as pd
 import pytest
 
 from calculate_momentum import (
+    compute_cci,
     compute_ema,
     compute_macd,
     compute_momentum_columns,
     compute_roc,
     compute_rsi,
     compute_stochastic,
+    compute_tsi,
     compute_williams_r,
 )
 
@@ -664,7 +666,7 @@ class TestComputeMomentumColumns:
         assert set(cols.keys()) == {
             "ta_rsi14", "ta_macd_line", "ta_macd_signal",
             "ta_macd_histogram", "ta_roc20", "ta_stoch_k", "ta_stoch_d",
-            "ta_williams_r",
+            "ta_williams_r", "ta_cci", "ta_tsi",
         }
 
     def test_all_same_length(self):
@@ -696,6 +698,8 @@ class TestComputeMomentumColumns:
         assert cols["ta_rsi14"] == [None] * 5
         assert cols["ta_roc20"] == [None] * 5
         assert cols["ta_williams_r"] == [None] * 5
+        assert cols["ta_cci"] == [None] * 5
+        assert cols["ta_tsi"] == [None] * 5
         # MACD may produce some values even for short data
         assert len(cols["ta_macd_line"]) == 5
 
@@ -707,6 +711,21 @@ class TestComputeMomentumColumns:
         assert len(valid) > 0
         for v in valid:
             assert -100.0 <= v <= 0.0
+
+    def test_cci_present(self):
+        """CCI should be present and have valid values."""
+        highs, lows, closes = _make_ohlcv(100)
+        cols = compute_momentum_columns(closes, highs, lows, 100)
+        valid = [v for v in cols["ta_cci"] if v is not None]
+        assert len(valid) > 0
+
+    def test_tsi_present(self):
+        """TSI should be present and have valid values."""
+        np.random.seed(0)
+        closes = [100.0 + i * 0.1 + np.random.uniform(-1, 1) for i in range(100)]
+        cols = compute_momentum_columns(closes, [c + 1 for c in closes], [c - 1 for c in closes], 100)
+        valid = [v for v in cols["ta_tsi"] if v is not None]
+        assert len(valid) > 0
 
     def test_all_same_length(self):
         closes = _make_closes(100)
@@ -889,6 +908,10 @@ class TestEdgeCases:
         assert all(v is None for v in cols["ta_roc20"])
         assert len(cols["ta_williams_r"]) == 2
         assert all(v is None for v in cols["ta_williams_r"])
+        assert len(cols["ta_cci"]) == 2
+        assert all(v is None for v in cols["ta_cci"])
+        assert len(cols["ta_tsi"]) == 2
+        assert all(v is None for v in cols["ta_tsi"])
 
     def test_computing_momentum_with_nan_values(self):
         """Should handle NaN gracefully (convert to float)."""
@@ -900,3 +923,204 @@ class TestEdgeCases:
         lows_float = [float(v) if v is not None else 0.0 for v in lows]
         cols = compute_momentum_columns(closes_float, highs_float, lows_float, 5)
         assert len(cols["ta_rsi14"]) == 5
+
+
+# ---------------------------------------------------------------------------
+# TestComputeCCI
+# ---------------------------------------------------------------------------
+
+
+class TestComputeCCI:
+    """Tests for compute_cci (Commodity Channel Index)."""
+
+    def test_cci_length(self):
+        highs, lows, closes = _make_ohlcv(100)
+        result = compute_cci(highs, lows, closes, 20)
+        assert len(result) == 100
+
+    def test_cci_short_data(self):
+        """Returns all None when data < period."""
+        highs = [101.0] * 10
+        lows = [99.0] * 10
+        closes = [100.0] * 10
+        result = compute_cci(highs, lows, closes, 20)
+        assert all(v is None for v in result)
+
+    def test_cci_first_valid_index(self):
+        """First valid CCI is at index period-1."""
+        highs, lows, closes = _make_ohlcv(50)
+        result = compute_cci(highs, lows, closes, 20)
+        assert result[0] is None
+        for i in range(19):  # indices 0..18
+            assert result[i] is None
+        assert result[19] is not None  # index 19 = period-1
+
+    def test_cci_mismatched_lengths(self):
+        """Raises AssertionError when input lengths differ."""
+        with pytest.raises(AssertionError):
+            compute_cci([100.0, 101.0], [99.0], [100.0, 101.0], 2)
+
+    def test_cci_constant_prices(self):
+        """CCI is None when all prices are constant (mean deviation = 0)."""
+        highs = [100.0] * 30
+        lows = [100.0] * 30
+        closes = [100.0] * 30
+        result = compute_cci(highs, lows, closes, 20)
+        assert all(v is None for v in result[19:])
+
+    def test_cci_varying_prices_produce_values(self):
+        """CCI should produce non-None values when prices vary."""
+        highs, lows, closes = _make_ohlcv(50)
+        result = compute_cci(highs, lows, closes, 20)
+        valid = [v for v in result[20:] if v is not None]
+        assert len(valid) > 0
+
+    def test_cci_oversold_condition(self):
+        """CCI < -100 when close drops well below typical price range."""
+        highs = [100.0] * 60
+        lows = [100.0] * 60
+        # First 40 closes = 100, last 20 closes = very low (10.0)
+        closes = [100.0] * 40 + [10.0] * 20
+        result = compute_cci(highs, lows, closes, 20)
+        # At index 42, window has 22 high closes + 2 low closes → deep oversold
+        assert result[42] is not None
+        assert result[42] < -100  # deep oversold
+
+    def test_cci_overbought_condition(self):
+        """CCI > +100 when close rises well above typical price range."""
+        highs = [200.0] * 60
+        lows = [100.0] * 60
+        closes = [100.0] * 40 + [190.0] * 20
+        result = compute_cci(highs, lows, closes, 20)
+        # At index 42, window has 18 high closes + 2 very high closes → overbought
+        assert result[42] is not None
+        assert result[42] > 100  # overbought
+
+    def test_cci_uptrend_positive_values(self):
+        """In a strong uptrend, CCI tends positive after initial period."""
+        np.random.seed(99)
+        highs = [100.0 + i * 0.5 + np.random.uniform(0, 1) for i in range(50)]
+        lows = [98.0 + i * 0.5 + np.random.uniform(0, 1) for i in range(50)]
+        closes = [100.0 + i * 0.5 + np.random.uniform(-0.5, 0.5) for i in range(50)]
+        result = compute_cci(highs, lows, closes, 20)
+        # After the uptrend establishes, CCI should be mostly positive
+        valid = [v for v in result[30:] if v is not None]
+        if valid:
+            avg = sum(valid) / len(valid)
+            assert avg > -20  # generally positive bias
+
+    def test_cci_custom_period(self):
+        """CCI with a custom period works correctly."""
+        highs, lows, closes = _make_ohlcv(50)
+        result = compute_cci(highs, lows, closes, 10)
+        # First valid at index 9
+        for i in range(9):
+            assert result[i] is None
+        assert result[9] is not None
+        assert result[10] is not None
+
+    def test_cci_mean_deviation_zero_edge(self):
+        """CCI returns None when mean deviation is exactly zero."""
+        # All typical prices are the same → mean deviation = 0
+        highs = [105.0] * 30
+        lows = [95.0] * 30
+        closes = [100.0] * 30
+        result = compute_cci(highs, lows, closes, 20)
+        for i in range(20, 30):
+            assert result[i] is None
+
+
+# ---------------------------------------------------------------------------
+# TestComputeTSI
+# ---------------------------------------------------------------------------
+
+
+class TestComputeTSI:
+    """Tests for compute_tsi (True Strength Index)."""
+
+    def test_tsi_length(self):
+        closes = _make_closes(100)
+        result = compute_tsi(closes, 25, 13)
+        assert len(result) == 100
+
+    def test_tsi_short_data(self):
+        """Returns all None when data < fast + slow + 1."""
+        closes = [100.0] * 30
+        result = compute_tsi(closes, 25, 13)
+        assert all(v is None for v in result)
+
+    def test_tsi_first_valid_index(self):
+        """First valid TSI is approximately at index fast + slow - 1."""
+        np.random.seed(0)
+        closes = [100.0 + i * 0.1 + np.random.uniform(-1, 1) for i in range(100)]
+        result = compute_tsi(closes, 25, 13)
+        # First valid value should be well after fast + slow
+        valid_indices = [i for i, v in enumerate(result) if v is not None]
+        assert len(valid_indices) > 0
+        first_valid = valid_indices[0]
+        # Should be >= fast - 1 (first EMA1 valid) + slow - 1 (second EMA valid)
+        assert first_valid >= 25 + 13 - 3  # loose bound accounting for EMA seeding
+
+    def test_tsi_mismatched_input(self):
+        """TSI only takes closes, no mismatch possible."""
+        closes = _make_closes(50)
+        result = compute_tsi(closes, 25, 13)
+        assert len(result) == 50
+
+    def test_tsi_constant_prices(self):
+        """TSI is None when all prices are constant (changes = 0, abs changes = 0)."""
+        closes = [100.0] * 50
+        result = compute_tsi(closes, 25, 13)
+        valid = [v for v in result if v is not None]
+        assert len(valid) == 0  # all zero changes → double EMA = 0 → den = 0
+
+    def test_tsi_varying_prices_produce_values(self):
+        """TSI should produce non-None values when prices vary."""
+        np.random.seed(0)
+        closes = [100.0 + i * 0.1 + np.random.uniform(-1, 1) for i in range(100)]
+        result = compute_tsi(closes, 25, 13)
+        valid = [v for v in result if v is not None]
+        assert len(valid) > 0
+
+    def test_tsi_uptrend_positive(self):
+        """In a strong uptrend, TSI tends positive."""
+        np.random.seed(0)
+        closes = [100.0 + i * 0.5 + np.random.uniform(-0.5, 0.5)
+                  for i in range(100)]
+        result = compute_tsi(closes, 25, 13)
+        valid = [v for v in result if v is not None]
+        if valid:
+            avg = sum(valid) / len(valid)
+            assert avg > 0  # uptrend → positive TSI
+
+    def test_tsi_downtrend_negative(self):
+        """In a strong downtrend, TSI tends negative."""
+        np.random.seed(0)
+        closes = [200.0 - i * 0.5 + np.random.uniform(-0.5, 0.5)
+                  for i in range(100)]
+        result = compute_tsi(closes, 25, 13)
+        valid = [v for v in result if v is not None]
+        if valid:
+            avg = sum(valid) / len(valid)
+            assert avg < 0  # downtrend → negative TSI
+
+    def test_tsi_custom_periods(self):
+        """TSI with custom fast/slow periods works correctly."""
+        np.random.seed(0)
+        closes = [100.0 + i * 0.5 + np.random.uniform(-0.5, 0.5)
+                  for i in range(80)]
+        result = compute_tsi(closes, 10, 5)
+        # Should have values since n=80 >= fast+slow+1=16
+        valid = [v for v in result if v is not None]
+        assert len(valid) > 0
+
+    def test_tsi_ranging_market_near_zero(self):
+        """In a ranging market, TSI oscillates near zero."""
+        np.random.seed(42)
+        closes = [100.0 + np.random.uniform(-2, 2) for _ in range(100)]
+        result = compute_tsi(closes, 25, 13)
+        valid = [v for v in result if v is not None]
+        if valid:
+            avg = sum(valid) / len(valid)
+            # Average should be near zero for ranging market
+            assert -30 < avg < 30  # loose bound

@@ -36,6 +36,8 @@ All technical indicators are grouped by analysis category below. Each module pro
 | | `ta_supertrend` | SuperTrend indicator line value |
 | | `ta_supertrend_direction` | +1 = uptrend, −1 = downtrend |
 | | `ta_supertrend_upper`, `ta_supertrend_lower` | Active SuperTrend band (upper in downtrend, lower in uptrend) |
+| | `ta_donchian_upper`, `ta_donchian_lower` | Donchian Channel upper (resistance) and lower (support) |
+| | `ta_keltner_upper`, `ta_keltner_lower` | Keltner Channel upper and lower (ATR-based bands around EMA of typical price) |
 | **Momentum** | `ta_rsi14` | Relative Strength Index (14-period, Wilder's smoothing) |
 | | `ta_macd_line` | MACD line (EMA12 − EMA26) |
 | | `ta_macd_signal` | Signal line (EMA9 of MACD line) |
@@ -90,6 +92,10 @@ All technical indicators are grouped by analysis category below. Each module pro
 | `ta_ma20_slope` | float | Change in MA20 over 10-bar lookback |
 | `ta_ma50_slope` | float | Change in MA50 over 10-bar lookback |
 | `ta_price_ma20_ratio` | float | Close / MA20 (price relative to MA20) |
+| `ta_donchian_upper` | float | Donchian Upper channel (highest high over 20-period window) |
+| `ta_donchian_lower` | float | Donchian Lower channel (lowest low over 20-period window) |
+| `ta_keltner_upper` | float | Keltner Upper channel (EMA of typical price + 2×ATR) |
+| `ta_keltner_lower` | float | Keltner Lower channel (EMA of typical price − 2×ATR) |
 
 **Calculation logic:**
 
@@ -98,8 +104,10 @@ All technical indicators are grouped by analysis category below. Each module pro
 - **SMA** — Standard rolling mean over the specified window.
 - **MA Slope** — `(MA_current - MA_lookback_back) / lookback` where lookback = 10.
 - **Price/MA20 Ratio** — `Close / MA20`, `None` when MA20 is null or zero.
+- **Donchian Channels(20)** — Upper channel = highest high over the last 20 bars. Lower channel = lowest low over the last 20 bars. Defines a price envelope; price at the upper band suggests a breakout to new highs, price at the lower suggests a breakdown to new lows. Channel width = upper − lower (volatility measure).
+- **Keltner Channels** — Typical Price (TP) = (High + Low + Close) / 3. Middle line = EMA(TP, 20). Upper band = Middle + 2 × ATR(10). Lower band = Middle − 2 × ATR(10). Similar to Bollinger Bands but uses ATR instead of standard deviation for the bands. Channel width = 4 × ATR.
 
-**Minimum data:** 200 bars for EMA200; 50 for EMA50; 20 for EMA20/SMA20/SMA10.
+**Minimum data:** 200 bars for EMA200; 50 for EMA50; 20 for EMA20/SMA20/SMA10/Donchian/Keltner.
 
 ---
 
@@ -107,7 +115,7 @@ All technical indicators are grouped by analysis category below. Each module pro
 
 **Dependencies:** `pandas` (stdlib: `os`, `sys`, `threading`)
 
-**Input columns:** `Close`
+**Input columns:** `High`, `Low`, `Close`
 
 **Output columns:**
 
@@ -119,6 +127,8 @@ All technical indicators are grouped by analysis category below. Each module pro
 | `ta_macd_histogram` | float | MACD − Signal |
 | `ta_roc20` | float | Rate of Change (20-period), in percent |
 | `ta_williams_r` | float | Williams %R (14-period), range 0 to −100 |
+| `ta_cci` | float | Commodity Channel Index (20-period), no bounds |
+| `ta_tsi` | float | True Strength Index (25, 13), ranges ~−100 to +100 |
 
 **Calculation logic:**
 
@@ -126,8 +136,10 @@ All technical indicators are grouped by analysis category below. Each module pro
 - **MACD** — Fast EMA(12) − Slow EMA(26) gives the MACD line. Signal line = EMA(9) of the MACD line values. Histogram = MACD − Signal.
 - **ROC(20)** — `(close[t] − close[t−20]) / close[t−20] × 100`.
 - **Williams %R(14)** — `(Highest High(14) − Close) / (Highest High(14) − Lowest Low(14)) × −100`. Oscillator ranging from 0 to −100. Overbought above −20, oversold below −80.
+- **CCI(20)** — Commodity Channel Index. Typical Price = `(High + Low + Close) / 3`. CCI = `(TP − SMA(TP)) / (0.015 × Mean Deviation)` where Mean Deviation = mean of `|TP − SMA(TP)|` over 20 bars. No upper/lower bounds — values above +100 suggest overbought, below −100 suggest oversold.
+- **TSI(25, 13)** — True Strength Index. Price changes: `d = close[t] − close[t−1]`. Double EMA of `d` using fast (25) then slow (13) periods. Double EMA of `|d|` the same way. TSI = `100 × double_ema(d) / double_ema(|d|)`. Oscillator roughly in −100 to +100 range. Positive in uptrends, negative in downtrends.
 
-**Minimum data:** 15 bars for RSI; 21 bars for ROC; ~26+ bars for MACD; 14 bars for Williams %R.
+**Minimum data:** 15 bars for RSI; 21 bars for ROC; ~26+ bars for MACD; 14 bars for Williams %R; 20 bars for CCI; 38 bars for TSI.
 
 ---
 

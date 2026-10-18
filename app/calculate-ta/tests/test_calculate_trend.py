@@ -17,6 +17,8 @@ from calculate_trend import (
     compute_trend_columns,
     compute_adx_di,
     compute_aroon,
+    compute_donchian,
+    compute_keltner,
     process_csv,
 )
 
@@ -1129,6 +1131,523 @@ class TestComputeADXDI:
 
 
 # ---------------------------------------------------------------------------
+# Donchian Upper / Lower tests
+# ---------------------------------------------------------------------------
+
+class TestComputeDonchian:
+    """Verify Donchian Upper and Lower computation correctness."""
+
+    def test_donchian_returns_correct_keys(self):
+        """Result dict must contain donchian_upper and donchian_lower."""
+        highs, lows, closes = _make_small_ohlcv(60)
+        result = compute_donchian(highs, lows)
+        assert "donchian_upper" in result
+        assert "donchian_lower" in result
+
+    def test_donchian_returns_correct_length(self):
+        """All lists must match input length."""
+        highs, lows, closes = _make_small_ohlcv(60)
+        result = compute_donchian(highs, lows)
+        assert len(result["donchian_upper"]) == 60
+        assert len(result["donchian_lower"]) == 60
+
+    def test_donchian_too_few_data_points(self):
+        """With fewer than period data points, all values must be None."""
+        highs = [100.0, 101.0]
+        lows = [99.0, 100.0]
+        result = compute_donchian(highs, lows, period=20)
+        assert all(v is None for v in result["donchian_upper"])
+        assert all(v is None for v in result["donchian_lower"])
+
+    def test_donchian_first_valid_index_default_period(self):
+        """First valid value should be at index period-1 (19 for period=20)."""
+        n = 50
+        highs, lows, closes = _make_small_ohlcv(n)
+        result = compute_donchian(highs, lows, period=20)
+
+        for i in range(19):
+            assert result["donchian_upper"][i] is None, (
+                f"donchian_upper at index {i} should be None"
+            )
+            assert result["donchian_lower"][i] is None, (
+                f"donchian_lower at index {i} should be None"
+            )
+        assert result["donchian_upper"][19] is not None
+        assert result["donchian_lower"][19] is not None
+
+    def test_donchian_first_valid_index_custom_period(self):
+        """First valid index scales with period: period-1."""
+        highs, lows, closes = _make_small_ohlcv(30)
+
+        for period in (5, 7, 10, 15, 20):
+            result = compute_donchian(highs, lows, period=period)
+            first_valid = period - 1
+            for i in range(first_valid):
+                assert result["donchian_upper"][i] is None
+                assert result["donchian_lower"][i] is None
+            assert result["donchian_upper"][first_valid] is not None
+            assert result["donchian_lower"][first_valid] is not None
+
+    def test_donchian_upper_is_highest_in_window(self):
+        """Donchian Upper should equal the highest high in the lookback window."""
+        # Create a window where we know the max
+        highs = [10.0] * 50
+        lows = [5.0] * 50
+        closes = [10.0] * 50
+        # Override a peak at index 10
+        highs[10] = 100.0
+
+        result = compute_donchian(highs, lows, period=10)
+
+        # At index 9 (first valid, window [0..9]): no 100 yet
+        # All highs are 10, so upper = 10
+        assert result["donchian_upper"][9] == 10.0
+
+        # At index 10 (window [1..10]): 100 at right edge
+        assert result["donchian_upper"][10] == 100.0
+
+        # At index 18 (window [9..18]): 100 still in window
+        assert result["donchian_upper"][18] == 100.0
+
+        # At index 19 (window [10..19]): 100 still in window (at idx 10)
+        assert result["donchian_upper"][19] == 100.0
+
+        # At index 20 (window [11..20]): 100 is outside, all back to 10
+        assert result["donchian_upper"][20] == 10.0
+
+    def test_donchian_lower_is_lowest_in_window(self):
+        """Donchian Lower should equal the lowest low in the lookback window."""
+        highs = [10.0] * 50
+        lows = [5.0] * 50
+        closes = [10.0] * 50
+        # Override a trough at index 10
+        lows[10] = -50.0
+
+        result = compute_donchian(highs, lows, period=10)
+
+        # At index 9 (window [0..9]): all lows are 5, so lower = 5
+        assert result["donchian_lower"][9] == 5.0
+
+        # At index 10 (window [1..10]): -50 at right edge
+        assert result["donchian_lower"][10] == -50.0
+
+        # At index 18 (window [9..18]): -50 still in window
+        assert result["donchian_lower"][18] == -50.0
+
+        # At index 19 (window [10..19]): -50 still in window
+        assert result["donchian_lower"][19] == -50.0
+
+        # At index 20 (window [11..20]): -50 is outside
+        assert result["donchian_lower"][20] == 5.0
+
+    def test_donchian_manual_calculation(self):
+        """Manually verify Donchian values for a simple constructed dataset."""
+        highs = [10.0, 12.0, 11.0, 13.0, 15.0, 14.0, 16.0, 10.0]
+        lows = [8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 11.0, 14.0]
+        closes = [10.0] * 8
+
+        result = compute_donchian(highs, lows, period=5)
+
+        # Index 4 (first valid, window [0..4]):
+        #   highs = [10, 12, 11, 13, 15], max = 15
+        #   lows = [8, 9, 10, 11, 12], min = 8
+        assert result["donchian_upper"][4] == 15.0
+        assert result["donchian_lower"][4] == 8.0
+
+        # Index 5 (window [1..5]):
+        #   highs = [12, 11, 13, 15, 14], max = 15
+        #   lows = [9, 10, 11, 12, 13], min = 9
+        assert result["donchian_upper"][5] == 15.0
+        assert result["donchian_lower"][5] == 9.0
+
+        # Index 6 (window [2..6]):
+        #   highs = [11, 13, 15, 14, 16], max = 16
+        #   lows = [10, 11, 12, 13, 11], min = 10
+        assert result["donchian_upper"][6] == 16.0
+        assert result["donchian_lower"][6] == 10.0
+
+        # Index 7 (window [3..7]):
+        #   highs = [13, 15, 14, 16, 10], max = 16
+        #   lows = [11, 12, 13, 11, 14], min = 11
+        assert result["donchian_upper"][7] == 16.0
+        assert result["donchian_lower"][7] == 11.0
+
+    def test_donchian_upper_non_decreasing_in_uptrend(self):
+        """In a monotonic uptrend, Donchian Upper should be non-decreasing."""
+        closes = [100.0 + i * 2.0 for i in range(100)]
+        highs = [c + 1.0 for c in closes]
+        lows = [c - 1.0 for c in closes]
+
+        result = compute_donchian(highs, lows, period=20)
+
+        upper_vals = [v for v in result["donchian_upper"] if v is not None]
+        for i in range(1, len(upper_vals)):
+            assert upper_vals[i] >= upper_vals[i - 1], (
+                f"Upper channel decreased at window {i}: {upper_vals[i-1]} -> {upper_vals[i]}"
+            )
+
+    def test_donchian_lower_non_decreasing_in_uptrend(self):
+        """In a monotonic uptrend, Donchian Lower should also be non-decreasing."""
+        closes = [100.0 + i * 2.0 for i in range(100)]
+        highs = [c + 1.0 for c in closes]
+        lows = [c - 1.0 for c in closes]
+
+        result = compute_donchian(highs, lows, period=20)
+
+        lower_vals = [v for v in result["donchian_lower"] if v is not None]
+        for i in range(1, len(lower_vals)):
+            assert lower_vals[i] >= lower_vals[i - 1], (
+                f"Lower channel decreased at window {i}: {lower_vals[i-1]} -> {lower_vals[i]}"
+            )
+
+    def test_donchian_upper_non_increasing_in_downtrend(self):
+        """In a monotonic downtrend, Donchian Upper should be non-increasing."""
+        closes = [100.0 - i * 2.0 for i in range(100)]
+        highs = [c + 1.0 for c in closes]
+        lows = [c - 1.0 for c in closes]
+
+        result = compute_donchian(highs, lows, period=20)
+
+        upper_vals = [v for v in result["donchian_upper"] if v is not None]
+        for i in range(1, len(upper_vals)):
+            assert upper_vals[i] <= upper_vals[i - 1], (
+                f"Upper channel increased at window {i}: {upper_vals[i-1]} -> {upper_vals[i]}"
+            )
+
+    def test_donchian_lower_non_increasing_in_downtrend(self):
+        """In a monotonic downtrend, Donchian Lower should be non-increasing."""
+        closes = [100.0 - i * 2.0 for i in range(100)]
+        highs = [c + 1.0 for c in closes]
+        lows = [c - 1.0 for c in closes]
+
+        result = compute_donchian(highs, lows, period=20)
+
+        lower_vals = [v for v in result["donchian_lower"] if v is not None]
+        for i in range(1, len(lower_vals)):
+            assert lower_vals[i] <= lower_vals[i - 1], (
+                f"Lower channel increased at window {i}: {lower_vals[i-1]} -> {lower_vals[i]}"
+            )
+
+    def test_donchian_upper_ge_lower(self):
+        """Donchian Upper must always be >= Donchian Lower."""
+        highs, lows, closes = _make_small_ohlcv(200)
+        result = compute_donchian(highs, lows)
+
+        for i in range(len(highs)):
+            if result["donchian_upper"][i] is not None and result["donchian_lower"][i] is not None:
+                assert result["donchian_upper"][i] >= result["donchian_lower"][i], (
+                    f"Upper < Lower at index {i}: {result['donchian_upper'][i]} < {result['donchian_lower'][i]}"
+                )
+
+    def test_donchian_channel_width(self):
+        """Channel width (upper - lower) should be positive in volatile data."""
+        highs, lows, closes = _make_small_ohlcv(200)
+        result = compute_donchian(highs, lows)
+
+        valid_indices = [i for i in range(len(highs))
+                         if result["donchian_upper"][i] is not None
+                         and result["donchian_lower"][i] is not None]
+        assert len(valid_indices) > 0
+
+        for i in valid_indices:
+            width = result["donchian_upper"][i] - result["donchian_lower"][i]
+            assert width > 0, f"Negative channel width at index {i}: {width}"
+
+    def test_donchian_with_varying_period(self):
+        """Larger period should produce wider channels on average."""
+        highs, lows, closes = _make_small_ohlcv(200)
+
+        result_5 = compute_donchian(highs, lows, period=5)
+        result_20 = compute_donchian(highs, lows, period=20)
+        result_50 = compute_donchian(highs, lows, period=50)
+
+        # Average channel width should increase with period
+        avg_5 = sum(result_5["donchian_upper"][i] - result_5["donchian_lower"][i]
+                     for i in range(len(highs))
+                     if result_5["donchian_upper"][i] is not None)
+        count_5 = sum(1 for i in range(len(highs))
+                      if result_5["donchian_upper"][i] is not None)
+
+        avg_20 = sum(result_20["donchian_upper"][i] - result_20["donchian_lower"][i]
+                      for i in range(len(highs))
+                      if result_20["donchian_upper"][i] is not None)
+        count_20 = sum(1 for i in range(len(highs))
+                       if result_20["donchian_upper"][i] is not None)
+
+        avg_50 = sum(result_50["donchian_upper"][i] - result_50["donchian_lower"][i]
+                      for i in range(len(highs))
+                      if result_50["donchian_upper"][i] is not None)
+        count_50 = sum(1 for i in range(len(highs))
+                       if result_50["donchian_upper"][i] is not None)
+
+        # Longer lookback windows should generally have wider channels
+        assert avg_50 / count_50 >= avg_5 / count_5, (
+            f"50-period channel {avg_50/count_50} should be >= 5-period {avg_5/count_5}"
+        )
+
+    def test_donchian_all_same_high_low(self):
+        """When all highs are equal and all lows are equal, channels are constant."""
+        highs = [100.0] * 50
+        lows = [90.0] * 50
+        closes = [95.0] * 50
+
+        result = compute_donchian(highs, lows, period=20)
+
+        for i in range(19, 50):
+            assert result["donchian_upper"][i] == 100.0, (
+                f"Index {i}: expected 100.0, got {result['donchian_upper'][i]}"
+            )
+            assert result["donchian_lower"][i] == 90.0, (
+                f"Index {i}: expected 90.0, got {result['donchian_lower'][i]}"
+            )
+
+    def test_donchian_channel_width_is_positive(self):
+        """In any real data, channel width should be strictly positive."""
+        import random
+        random.seed(42)
+        highs = [100.0 + i * 0.5 for i in range(100)]
+        lows = [95.0 + i * 0.5 for i in range(100)]
+        closes = [97.5 + i * 0.5 for i in range(100)]
+
+        result = compute_donchian(highs, lows)
+
+        for i in range(19, 100):
+            width = result["donchian_upper"][i] - result["donchian_lower"][i]
+            assert width > 0, f"Channel width should be positive at index {i}: {width}"
+
+
+# ---------------------------------------------------------------------------
+# Keltner Upper / Lower tests
+# ---------------------------------------------------------------------------
+
+class TestComputeKeltner:
+    """Verify Keltner Upper and Lower computation correctness."""
+
+    def test_keltner_returns_correct_keys(self):
+        """Result dict must contain keltner_upper and keltner_lower."""
+        highs, lows, closes = _make_small_ohlcv(60)
+        result = compute_keltner(highs, lows, closes)
+        assert "keltner_upper" in result
+        assert "keltner_lower" in result
+
+    def test_keltner_returns_correct_length(self):
+        """All lists must match input length."""
+        highs, lows, closes = _make_small_ohlcv(60)
+        result = compute_keltner(highs, lows, closes)
+        assert len(result["keltner_upper"]) == 60
+        assert len(result["keltner_lower"]) == 60
+
+    def test_keltner_too_few_data_points(self):
+        """With fewer than needed data, all values must be None."""
+        highs = [100.0] * 5
+        lows = [90.0] * 5
+        closes = [95.0] * 5
+        result = compute_keltner(highs, lows, closes)
+        assert all(v is None for v in result["keltner_upper"])
+        assert all(v is None for v in result["keltner_lower"])
+
+    def test_keltner_first_valid_index_default_params(self):
+        """First valid value at max(ema_period-1, atr_period)."""
+        # Default: ema_period=20, atr_period=10
+        # First valid: max(19, 10) = 19
+        n = 50
+        highs, lows, closes = _make_small_ohlcv(n)
+        result = compute_keltner(highs, lows, closes)
+
+        for i in range(19):
+            assert result["keltner_upper"][i] is None, (
+                f"keltner_upper at index {i} should be None"
+            )
+            assert result["keltner_lower"][i] is None, (
+                f"keltner_lower at index {i} should be None"
+            )
+        assert result["keltner_upper"][19] is not None
+        assert result["keltner_lower"][19] is not None
+
+    def test_keltner_upper_ge_lower(self):
+        """Keltner Upper must always be >= Keltner Lower."""
+        highs, lows, closes = _make_small_ohlcv(200)
+        result = compute_keltner(highs, lows, closes)
+
+        for i in range(len(highs)):
+            if result["keltner_upper"][i] is not None and result["keltner_lower"][i] is not None:
+                assert result["keltner_upper"][i] >= result["keltner_lower"][i], (
+                    f"Upper < Lower at index {i}: {result['keltner_upper'][i]} < {result['keltner_lower'][i]}"
+                )
+
+    def test_keltner_channel_width_equals_two_times_multiplier_atr(self):
+        """Channel width = 2 × multiplier × ATR (since upper = TP_ema + mult×ATR, lower = TP_ema - mult×ATR)."""
+        highs, lows, closes = _make_small_ohlcv(200)
+        result = compute_keltner(highs, lows, closes, atr_period=10, multiplier=2.0)
+        atr_values = compute_atr(highs, lows, closes, period=10)
+
+        for i in range(len(highs)):
+            if result["keltner_upper"][i] is not None and result["keltner_lower"][i] is not None:
+                width = result["keltner_upper"][i] - result["keltner_lower"][i]
+                expected_width = 2.0 * 2.0 * atr_values[i]  # multiplier=2, so 2*mult*ATR = 4*ATR
+                assert abs(width - expected_width) < 1e-6, (
+                    f"Width mismatch at index {i}: {width} vs {expected_width}"
+                )
+
+    def test_keltner_manual_calculation_simple(self):
+        """Manually verify Keltner values for a simple constructed dataset."""
+        # Create simple data where we can manually verify
+        # All closes = 100, highs = 102, lows = 98 (constant volatility)
+        n = 30
+        highs = [102.0] * n
+        lows = [98.0] * n
+        closes = [100.0] * n
+
+        result = compute_keltner(highs, lows, closes, ema_period=10, atr_period=5, multiplier=2.0)
+
+        # With constant data:
+        # TR = High - Low = 4 for all bars (since no prior close to consider for i=0)
+        # For i=0: TR = 102 - 98 = 4
+        # For i>0: TR = max(102-98, |102-100|, |98-100|) = max(4, 2, 2) = 4
+        # ATR(5): seed at index 5 = average of first 5 TRs = 4.0
+        # With constant TR, ATR stays at 4.0
+        # TP = (102 + 98 + 100) / 3 = 100.0 (constant)
+        # EMA(TP, 10) at index 9 = SMA of first 10 TP values = 100.0
+        # So at index 9: upper = 100 + 2*4 = 108, lower = 100 - 2*4 = 92
+
+        # First valid: max(10-1, 5) = max(9, 5) = 9
+        assert result["keltner_upper"][9] is not None
+        assert result["keltner_lower"][9] is not None
+        assert result["keltner_upper"][9] == 108.0
+        assert result["keltner_lower"][9] == 92.0
+
+        # Since TP and ATR are constant, values stay the same
+        for i in range(9, n):
+            assert result["keltner_upper"][i] == 108.0, (
+                f"Index {i}: expected 108.0, got {result['keltner_upper'][i]}"
+            )
+            assert result["keltner_lower"][i] == 92.0, (
+                f"Index {i}: expected 92.0, got {result['keltner_lower'][i]}"
+            )
+
+    def test_keltner_upper_in_uptrend(self):
+        """In an uptrend, Keltner Upper should generally follow price upwards."""
+        closes = [100.0 + i * 2.0 for i in range(200)]
+        highs = [c + 2.0 for c in closes]
+        lows = [c - 2.0 for c in closes]
+
+        result = compute_keltner(highs, lows, closes)
+
+        upper_vals = [v for v in result["keltner_upper"] if v is not None]
+        # Upper channel should be rising (non-decreasing) in an uptrend
+        for i in range(1, len(upper_vals)):
+            assert upper_vals[i] >= upper_vals[i - 1] or abs(upper_vals[i] - upper_vals[i - 1]) < 0.1, (
+                f"Upper channel unexpectedly decreased at window {i}"
+            )
+
+    def test_keltner_lower_in_uptrend(self):
+        """In an uptrend, Keltner Lower should also generally rise."""
+        closes = [100.0 + i * 2.0 for i in range(200)]
+        highs = [c + 2.0 for c in closes]
+        lows = [c - 2.0 for c in closes]
+
+        result = compute_keltner(highs, lows, closes)
+
+        lower_vals = [v for v in result["keltner_lower"] if v is not None]
+        for i in range(1, len(lower_vals)):
+            assert lower_vals[i] >= lower_vals[i - 1] or abs(lower_vals[i] - lower_vals[i - 1]) < 0.1, (
+                f"Lower channel unexpectedly decreased at window {i}"
+            )
+
+    def test_keltner_mult_affects_width_only(self):
+        """Changing ATR multiplier affects width but not the middle line."""
+        highs, lows, closes = _make_small_ohlcv(100)
+
+        result_1 = compute_keltner(highs, lows, closes, multiplier=1.0)
+        result_2 = compute_keltner(highs, lows, closes, multiplier=2.0)
+        result_3 = compute_keltner(highs, lows, closes, multiplier=3.0)
+
+        for i in range(len(highs)):
+            if result_1["keltner_upper"][i] is not None:
+                # Width should scale with multiplier
+                width_1 = result_1["keltner_upper"][i] - result_1["keltner_lower"][i]
+                width_2 = result_2["keltner_upper"][i] - result_2["keltner_lower"][i]
+                width_3 = result_3["keltner_upper"][i] - result_3["keltner_lower"][i]
+                assert abs(width_2 - 2 * width_1) < 1e-6
+                assert abs(width_3 - 3 * width_1) < 1e-6
+
+    def test_keltner_with_realistic_data(self):
+        """Test with realistic OHLCV data to ensure no errors."""
+        import random
+        random.seed(42)
+        n = 250
+
+        closes = [150.0]
+        for _ in range(n - 1):
+            change = random.uniform(-0.02, 0.02)
+            closes.append(closes[-1] * (1 + change))
+
+        highs = []
+        lows = []
+        for i, c in enumerate(closes):
+            if i == 0:
+                highs.append(c * 1.01)
+                lows.append(c * 0.99)
+            else:
+                prev_c = closes[i - 1]
+                highs.append(max(c, prev_c) * 1.005)
+                lows.append(min(c, prev_c) * 0.995)
+
+        result = compute_keltner(highs, lows, closes)
+
+        assert len(result["keltner_upper"]) == n
+        assert len(result["keltner_lower"]) == n
+        # Should have valid values
+        valid_upper = [v for v in result["keltner_upper"] if v is not None]
+        valid_lower = [v for v in result["keltner_lower"] if v is not None]
+        assert len(valid_upper) > 0
+        assert len(valid_lower) > 0
+
+    def test_keltner_custom_period_params(self):
+        """Test with custom ATR and EMA periods."""
+        highs, lows, closes = _make_small_ohlcv(100)
+
+        # Custom: ema_period=14, atr_period=7
+        result = compute_keltner(highs, lows, closes, ema_period=14, atr_period=7, multiplier=1.5)
+
+        # First valid: max(14-1, 7) = max(13, 7) = 13
+        for i in range(13):
+            assert result["keltner_upper"][i] is None
+            assert result["keltner_lower"][i] is None
+        assert result["keltner_upper"][13] is not None
+        assert result["keltner_lower"][13] is not None
+
+    def test_keltner_upper_middle_lower_relationship(self):
+        """Verify that: upper = middle + mult*ATR, lower = middle - mult*ATR."""
+        import random
+        random.seed(123)
+        n = 100
+        highs = [100.0 + random.uniform(-1, 1) for _ in range(n)]
+        lows = [95.0 + random.uniform(-1, 1) for _ in range(n)]
+        closes = [97.5 + random.uniform(-0.5, 0.5) for _ in range(n)]
+
+        ema_period = 20
+        atr_period = 10
+        multiplier = 2.0
+        result = compute_keltner(highs, lows, closes, ema_period=ema_period, atr_period=atr_period, multiplier=multiplier)
+
+        tp = [(highs[i] + lows[i] + closes[i]) / 3.0 for i in range(n)]
+        ema_tp = compute_ema(tp, ema_period)
+        atr_values = compute_atr(highs, lows, closes, atr_period)
+
+        for i in range(n):
+            if result["keltner_upper"][i] is not None and result["keltner_lower"][i] is not None:
+                expected_upper = ema_tp[i] + multiplier * atr_values[i]
+                expected_lower = ema_tp[i] - multiplier * atr_values[i]
+                assert abs(result["keltner_upper"][i] - expected_upper) < 1e-6, (
+                    f"Upper mismatch at {i}: {result['keltner_upper'][i]} vs {expected_upper}"
+                )
+                assert abs(result["keltner_lower"][i] - expected_lower) < 1e-6, (
+                    f"Lower mismatch at {i}: {result['keltner_lower'][i]} vs {expected_lower}"
+                )
+
+
+# ---------------------------------------------------------------------------
 # compute_trend_columns tests
 # ---------------------------------------------------------------------------
 
@@ -1147,6 +1666,8 @@ class TestComputeTrendColumns:
             "ta_price_ma20_ratio",
             "ta_aroon_up", "ta_aroon_down",
             "ta_adx14", "ta_plus_di14", "ta_minus_di14",
+            "ta_donchian_upper", "ta_donchian_lower",
+            "ta_keltner_upper", "ta_keltner_lower",
         }
         assert set(result.keys()) == expected_keys
 
@@ -1276,7 +1797,9 @@ class TestProcessCSV:
                              "ta_ma20_slope", "ta_ma50_slope",
                              "ta_price_ma20_ratio",
                              "ta_aroon_up", "ta_aroon_down",
-                             "ta_adx14", "ta_plus_di14", "ta_minus_di14"}
+                             "ta_adx14", "ta_plus_di14", "ta_minus_di14",
+                             "ta_donchian_upper", "ta_donchian_lower",
+                             "ta_keltner_upper", "ta_keltner_lower"}
             assert set(headers) == expected_cols
 
     def test_process_csv_with_realistic_data(self):

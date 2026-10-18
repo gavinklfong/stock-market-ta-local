@@ -203,6 +203,77 @@ def compute_aroon(highs, lows, period=25):
     }
 
 
+def compute_donchian(highs, lows, period=20):
+    """Compute Donchian Upper and Lower channels.
+
+    Donchian Upper = Highest High over the last `period` bars
+    Donchian Lower = Lowest Low over the last `period` bars
+
+    Returns dict with:
+      - donchian_upper: list of upper channel values (resistance level)
+      - donchian_lower: list of lower channel values (support level)
+
+    First valid value at index ``period - 1`` (19 for period=20).
+    """
+    n = len(highs)
+    donchian_upper = [None] * n
+    donchian_lower = [None] * n
+
+    for i in range(n):
+        if i < period - 1:
+            continue
+        window_start = i - period + 1
+        window_highs = highs[window_start: i + 1]
+        window_lows = lows[window_start: i + 1]
+        donchian_upper[i] = max(window_highs)
+        donchian_lower[i] = min(window_lows)
+
+    return {
+        "donchian_upper": donchian_upper,
+        "donchian_lower": donchian_lower,
+    }
+
+
+def compute_keltner(highs, lows, closes, ema_period=20, atr_period=10, multiplier=2.0):
+    """Compute Keltner Upper and Lower channels.
+
+    Keltner Channels use ATR-based bands around an EMA of the typical price.
+      - Typical Price (TP) = (High + Low + Close) / 3
+      - Middle Line = EMA(TP, ema_period)
+      - Upper Band = Middle + (multiplier × ATR)
+      - Lower Band = Middle - (multiplier × ATR)
+
+    Returns dict with:
+      - keltner_upper: list of upper channel values (resistance)
+      - keltner_lower: list of lower channel values (support)
+
+    First valid value at index ``max(ema_period - 1, atr_period)``.
+      For default params: max(19, 10) = 19.
+    """
+    n = len(highs)
+    keltner_upper = [None] * n
+    keltner_lower = [None] * n
+
+    # Compute Typical Price
+    tp = [(float(highs[i]) + float(lows[i]) + float(closes[i])) / 3.0 for i in range(n)]
+
+    # Compute EMA of Typical Price
+    ema_tp = compute_ema(tp, ema_period)
+
+    # Compute ATR (using existing compute_atr with atr_period)
+    atr_values = compute_atr(highs, lows, closes, atr_period)
+
+    for i in range(n):
+        if ema_tp[i] is not None and atr_values[i] is not None:
+            keltner_upper[i] = ema_tp[i] + multiplier * atr_values[i]
+            keltner_lower[i] = ema_tp[i] - multiplier * atr_values[i]
+
+    return {
+        "keltner_upper": keltner_upper,
+        "keltner_lower": keltner_lower,
+    }
+
+
 def compute_adx_di(highs, lows, closes, period=14):
     """Compute ADX, +DI, and -DI using Wilder's smoothing.
 
@@ -328,6 +399,8 @@ def compute_trend_columns(highs, lows, closes, n):
 
     aroon = compute_aroon(highs, lows, period=25)
     adx_di = compute_adx_di(highs, lows, closes, period=14)
+    donchian = compute_donchian(highs, lows, period=20)
+    keltner = compute_keltner(highs, lows, closes)
 
     return {
         "ta_ema20": ta_ema20,
@@ -348,6 +421,10 @@ def compute_trend_columns(highs, lows, closes, n):
         "ta_adx14": adx_di["adx"],
         "ta_plus_di14": adx_di["plus_di"],
         "ta_minus_di14": adx_di["minus_di"],
+        "ta_donchian_upper": donchian["donchian_upper"],
+        "ta_donchian_lower": donchian["donchian_lower"],
+        "ta_keltner_upper": keltner["keltner_upper"],
+        "ta_keltner_lower": keltner["keltner_lower"],
     }
 
 
@@ -377,6 +454,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_trend",
-    description="trend indicators: EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA ratio, Aroon, ADX/DI",
+    description="trend indicators: EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA ratio, Aroon, ADX/DI, Donchian, Keltner",
     process_csv_fn=process_csv,
 )

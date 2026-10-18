@@ -75,8 +75,8 @@ python run_test.py download-market-data             # download script tests only
 
 | Module | Key indicators |
 |--------|---------------|
-| `calculate_trend.py` | EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA20 ratio |
-| `calculate_momentum.py` | RSI(14), MACD (line/signal/histogram), ROC(20), Stochastic %K(14)/%D(3) |
+| `calculate_trend.py` | EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA20 ratio, Aroon, ADX/DI, Donchian, Keltner |
+| `calculate_momentum.py` | RSI(14), MACD (line/signal/histogram), ROC(20), Williams %R(14), CCI(20), TSI(25,13) |
 | `calculate_volume.py` | OBV, CMF(20), VWAP(20), OFI, log volume |
 | `calculate_volatility.py` | ATR(14), Bollinger Bands(20,2) |
 | `calculate_regime.py` | GARCH(1,1) vol forecast, 3-state HMM regime |
