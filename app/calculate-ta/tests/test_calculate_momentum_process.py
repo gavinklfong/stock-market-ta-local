@@ -118,6 +118,7 @@ class TestProcessCSV:
         assert "ta_stoch_k" in df.columns
         assert "ta_stoch_d" in df.columns
         assert "ta_rsi_zscore" in df.columns
+        assert "ta_rsi_percentile" in df.columns
 
     def test_realistic_data(self, tmp_path):
         input_dir = tmp_path / "market-data"

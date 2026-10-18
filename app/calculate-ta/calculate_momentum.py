@@ -372,6 +372,62 @@ def compute_rsi_zscore(closes, rsi_period=14, window=20):
     return result
 
 
+def compute_rsi_percentile(closes, rsi_period=14, window=20):
+    """Compute rolling percentile rank of RSI values.
+
+    RSI percentile = percentage of RSI values in the rolling window
+    that are strictly less than the current RSI.
+
+    This tells us where the current RSI ranks relative to its recent
+    distribution. A percentile of 90 means the current RSI is higher
+    than 90% of the past 20 RSI values — potentially overbought.
+
+    Parameters
+    ----------
+    closes : list[float]
+        Close prices for each bar.
+    rsi_period : int
+        RSI lookback period (default 14).
+    window : int
+        Rolling window for percentile calculation (default 20).
+
+    Returns
+    -------
+    list[float | None]
+        Percentile values (0–100) aligned with input; None before warmup.
+    """
+    n = len(closes)
+    result = [None] * n
+
+    if n < rsi_period + window:
+        return result
+
+    # Compute RSI
+    rsi_values = compute_rsi(closes, rsi_period)
+
+    # First RSI valid index = rsi_period
+    # First percentile valid index = rsi_period + window - 1
+    for i in range(rsi_period + window - 1, n):
+        rsi_i = rsi_values[i]
+        if rsi_i is None:
+            continue
+
+        window_rsi = []
+        for j in range(i - window + 1, i + 1):
+            v = rsi_values[j]
+            if v is not None:
+                window_rsi.append(v)
+
+        if len(window_rsi) < 2:
+            continue
+
+        # Count values strictly below current RSI
+        below_count = sum(1 for v in window_rsi if v < rsi_i)
+        result[i] = (below_count / len(window_rsi)) * 100.0
+
+    return result
+
+
 def compute_momentum_columns(closes, highs, lows, n):
     """Compute all momentum indicator columns for a single ticker's data."""
     ta_rsi = compute_rsi(closes, 14) if n >= 15 else [None] * n
@@ -382,6 +438,7 @@ def compute_momentum_columns(closes, highs, lows, n):
     ta_cci = compute_cci(highs, lows, closes, 20) if n >= 20 else [None] * n
     ta_tsi = compute_tsi(closes, 25, 13) if n >= 39 else [None] * n
     ta_rsi_zscore = compute_rsi_zscore(closes) if n >= 35 else [None] * n
+    ta_rsi_percentile = compute_rsi_percentile(closes) if n >= 35 else [None] * n
 
     return {
         "ta_rsi14": ta_rsi,
@@ -395,6 +452,7 @@ def compute_momentum_columns(closes, highs, lows, n):
         "ta_cci": ta_cci,
         "ta_tsi": ta_tsi,
         "ta_rsi_zscore": ta_rsi_zscore,
+        "ta_rsi_percentile": ta_rsi_percentile,
     }
 
 
@@ -425,6 +483,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 if __name__ == "__main__":
     main(
         module_name="calculate_momentum",
-        description="momentum indicators: RSI(14), MACD, ROC(20), Stochastic %K/%D, Williams %R, CCI, TSI",
+        description="momentum indicators: RSI(14), MACD, ROC(20), Stochastic %K/%D, Williams %R, CCI, TSI, RSI Z-Score(14,20), RSI Percentile(14,20)",
         process_csv_fn=process_csv,
     )
