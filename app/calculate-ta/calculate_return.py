@@ -131,9 +131,34 @@ def _align_benchmark(stock_dates, benchmark_df):
         return None
 
 
+def compute_relative_strength(stock_closes, benchmark_closes):
+    """Compute relative strength of stock vs benchmark.
+
+    RS = (stock_close / benchmark_close) * 100
+
+    An indexed value where 100 means the stock is at the same relative level
+    as the benchmark. Values above 100 indicate outperformance; below 100,
+    underperformance.
+
+    Args:
+        stock_closes: list/array of stock close prices.
+        benchmark_closes: list/array of benchmark close prices (same length).
+
+    Returns:
+        list of float relative strength values aligned with input.
+        Returns None where benchmark price is zero.
+    """
+    n = len(stock_closes)
+    rs = [None] * n
+    for i in range(n):
+        if benchmark_closes[i] != 0:
+            rs[i] = (stock_closes[i] / benchmark_closes[i]) * 100
+    return rs
+
+
 def compute_return_columns(highs, lows, closes, volumes, n, dates, horizons=(5, 10, 20),
                            benchmark_df=None):
-    """Compute all future-return, past-performance, and alpha/beta indicator columns."""
+    """Compute all future-return, past-performance, alpha/beta, and relative strength columns."""
     future = compute_future_returns(closes, horizons)
     cols = {}
     for h in horizons:
@@ -153,6 +178,11 @@ def compute_return_columns(highs, lows, closes, volumes, n, dates, horizons=(5, 
         if ab is not None:
             cols["ta_alpha20"] = ab["alpha"]
             cols["ta_beta20"] = ab["beta"]
+
+        # Relative strength (date-aligned)
+        rs = _compute_aligned_relative_strength(closes, dates, benchmark_df)
+        if rs is not None:
+            cols["ta_rs_ftse100"] = rs
 
     return cols
 
@@ -202,6 +232,51 @@ def _compute_aligned_alpha_beta(closes, dates, benchmark_df):
             full_beta[stock_idx] = ab["beta"][aligned_idx]
 
     return {"alpha": full_alpha, "beta": full_beta}
+
+
+def _compute_aligned_relative_strength(closes, dates, benchmark_df):
+    """Compute relative strength with date-based alignment.
+
+    Aligns stock and benchmark by date, computes RS on the overlapping
+    portion, then expands results back to the full stock length.
+    Returns a full-length list of RS values, or None.
+    """
+    n = len(closes)
+    if n < 2 or benchmark_df is None:
+        return None
+
+    # Map each stock date to its index
+    date_to_idx = {dates[i]: i for i in range(n)}
+
+    # Benchmark rows that match stock dates, sorted by date
+    matching = benchmark_df[benchmark_df["Date"].isin(date_to_idx.keys())]
+
+    if len(matching) < 2:
+        return None
+
+    matching = matching.sort_values("Date").reset_index(drop=True)
+
+    # Build aligned arrays and track original stock indices
+    stock_aligned = []
+    bench_aligned = []
+    stock_indices = []
+
+    for _, row in matching.iterrows():
+        d = row["Date"]
+        idx = date_to_idx[d]
+        stock_aligned.append(closes[idx])
+        bench_aligned.append(row["Close"])
+        stock_indices.append(idx)
+
+    # Compute RS on the aligned subset
+    rs_aligned = compute_relative_strength(stock_aligned, bench_aligned)
+
+    # Expand back to full stock length
+    full_rs = [None] * n
+    for aligned_idx, stock_idx in enumerate(stock_indices):
+        full_rs[stock_idx] = rs_aligned[aligned_idx]
+
+    return full_rs
 
 
 def _load_benchmark(input_dir):

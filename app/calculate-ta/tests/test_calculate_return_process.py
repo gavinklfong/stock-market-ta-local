@@ -235,7 +235,7 @@ class TestProcessCSV:
         assert "ta_performance_1y" in df.columns
         # Prior columns are NOT preserved — each module writes only its own
         assert "ta_atr14" not in df.columns
-        # Only Date and ta_return_* and ta_performance_* and ta_alpha20/beta20 columns
+        # Only Date and ta_return_* and ta_performance_* and ta_alpha20/beta20 and ta_rs_ftse100 columns
         allowed = {
             "Date",
             "ta_return_5d",
@@ -247,6 +247,7 @@ class TestProcessCSV:
             "ta_performance_1y",
             "ta_alpha20",
             "ta_beta20",
+            "ta_rs_ftse100",
         }
         assert set(df.columns) == allowed
 
