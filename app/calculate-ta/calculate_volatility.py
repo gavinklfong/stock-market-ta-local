@@ -68,12 +68,25 @@ def compute_volatility_columns(highs, lows, closes, n):
     ]
     bb = compute_bollinger_bands(closes) if n >= 20 else {"upper": [None] * n, "middle": [None] * n, "lower": [None] * n}
 
+    n = len(closes)
+    ta_bband_width = [None] * n
+    ta_bband_pctb = [None] * n
+    for i in range(n):
+        if (bb["upper"][i] is not None and bb["lower"][i] is not None
+                and bb["middle"][i] is not None and bb["middle"][i] != 0):
+            ta_bband_width[i] = (bb["upper"][i] - bb["lower"][i]) / bb["middle"][i]
+        if (bb["upper"][i] is not None and bb["lower"][i] is not None
+                and bb["upper"][i] != bb["lower"][i]):
+            ta_bband_pctb[i] = (closes[i] - bb["lower"][i]) / (bb["upper"][i] - bb["lower"][i])
+
     return {
         "ta_atr14": ta_atr,
         "ta_normalized_atr14": ta_normalized_atr14,
         "ta_bband_upper": bb["upper"],
         "ta_bband_middle": bb["middle"],
         "ta_bband_lower": bb["lower"],
+        "ta_bband_width": ta_bband_width,
+        "ta_bband_pctb": ta_bband_pctb,
     }
 
 
@@ -103,6 +116,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volatility",
-    description="volatility indicators: ATR(14), Bollinger Bands(20,2)",
+    description="volatility indicators: ATR(14), Bollinger Bands(20,2), Band Width(20), %B(20)",
     process_csv_fn=process_csv,
 )

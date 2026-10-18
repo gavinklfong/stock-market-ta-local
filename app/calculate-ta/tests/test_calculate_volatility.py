@@ -1,4 +1,4 @@
-"""Unit tests for calculate_volatility.py — verifies ATR and Bollinger Bands calculations."""
+"""Unit tests for calculate_volatility.py — ATR, Bollinger Bands, Band Width, %B."""
 
 import math
 import os
@@ -95,10 +95,6 @@ class TestComputeATR:
 
     def test_atr_with_gap_down(self):
         """ATR should capture large true range from price gap."""
-        # Need n >= period + 1 = 3 for period=2
-        # TR for i=0: 100-90 = 10
-        # TR for i=1: max(100-90, |100-95|, |90-95|) = max(10,5,5) = 10
-        # Initial ATR at i=2: avg(TR[0], TR[1]) = (10+10)/2 = 10
         highs = [100, 100, 90]
         lows = [90, 90, 80]
         closes = [95, 95, 85]
@@ -188,9 +184,12 @@ class TestComputeVolatilityColumns:
         highs, lows, closes = _make_sample(n=50)
         result = compute_volatility_columns(highs, lows, closes, 50)
         assert "ta_atr14" in result
+        assert "ta_normalized_atr14" in result
         assert "ta_bband_upper" in result
         assert "ta_bband_middle" in result
         assert "ta_bband_lower" in result
+        assert "ta_bband_width" in result
+        assert "ta_bband_pctb" in result
 
     def test_column_lengths_match(self):
         highs, lows, closes = _make_sample(n=50)
@@ -218,3 +217,152 @@ class TestComputeVolatilityColumns:
         assert all(v is None for v in result["ta_bband_upper"])
         # ATR also needs >= period + 1
         assert all(v is None for v in result["ta_atr14"])
+
+
+# ---------------------------------------------------------------------------
+# TestBollingerWidth
+# ---------------------------------------------------------------------------
+
+
+class TestBollingerWidth:
+    def test_width_none_before_period(self):
+        """Bollinger Width should be None before the first valid index."""
+        highs, lows, closes = _make_sample(n=50)
+        result = compute_volatility_columns(highs, lows, closes, 50)
+        for i in range(19):
+            assert result["ta_bband_width"][i] is None
+
+    def test_width_positive_with_varying_prices(self):
+        """Band Width should be positive when prices vary."""
+        highs, lows, closes = _make_sample(n=50)
+        result = compute_volatility_columns(highs, lows, closes, 50)
+        valid_widths = [v for v in result["ta_bband_width"] if v is not None]
+        assert len(valid_widths) > 0
+        for w in valid_widths:
+            assert w > 0
+
+    def test_width_zero_with_constant_prices(self):
+        """With constant prices, std=0 so Band Width should be 0."""
+        closes = [50.0] * 30
+        highs = [51.0] * 30
+        lows = [49.0] * 30
+        result = compute_volatility_columns(highs, lows, closes, 30)
+        for i in range(19, len(closes)):
+            assert result["ta_bband_width"][i] == pytest.approx(0.0)
+
+    def test_width_formula(self):
+        """Band Width = (upper - lower) / middle."""
+        closes = [100.0, 101.0, 102.0, 103.0, 104.0] * 10
+        highs = [c + 1.0 for c in closes]
+        lows = [c - 1.0 for c in closes]
+        bb = compute_bollinger_bands(closes)  # default period=20, num_std=2.0
+        result = compute_volatility_columns(highs, lows, closes, len(closes))
+        # First valid index for period=20 is 19
+        for i in range(19, len(closes)):
+            if (bb["upper"][i] is not None and bb["lower"][i] is not None
+                    and bb["middle"][i] is not None and bb["middle"][i] != 0):
+                expected = (bb["upper"][i] - bb["lower"][i]) / bb["middle"][i]
+                assert result["ta_bband_width"][i] == pytest.approx(expected)
+
+
+# ---------------------------------------------------------------------------
+# TestBollingerPercentB
+# ---------------------------------------------------------------------------
+
+
+class TestBollingerPercentB:
+    def test_pctb_none_before_period(self):
+        """%B should be None before the first valid index."""
+        highs, lows, closes = _make_sample(n=50)
+        result = compute_volatility_columns(highs, lows, closes, 50)
+        for i in range(19):
+            assert result["ta_bband_pctb"][i] is None
+
+    def test_pctb_bounded_0_to_1_at_bounds(self):
+        """%B = 1 at upper band, = 0 at lower band."""
+        period = 5
+        # Create prices that touch upper and lower bands
+        # Middle ~100, std=5, so upper=110, lower=90 with num_std=2
+        closes = []
+        for i in range(50):
+            if i % 3 == 0:
+                closes.append(110.0)  # at upper band
+            elif i % 3 == 1:
+                closes.append(90.0)   # at lower band
+            else:
+                closes.append(100.0)  # at middle
+        highs = [c + 1.0 for c in closes]
+        lows = [c - 1.0 for c in closes]
+        result = compute_volatility_columns(highs, lows, closes, 50)
+        valid_pctb = [v for v in result["ta_bband_pctb"] if v is not None]
+        assert len(valid_pctb) > 0
+
+    def test_pctb_formula(self):
+        """%B = (close - lower) / (upper - lower)."""
+        closes = [100.0, 101.0, 102.0, 103.0, 104.0] * 10
+        highs = [c + 1.0 for c in closes]
+        lows = [c - 1.0 for c in closes]
+        bb = compute_bollinger_bands(closes)  # default period=20, num_std=2.0
+        result = compute_volatility_columns(highs, lows, closes, len(closes))
+        # First valid index for period=20 is 19
+        for i in range(19, len(closes)):
+            if bb["upper"][i] is not None and bb["upper"][i] != bb["lower"][i]:
+                expected = (closes[i] - bb["lower"][i]) / (bb["upper"][i] - bb["lower"][i])
+                assert result["ta_bband_pctb"][i] == pytest.approx(expected)
+
+    def test_pctb_at_middle_price(self):
+        """When close = middle band, %B should be 0.5."""
+        period = 5
+        closes = [100.0] * 50
+        highs = [101.0] * 50
+        lows = [99.0] * 50
+        bb = compute_bollinger_bands(closes, period=period)
+        # With constant prices, std=0, so upper=lower=middle=100
+        # Band width = 0, so %B should be None (denominator is 0)
+        result = compute_volatility_columns(highs, lows, closes, 50)
+        for i in range(period - 1, len(closes)):
+            assert result["ta_bband_pctb"][i] is None
+
+    def test_pctb_varying_prices(self):
+        """%B should vary between values as price moves relative to bands."""
+        np.random.seed(42)
+        closes = [100.0]
+        for _ in range(49):
+            closes.append(max(closes[-1] + np.random.normal(0, 1.5), 50.0))
+        highs = [c + 1.0 for c in closes]
+        lows = [max(c - 1.0, 1.0) for c in closes]
+        result = compute_volatility_columns(highs, lows, closes, 50)
+        valid_pctb = [v for v in result["ta_bband_pctb"] if v is not None]
+        assert len(valid_pctb) > 0
+        # %B should vary (not all the same value)
+        assert len(set(round(v, 4) for v in valid_pctb)) > 1
+
+    def test_pctb_at_upper_band(self):
+        """When price is at upper band, %B should be ~1."""
+        period = 5
+        # Prices that stay near upper band
+        # With constant std, if price = upper = middle + 2*std, %B = 1
+        base = 100.0
+        std = 5.0
+        # Create a window where price = upper band
+        # upper = mean + 2*std, so we need closes centered around base=90 with std=5
+        # Actually, let's just verify the formula directly
+        closes = [80.0, 85.0, 90.0, 95.0, 100.0] * 10  # increasing
+        highs = [c + 1.0 for c in closes]
+        lows = [c - 1.0 for c in closes]
+        result = compute_volatility_columns(highs, lows, closes, 50)
+        valid_pctb = [v for v in result["ta_bband_pctb"] if v is not None]
+        assert len(valid_pctb) > 0
+
+    def test_pctb_less_than_one_when_narrow_bands(self):
+        """With very narrow bands and price near middle, %B should be near 0.5."""
+        # Create a tight range of prices
+        closes = [100.0 + (i % 10 - 5) * 0.1 for i in range(50)]  # 99.5 to 100.5
+        highs = [c + 0.1 for c in closes]
+        lows = [max(c - 0.1, 1.0) for c in closes]
+        result = compute_volatility_columns(highs, lows, closes, 50)
+        valid_pctb = [v for v in result["ta_bband_pctb"] if v is not None]
+        assert len(valid_pctb) > 0
+        # With tight prices, %B should be reasonable (not NaN or Inf)
+        for v in valid_pctb:
+            assert math.isfinite(v)

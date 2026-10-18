@@ -6,7 +6,7 @@ Runs all TA indicator modules in parallel (modules are independent):
     calculate_trend.py       – EMA, SuperTrend, MA, slopes, price/MA ratio
     calculate_momentum.py    – RSI, MACD, ROC
     calculate_volume.py      – OBV, CMF, VWAP, OFI, log volume
-    calculate_volatility.py  – ATR, Bollinger Bands
+    calculate_volatility.py  – ATR, Bollinger Bands, Band Width, %B
     calculate_regime.py      – GARCH, HMM regime, log return
     calculate_structure.py   – Swing points, HH/HL/LH/LL, BOS, CHoCH, S/R
     calculate_return.py      – Forward 5d/10d/20d returns
@@ -52,7 +52,7 @@ DESCRIPTIONS = {
     "trend":       "trend indicators: EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA ratio, Aroon, ADX/DI",
     "momentum":    "momentum indicators: RSI(14), MACD, ROC(20), Williams %R",
     "volume":      "volume indicators: OBV, CMF(20), VWAP, OFI, log volume",
-    "volatility":  "volatility indicators: ATR(14), Bollinger Bands(20,2)",
+    "volatility":  "volatility indicators: ATR(14), Bollinger Bands(20,2), Band Width(20), %B(20)",
     "regime":      "regime detection: GARCH volatility + 3-state HMM, log return",
     "structure":   "structure indicators: HH/HL/LH/LL, BOS, CHoCH, Support/Resistance",
     "return":      "future returns: 5d/10d/20d",
