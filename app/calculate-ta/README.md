@@ -41,6 +41,7 @@ All technical indicators are grouped by analysis category below. Each module pro
 | | `ta_macd_signal` | Signal line (EMA9 of MACD line) |
 | | `ta_macd_histogram` | MACD − Signal (divergence/convergence) |
 | | `ta_roc20` | Rate of Change (20-period, in percent) |
+| | `ta_williams_r` | Williams %R (14-period, oscillator from 0 to −100) |
 | **Volume** | `ta_obv` | On-Balance Volume (cumulative) |
 | | `ta_cmf` | Chaikin Money Flow (20-period) |
 | | `ta_vwap` | Volume-Weighted Average Price (20-period rolling) |
@@ -117,14 +118,16 @@ All technical indicators are grouped by analysis category below. Each module pro
 | `ta_macd_signal` | float | Signal line (EMA9 of MACD line) |
 | `ta_macd_histogram` | float | MACD − Signal |
 | `ta_roc20` | float | Rate of Change (20-period), in percent |
+| `ta_williams_r` | float | Williams %R (14-period), range 0 to −100 |
 
 **Calculation logic:**
 
 - **RSI(14)** — Wilder's smoothed RSI. Initial average gain/loss = SMA of first 14 price changes. Subsequent averages use smoothing: `(prev_avg × (period−1) + current_change) / period`. If avg_loss = 0, RSI = 100 (if avg_gain > 0) or 50 (if both zero).
 - **MACD** — Fast EMA(12) − Slow EMA(26) gives the MACD line. Signal line = EMA(9) of the MACD line values. Histogram = MACD − Signal.
 - **ROC(20)** — `(close[t] − close[t−20]) / close[t−20] × 100`.
+- **Williams %R(14)** — `(Highest High(14) − Close) / (Highest High(14) − Lowest Low(14)) × −100`. Oscillator ranging from 0 to −100. Overbought above −20, oversold below −80.
 
-**Minimum data:** 15 bars for RSI; 21 bars for ROC; ~26+ bars for MACD.
+**Minimum data:** 15 bars for RSI; 21 bars for ROC; ~26+ bars for MACD; 14 bars for Williams %R.
 
 ---
 

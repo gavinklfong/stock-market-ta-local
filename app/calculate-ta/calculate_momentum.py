@@ -160,12 +160,35 @@ def compute_stochastic(values, k_period=14, d_period=3):
     return {"ta_stoch_k": result_k, "ta_stoch_d": result_d}
 
 
+def compute_williams_r(closes, period=14):
+    """Compute Williams %R. Returns a list aligned with input.
+
+    Williams %R = (Highest High − Close) / (Highest High − Lowest Low) × −100
+    Range: 0 to −100. Overbought above −20, oversold below −80.
+    """
+    n = len(closes)
+    result = [None] * n
+
+    if n < period:
+        return result
+
+    for i in range(period - 1, n):
+        window = [float(closes[j]) for j in range(i - period + 1, i + 1)]
+        highest_high = max(window)
+        lowest_low = min(window)
+        if highest_high != lowest_low:
+            result[i] = ((highest_high - float(closes[i])) / (highest_high - lowest_low)) * -100.0
+
+    return result
+
+
 def compute_momentum_columns(closes, n):
     """Compute all momentum indicator columns for a single ticker's data."""
     ta_rsi = compute_rsi(closes, 14) if n >= 15 else [None] * n
     ta_roc = compute_roc(closes, 20) if n >= 21 else [None] * n
     macd = compute_macd(closes)
     stoch = compute_stochastic(closes) if n >= 14 else {"ta_stoch_k": [None] * n, "ta_stoch_d": [None] * n}
+    ta_williams_r = compute_williams_r(closes, 14) if n >= 14 else [None] * n
 
     return {
         "ta_rsi14": ta_rsi,
@@ -175,6 +198,7 @@ def compute_momentum_columns(closes, n):
         "ta_roc20": ta_roc,
         "ta_stoch_k": stoch["ta_stoch_k"],
         "ta_stoch_d": stoch["ta_stoch_d"],
+        "ta_williams_r": ta_williams_r,
     }
 
 
@@ -203,6 +227,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 if __name__ == "__main__":
     main(
         module_name="calculate_momentum",
-        description="momentum indicators: RSI(14), MACD, ROC(20), Stochastic %K/%D",
+        description="momentum indicators: RSI(14), MACD, ROC(20), Stochastic %K/%D, Williams %R",
         process_csv_fn=process_csv,
     )
