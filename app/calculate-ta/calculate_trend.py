@@ -161,6 +161,155 @@ def compute_supertrend(highs, lows, closes, atr_period=14, multiplier=3.0):
     }
 
 
+def compute_aroon(highs, lows, period=25):
+    """Compute Aroon Up and Aroon Down indicators.
+
+    Aroon Up    = ((Period - Days Since Highest High) / Period) * 100
+    Aroon Down  = ((Period - Days Since Lowest Low)  / Period) * 100
+
+    Returns dict with:
+      - aroon_up:    list of Aroon Up values (100 = strong uptrend)
+      - aroon_down:  list of Aroon Down values (100 = strong downtrend)
+    """
+    n = len(highs)
+    aroon_up = [None] * n
+    aroon_down = [None] * n
+
+    for i in range(n):
+        # We need at least `period` data points for the first valid value
+        if i < period - 1:
+            continue
+        # Look back over the window of `period` bars ending at i
+        window_start = i - period + 1
+        # Highest high in the window
+        highest_idx = window_start
+        for j in range(window_start + 1, i + 1):
+            if highs[j] > highs[highest_idx]:
+                highest_idx = j
+        # Lowest low in the window
+        lowest_idx = window_start
+        for j in range(window_start + 1, i + 1):
+            if lows[j] < lows[lowest_idx]:
+                lowest_idx = j
+
+        days_since_high = i - highest_idx
+        days_since_low = i - lowest_idx
+        aroon_up[i] = ((period - days_since_high) / period) * 100
+        aroon_down[i] = ((period - days_since_low) / period) * 100
+
+    return {
+        "aroon_up": aroon_up,
+        "aroon_down": aroon_down,
+    }
+
+
+def compute_adx_di(highs, lows, closes, period=14):
+    """Compute ADX, +DI, and -DI using Wilder's smoothing.
+
+    Returns dict with:
+      - adx:       list of ADX values (trend strength 0-100)
+      - plus_di:   list of +DI values (bullish directional movement)
+      - minus_di:  list of -DI values (bearish directional movement)
+
+    Index validity (period=14):
+      +DI/-DI : first valid at index ``period`` (14)
+      DX      : first valid at index ``period + 1`` (15)
+      ADX     : initial at index ``period + 14`` (28), then smoothed
+    """
+    n = len(highs)
+    adx = [None] * n
+    plus_di = [None] * n
+    minus_di = [None] * n
+
+    if n < period + 1:
+        return {"adx": adx, "plus_di": plus_di, "minus_di": minus_di}
+
+    # --- Step 0: Directional movement ---
+    plus_dm = [0.0] * n
+    minus_dm = [0.0] * n
+
+    for i in range(1, n):
+        up_move = highs[i] - highs[i - 1]
+        down_move = lows[i - 1] - lows[i]
+
+        if up_move > down_move and up_move > 0:
+            plus_dm[i] = up_move
+        if down_move > up_move and down_move > 0:
+            minus_dm[i] = down_move
+
+    # --- Step 1: True Range ---
+    true_range = [0.0] * n
+    for i in range(1, n):
+        tr = max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        )
+        true_range[i] = tr
+
+    # --- Step 2: Wilder's smoothing (initial sum → recursive) ---
+    k = 1.0 / period
+
+    def _wilder_sum(values, start, end, period):
+        """Initial sum of ``values[start:end]``, then recursive smoothing."""
+        s = sum(values[i] for i in range(start, end))
+        out = [0.0] * len(values)
+        out[end - 1] = s
+        for i in range(end, len(values)):
+            out[i] = out[i - 1] - out[i - 1] * k + values[i]
+        return out
+
+    smoothed_tr = _wilder_sum(true_range, 1, period + 1, period)
+    smoothed_plus_dm = _wilder_sum(plus_dm, 1, period + 1, period)
+    smoothed_minus_dm = _wilder_sum(minus_dm, 1, period + 1, period)
+
+    # --- Step 3: +DI / -DI (first valid at index ``period``) ---
+    for i in range(period, n):
+        st = smoothed_tr[i]
+        if st == 0:
+            continue
+        plus_di[i] = (smoothed_plus_dm[i] / st) * 100
+        minus_di[i] = (smoothed_minus_dm[i] / st) * 100
+
+    # --- Step 4: DX (first valid at index ``period + 1``) ---
+    # We store DX values in a separate dict so they are available for ADX
+    # initialisation (which needs 14 consecutive DX values).
+    dx_values = {}
+    for i in range(period + 1, n):
+        pdi = plus_di[i]
+        mdi = minus_di[i]
+        if pdi is None or mdi is None:
+            continue
+        di_sum = pdi + mdi
+        if di_sum == 0:
+            continue
+        dx_values[i] = (abs(pdi - mdi) / di_sum) * 100
+
+    # --- Step 5: ADX ---
+    # Initial ADX = average of first 14 DX values.
+    # Smoothed ADX[i] = ADX[i-1] * (1 - k) + DX[i] * k   (for i > first)
+    init_dx_start = period + 1
+    init_dx_end = period + 15  # 14 values: period+1 .. period+14
+    init_idx = init_dx_end - 1  # index where initial ADX lands
+
+    for i in range(period + 1, n):
+        if i not in dx_values:
+            continue
+        dx = dx_values[i]
+
+        if i == init_idx:
+            # Average the first 14 DX values
+            sum_dx = sum(dx_values[j] for j in range(init_dx_start, init_dx_end) if j in dx_values)
+            count = sum(1 for j in range(init_dx_start, init_dx_end) if j in dx_values)
+            if count > 0:
+                adx[i] = sum_dx / count
+        else:
+            if adx[i - 1] is not None:
+                adx[i] = adx[i - 1] * (1 - k) + dx * k
+
+    return {"adx": adx, "plus_di": plus_di, "minus_di": minus_di}
+
+
 def compute_trend_columns(highs, lows, closes, n):
     """Compute all trend indicator columns for a single ticker's data."""
     ta_ema20 = compute_ema(closes, 20) if n >= 20 else [None] * n
@@ -177,6 +326,9 @@ def compute_trend_columns(highs, lows, closes, n):
         if ta_ma20[i] is not None and ta_ma20[i] != 0:
             ta_price_ma20_ratio[i] = closes[i] / ta_ma20[i]
 
+    aroon = compute_aroon(highs, lows, period=25)
+    adx_di = compute_adx_di(highs, lows, closes, period=14)
+
     return {
         "ta_ema20": ta_ema20,
         "ta_ema50": ta_ema50,
@@ -191,6 +343,11 @@ def compute_trend_columns(highs, lows, closes, n):
         "ta_ma20_slope": ta_ma20_slope,
         "ta_ma50_slope": ta_ma50_slope,
         "ta_price_ma20_ratio": ta_price_ma20_ratio,
+        "ta_aroon_up": aroon["aroon_up"],
+        "ta_aroon_down": aroon["aroon_down"],
+        "ta_adx14": adx_di["adx"],
+        "ta_plus_di14": adx_di["plus_di"],
+        "ta_minus_di14": adx_di["minus_di"],
     }
 
 
@@ -220,6 +377,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_trend",
-    description="trend indicators: EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA ratio",
+    description="trend indicators: EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA ratio, Aroon, ADX/DI",
     process_csv_fn=process_csv,
 )

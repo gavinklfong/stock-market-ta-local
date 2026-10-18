@@ -49,7 +49,7 @@ ALL_ORDER = [
 ]
 
 DESCRIPTIONS = {
-    "trend":       "trend indicators: EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA ratio",
+    "trend":       "trend indicators: EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA ratio, Aroon, ADX/DI",
     "momentum":    "momentum indicators: RSI(14), MACD, ROC(20)",
     "volume":      "volume indicators: OBV, CMF(20), VWAP, OFI, log volume",
     "volatility":  "volatility indicators: ATR(14), Bollinger Bands(20,2)",
