@@ -9,7 +9,8 @@ app/
     download_stock_info.py    # P/E ratios → data/pe-data/*.csv
   analysis-pipeline/    # Prefect flow orchestrating the full pipeline
   analyse-market-data/  # Analyse market data and generate interactive HTML reports
-    run_analysis.py       # Generate market dashboard HTML reports
+    analyse_ticker.py     # Generate market dashboard HTML reports
+  analyse_sector.py     # Generate sector-level HTML reports (sorted by 1Y return)
   calculate-ta/         # TA indicator modules (see README.md for full docs)
     common.py               # Shared: read_yfinance_csv(), main() thread-pool runner
     run_calculation.py      # Orchestrator — runs modules in parallel, then merges
@@ -40,11 +41,18 @@ python -m app.analysis_pipeline.run_pipeline
 python -m app.analysis_pipeline.run_pipeline trend momentum
 
 # 4. Analyse market data and generate HTML report (one file per ticker)
-python app/analyse-market-data/run_analysis.py              # all tickers
-python app/analyse-market-data/run_analysis.py AAPL MSFT    # specific tickers
-python app/analyse-market-data/run_analysis.py --dry-run    # show analysis only
+python app/analyse-market-data/analyse_ticker.py              # all tickers
+python app/analyse-market-data/analyse_ticker.py AAPL MSFT    # specific tickers
+python app/analyse-market-data/analyse_ticker.py --dry-run    # show analysis only
 
 # Output: data/reports/{ticker}_analysis.html per ticker
+
+# 4b. Analyse sector data and generate HTML report (one file per sector)
+python app/analyse-market-data/analyse_sector.py              # all sectors
+python app/analyse-market-data/analyse_sector.py Utilities   # specific sector
+python app/analyse-market-data/analyse_sector.py --dry-run    # show analysis only
+
+# Output: data/reports/sector_analysis_{sector}.html per sector
 
 # 5. Backtest (uses data/ta-data/NG.L.csv)
 python app/backtest/backtest_ng.py
