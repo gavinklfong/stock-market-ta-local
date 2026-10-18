@@ -10,6 +10,7 @@ import pytest
 
 from calculate_volatility import (
     compute_atr,
+    compute_atr_percentile,
     compute_atr_position_size,
     compute_atr_stop_distance,
     compute_bollinger_bands,
@@ -56,6 +57,7 @@ class TestComputeVolatilityColumns:
         assert "ta_bband_width" in result
         assert "ta_bband_pctb" in result
         assert "ta_parkinson_vol" in result
+        assert "ta_atr_percentile" in result
 
     def test_column_lengths_match(self):
         highs, lows, closes = _make_sample(n=50)

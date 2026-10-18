@@ -214,6 +214,67 @@ def compute_rr_ratio(closes, atr_values, bb_upper, multiplier=3.0):
     return result
 
 
+def compute_atr_percentile(highs, lows, closes, atr_period=14, window=20):
+    """Compute rolling percentile rank of ATR values.
+
+    ATR percentile = percentage of ATR values in the rolling window
+    that are strictly less than the current ATR.
+
+    This tells us where the current volatility (ATR) ranks relative to
+    its recent distribution. A percentile of 90 means current ATR is
+    higher than 90% of the past 20 ATR values — potentially elevated
+    volatility.
+
+    Parameters
+    ----------
+    closes : list[float]
+        Close prices for each bar (used to determine data length).
+    highs : list[float]
+        High prices.
+    lows : list[float]
+        Low prices.
+    atr_period : int
+        ATR lookback period (default 14).
+    window : int
+        Rolling window for percentile calculation (default 20).
+
+    Returns
+    -------
+    list[float | None]
+        Percentile values (0–100) aligned with input; None before warmup.
+    """
+    n = len(closes)
+    result = [None] * n
+
+    if n < atr_period + window:
+        return result
+
+    # Compute ATR
+    atr_values = compute_atr(highs, lows, closes, atr_period)
+
+    # First ATR valid index = atr_period
+    # First percentile valid index = atr_period + window - 1
+    for i in range(atr_period + window - 1, n):
+        atr_i = atr_values[i]
+        if atr_i is None:
+            continue
+
+        window_atr = []
+        for j in range(i - window + 1, i + 1):
+            v = atr_values[j]
+            if v is not None:
+                window_atr.append(v)
+
+        if len(window_atr) < 2:
+            continue
+
+        # Count values strictly below current ATR
+        below_count = sum(1 for v in window_atr if v < atr_i)
+        result[i] = (below_count / len(window_atr)) * 100.0
+
+    return result
+
+
 def compute_volatility_columns(highs, lows, closes, n):
     """Compute all volatility indicator columns for a single ticker's data."""
     ta_atr = compute_atr(highs, lows, closes, 14) if n >= 15 else [None] * n
@@ -239,6 +300,7 @@ def compute_volatility_columns(highs, lows, closes, n):
     ta_atr_stop_dist = compute_atr_stop_distance(closes, ta_atr, multiplier=3.0)
     ta_atr_position = compute_atr_position_size(closes, ta_atr, risk_pct=2.0, multiplier=3.0)
     ta_rr_ratio = compute_rr_ratio(closes, ta_atr, bb["upper"], multiplier=3.0)
+    ta_atr_percentile = compute_atr_percentile(highs, lows, closes) if n >= 35 else [None] * n
 
     return {
         "ta_atr14": ta_atr,
@@ -253,6 +315,7 @@ def compute_volatility_columns(highs, lows, closes, n):
         "ta_atr_stop_dist": ta_atr_stop_dist,
         "ta_atr_position": ta_atr_position,
         "ta_rr_ratio": ta_rr_ratio,
+        "ta_atr_percentile": ta_atr_percentile,
     }
 
 
@@ -282,6 +345,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volatility",
-    description="volatility indicators: ATR(14), Bollinger Bands(20,2), Band Width(20), %B(20), Historical Volatility(20, annualized), Parkinson Volatility(20, annualized), ATR Stop Distance(3×ATR, % of price), ATR Position Size(2% risk, 3×ATR), Reward Risk Ratio(BB upper / ATR stop)",
+    description="volatility indicators: ATR(14), Bollinger Bands(20,2), Band Width(20), %B(20), Historical Volatility(20, annualized), Parkinson Volatility(20, annualized), ATR Stop Distance(3×ATR, % of price), ATR Position Size(2% risk, 3×ATR), Reward Risk Ratio(BB upper / ATR stop), ATR Percentile(14,20)",
     process_csv_fn=process_csv,
 )
