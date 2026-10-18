@@ -198,6 +198,124 @@ def compute_williams_r(highs, lows, closes, period=14):
     return result
 
 
+def compute_cci(highs, lows, closes, period=20):
+    """Compute Commodity Channel Index (CCI). Returns a list aligned with input.
+
+    CCI = (Typical Price − SMA(Typical Price)) / (0.015 × Mean Deviation)
+    Typical Price = (High + Low + Close) / 3
+
+    No bounds — values > +100 = overbought, < −100 = oversold.
+
+    Parameters
+    ----------
+    highs : list[float]
+        High prices for each bar.
+    lows : list[float]
+        Low prices for each bar.
+    closes : list[float]
+        Close prices for each bar.
+    period : int
+        Lookback period (default 20).
+    """
+    n = len(closes)
+    assert len(highs) == n and len(lows) == n, (
+        f"highs, lows, and closes must have the same length ({n})"
+    )
+    result = [None] * n
+
+    if n < period:
+        return result
+
+    # Compute typical prices
+    typical_prices = [
+        (float(highs[i]) + float(lows[i]) + float(closes[i])) / 3.0
+        for i in range(n)
+    ]
+
+    for i in range(period - 1, n):
+        window = typical_prices[i - period + 1 : i + 1]
+        sma_tp = sum(window) / period
+        mean_deviation = sum(abs(tp - sma_tp) for tp in window) / period
+        if mean_deviation > 0:
+            result[i] = (typical_prices[i] - sma_tp) / (0.015 * mean_deviation)
+
+    return result
+
+
+def compute_tsi(closes, fast=25, slow=13):
+    """Compute True Strength Index (TSI). Returns a list aligned with input.
+
+    TSI = 100 × DoubleEMA(price_change, fast, slow) / DoubleEMA(|price_change|, fast, slow)
+
+    Parameters
+    ----------
+    closes : list[float]
+        Close prices for each bar.
+    fast : int
+        Fast EMA period (default 25).
+    slow : int
+        Slow EMA period (default 13).
+    """
+    n = len(closes)
+    result = [None] * n
+
+    if n < fast + slow + 1:
+        return result
+
+    # Price changes: diff[t] = close[t] - close[t-1], valid from index 1
+    changes = [
+        float(closes[i]) - float(closes[i - 1]) for i in range(1, n)
+    ]
+    abs_changes = [abs(c) for c in changes]
+
+    # First EMA on changes (fast period)
+    ema1 = compute_ema(changes, fast)
+    # Second EMA on ema1 (slow period) — only on valid (non-None) values
+    ema1_valid = [v for v in ema1 if v is not None]
+    ema2 = compute_ema(ema1_valid, slow)
+
+    # First EMA on abs changes (fast period)
+    ema_abs1 = compute_ema(abs_changes, fast)
+    # Second EMA on ema_abs1 (slow period)
+    ema_abs1_valid = [v for v in ema_abs1 if v is not None]
+    ema_abs2 = compute_ema(ema_abs1_valid, slow)
+
+    # Map back to original indices
+    # changes starts at index 1 of closes
+    changes_offset = 1
+
+    # Build index maps for ema2 and ema_abs2
+    ema1_indices = [i for i, v in enumerate(ema1) if v is not None]
+    ema2_indices = [changes_offset + ema1_indices[j] for j, idx in enumerate(ema1_indices) if j < len(ema2) and ema2[j] is not None]
+
+    ema_abs1_indices = [i for i, v in enumerate(ema_abs1) if v is not None]
+    ema_abs2_indices = [changes_offset + ema_abs1_indices[j] for j, idx in enumerate(ema_abs1_indices) if j < len(ema_abs2) and ema_abs2[j] is not None]
+
+    # Only keep indices where both TSI numerator and denominator are valid
+    valid_indices = set(ema2_indices) & set(ema_abs2_indices)
+
+    for i in valid_indices:
+        # Find corresponding values in ema2 and ema_abs2
+        # ema2 maps: ema1_index -> ema2_value
+        ema1_to_ema2 = {}
+        for j, ema1_idx in enumerate(ema1_indices):
+            if j < len(ema2) and ema2[j] is not None:
+                ema1_to_ema2[ema1_idx] = ema2[j]
+
+        ema_abs1_to_ema_abs2 = {}
+        for j, ema_abs1_idx in enumerate(ema_abs1_indices):
+            if j < len(ema_abs2) and ema_abs2[j] is not None:
+                ema_abs1_to_ema_abs2[ema_abs1_idx] = ema_abs2[j]
+
+        num = ema1_to_ema2.get(i)
+        den = ema_abs1_to_ema_abs2.get(i)
+
+        if num is not None and den is not None and den != 0:
+            result[i] = 100.0 * num / den
+
+    return result
+
+
 def compute_momentum_columns(closes, highs, lows, n):
     """Compute all momentum indicator columns for a single ticker's data."""
     ta_rsi = compute_rsi(closes, 14) if n >= 15 else [None] * n
@@ -205,6 +323,8 @@ def compute_momentum_columns(closes, highs, lows, n):
     macd = compute_macd(closes)
     stoch = compute_stochastic(closes) if n >= 14 else {"ta_stoch_k": [None] * n, "ta_stoch_d": [None] * n}
     ta_williams_r = compute_williams_r(highs, lows, closes, 14) if n >= 14 else [None] * n
+    ta_cci = compute_cci(highs, lows, closes, 20) if n >= 20 else [None] * n
+    ta_tsi = compute_tsi(closes, 25, 13) if n >= 39 else [None] * n
 
     return {
         "ta_rsi14": ta_rsi,
@@ -215,6 +335,8 @@ def compute_momentum_columns(closes, highs, lows, n):
         "ta_stoch_k": stoch["ta_stoch_k"],
         "ta_stoch_d": stoch["ta_stoch_d"],
         "ta_williams_r": ta_williams_r,
+        "ta_cci": ta_cci,
+        "ta_tsi": ta_tsi,
     }
 
 
@@ -245,6 +367,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 if __name__ == "__main__":
     main(
         module_name="calculate_momentum",
-        description="momentum indicators: RSI(14), MACD, ROC(20), Stochastic %K/%D, Williams %R",
+        description="momentum indicators: RSI(14), MACD, ROC(20), Stochastic %K/%D, Williams %R, CCI, TSI",
         process_csv_fn=process_csv,
     )
