@@ -153,6 +153,7 @@ class TestProcessCSV:
                              "ta_ma20", "ta_ma50", "ta_sma10",
                              "ta_ma20_slope", "ta_ma50_slope",
                              "ta_price_ma20_ratio",
+                             "ta_price_dist_ema20", "ta_price_dist_ema50", "ta_price_dist_ema200",
                              "ta_aroon_up", "ta_aroon_down",
                              "ta_adx14", "ta_plus_di14", "ta_minus_di14",
                              "ta_donchian_upper", "ta_donchian_lower",

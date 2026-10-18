@@ -381,6 +381,24 @@ def compute_adx_di(highs, lows, closes, period=14):
     return {"adx": adx, "plus_di": plus_di, "minus_di": minus_di}
 
 
+def compute_price_dist_ma(closes, ma_values):
+    """Compute percentage distance from price to a moving average.
+
+    dist = (close - MA) / MA * 100
+
+    A positive value means price is above the MA; negative means below.
+
+    Returns a list aligned with closes; ``None`` where MA is unavailable
+    or zero.
+    """
+    n = len(closes)
+    result = [None] * n
+    for i in range(n):
+        if ma_values[i] is not None and closes[i] is not None and ma_values[i] != 0:
+            result[i] = (closes[i] - ma_values[i]) / ma_values[i] * 100.0
+    return result
+
+
 def compute_trend_columns(highs, lows, closes, n):
     """Compute all trend indicator columns for a single ticker's data."""
     ta_ema20 = compute_ema(closes, 20) if n >= 20 else [None] * n
@@ -396,6 +414,10 @@ def compute_trend_columns(highs, lows, closes, n):
     for i in range(n):
         if ta_ma20[i] is not None and ta_ma20[i] != 0:
             ta_price_ma20_ratio[i] = closes[i] / ta_ma20[i]
+
+    ta_price_dist_ema20 = compute_price_dist_ma(closes, ta_ema20)
+    ta_price_dist_ema50 = compute_price_dist_ma(closes, ta_ema50)
+    ta_price_dist_ema200 = compute_price_dist_ma(closes, ta_ema200)
 
     aroon = compute_aroon(highs, lows, period=25)
     adx_di = compute_adx_di(highs, lows, closes, period=14)
@@ -416,6 +438,9 @@ def compute_trend_columns(highs, lows, closes, n):
         "ta_ma20_slope": ta_ma20_slope,
         "ta_ma50_slope": ta_ma50_slope,
         "ta_price_ma20_ratio": ta_price_ma20_ratio,
+        "ta_price_dist_ema20": ta_price_dist_ema20,
+        "ta_price_dist_ema50": ta_price_dist_ema50,
+        "ta_price_dist_ema200": ta_price_dist_ema200,
         "ta_aroon_up": aroon["aroon_up"],
         "ta_aroon_down": aroon["aroon_down"],
         "ta_adx14": adx_di["adx"],
@@ -454,6 +479,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_trend",
-    description="trend indicators: EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA ratio, Aroon, ADX/DI, Donchian, Keltner",
+    description="trend indicators: EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA ratio, price/EMA distance, Aroon, ADX/DI, Donchian, Keltner",
     process_csv_fn=process_csv,
 )
