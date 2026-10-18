@@ -283,6 +283,73 @@ def compute_support_resistance(highs, lows, swings, lookback=100, tolerance_pct=
     return resistance, support
 
 
+def compute_structure_columns(highs, lows, closes, n, lookback=5, tolerance_pct=0.02):
+    """Compute all structure indicator columns for a single ticker's data."""
+    if n < lookback * 2 + 1:
+        empty = [None] * n
+        zero = [0] * n
+        return {
+            "ta_swing_high": empty,
+            "ta_swing_low": empty,
+            "ta_swing_high_idx": [-1] * n,
+            "ta_swing_low_idx": [-1] * n,
+            "ta_hh": zero,
+            "ta_hl": zero,
+            "ta_lh": zero,
+            "ta_ll": zero,
+            "ta_trend": zero,
+            "ta_bos": zero,
+            "ta_choch": zero,
+            "ta_nearest_resistance": empty,
+            "ta_nearest_support": empty,
+            "ta_dist_resistance": empty,
+            "ta_dist_support": empty,
+            "ta_breakout_strength": zero,
+            "ta_support_touches": zero,
+        }
+
+    structure = compute_structure(highs, lows, lookback)
+    resistance, support = compute_support_resistance(
+        highs, lows, structure, lookback=100, tolerance_pct=tolerance_pct
+    )
+
+    # Compute distance percentages: (level - close) / close * 100
+    dist_resistance = [None] * n
+    dist_support = [None] * n
+    for i in range(n):
+        close = closes[i]
+        if resistance[i] is not None and close > 0:
+            dist_resistance[i] = (resistance[i] - close) / close * 100.0
+        if support[i] is not None and close > 0:
+            dist_support[i] = (close - support[i]) / close * 100.0
+
+    # Compute breakout strength
+    breakout_strength = compute_breakout_strength(highs, lows, resistance, support, tolerance_pct)
+
+    # Compute support touches
+    support_touches = compute_support_touches(lows, support, tolerance_pct)
+
+    return {
+        "ta_swing_high": structure["swing_high"],
+        "ta_swing_low": structure["swing_low"],
+        "ta_swing_high_idx": structure["swing_high_idx"],
+        "ta_swing_low_idx": structure["swing_low_idx"],
+        "ta_hh": structure["hh"],
+        "ta_hl": structure["hl"],
+        "ta_lh": structure["lh"],
+        "ta_ll": structure["ll"],
+        "ta_trend": structure["trend"],
+        "ta_bos": structure["bos"],
+        "ta_choch": structure["choch"],
+        "ta_nearest_resistance": resistance,
+        "ta_nearest_support": support,
+        "ta_dist_resistance": dist_resistance,
+        "ta_dist_support": dist_support,
+        "ta_breakout_strength": breakout_strength,
+        "ta_support_touches": support_touches,
+    }
+
+
 def _cluster_levels(points, tolerance_pct=0.02):
     """Cluster nearby price levels into resistance/support zones.
 
@@ -324,62 +391,78 @@ def _cluster_levels(points, tolerance_pct=0.02):
     return clusters
 
 
-def compute_structure_columns(highs, lows, closes, n, lookback=5, tolerance_pct=0.02):
-    """Compute all structure indicator columns for a single ticker's data."""
-    if n < lookback * 2 + 1:
-        # Not enough data for any structure detection
-        empty = [None] * n
-        zero = [0] * n
-        return {
-            "ta_swing_high": empty,
-            "ta_swing_low": empty,
-            "ta_swing_high_idx": [-1] * n,
-            "ta_swing_low_idx": [-1] * n,
-            "ta_hh": zero,
-            "ta_hl": zero,
-            "ta_lh": zero,
-            "ta_ll": zero,
-            "ta_trend": zero,
-            "ta_bos": zero,
-            "ta_choch": zero,
-            "ta_nearest_resistance": empty,
-            "ta_nearest_support": empty,
-            "ta_dist_resistance": empty,
-            "ta_dist_support": empty,
-        }
+def compute_breakout_strength(highs, lows, resistance, support, tolerance_pct=0.02):
+    """Compute breakout strength: percentage by which price exceeds nearest S/R levels.
 
-    structure = compute_structure(highs, lows, lookback)
-    resistance, support = compute_support_resistance(
-        highs, lows, structure, lookback=100, tolerance_pct=tolerance_pct
-    )
+    Args:
+        highs: list of high prices
+        lows: list of low prices
+        resistance: list of nearest resistance prices, or None
+        support: list of nearest support prices, or None
+        tolerance_pct: proximity threshold for support touch detection
 
-    # Compute distance percentages: (level - close) / close * 100
-    dist_resistance = [None] * n
-    dist_support = [None] * n
+    Returns:
+        breakout_strength: list of percentage breakout strength, or 0 if no breakout
+    """
+    n = len(highs)
+    breakout_strength = [0.0] * n
+
     for i in range(n):
-        close = closes[i]
-        if resistance[i] is not None and close > 0:
-            dist_resistance[i] = (resistance[i] - close) / close * 100.0
-        if support[i] is not None and close > 0:
-            dist_support[i] = (close - support[i]) / close * 100.0
+        max_breakout = 0.0
 
-    return {
-        "ta_swing_high": structure["swing_high"],
-        "ta_swing_low": structure["swing_low"],
-        "ta_swing_high_idx": structure["swing_high_idx"],
-        "ta_swing_low_idx": structure["swing_low_idx"],
-        "ta_hh": structure["hh"],
-        "ta_hl": structure["hl"],
-        "ta_lh": structure["lh"],
-        "ta_ll": structure["ll"],
-        "ta_trend": structure["trend"],
-        "ta_bos": structure["bos"],
-        "ta_choch": structure["choch"],
-        "ta_nearest_resistance": resistance,
-        "ta_nearest_support": support,
-        "ta_dist_resistance": dist_resistance,
-        "ta_dist_support": dist_support,
-    }
+        # Check upside breakout: high exceeds nearest resistance
+        if resistance[i] is not None and resistance[i] > 0:
+            if highs[i] > resistance[i]:
+                max_breakout = max(max_breakout, (highs[i] - resistance[i]) / resistance[i] * 100.0)
+
+        # Check downside breakout: low exceeds below nearest support
+        if support[i] is not None and support[i] > 0:
+            if lows[i] < support[i]:
+                max_breakout = max(max_breakout, (support[i] - lows[i]) / support[i] * 100.0)
+
+        breakout_strength[i] = max_breakout
+
+    return breakout_strength
+
+
+def compute_support_touches(lows, support, tolerance_pct=0.02):
+    """Count cumulative number of times price has tested the nearest support level.
+
+    A "touch" occurs when the low comes within tolerance_pct of the support level
+    but does not break below it (low >= support * (1 - tolerance_pct)).
+    The count resets to 0 when support is actually broken (low drops below support
+    by more than tolerance_pct).
+
+    Args:
+        lows: list of low prices
+        support: list of nearest support prices, or None
+        tolerance_pct: proximity threshold for support touch detection (2%)
+
+    Returns:
+        support_touches: list of cumulative touch count
+    """
+    n = len(support)
+    support_touches = [0] * n
+    current_touches = 0
+
+    for i in range(n):
+        if support[i] is None or support[i] <= 0:
+            support_touches[i] = current_touches
+            continue
+
+        low = lows[i]
+        sup = support[i]
+
+        # Support broken: low drops below support by more than tolerance
+        if low < sup * (1 - tolerance_pct):
+            current_touches = 0
+        # Support tested: low comes within tolerance_pct of support
+        elif low <= sup * (1 + tolerance_pct):
+            current_touches += 1
+
+        support_touches[i] = current_touches
+
+    return support_touches
 
 
 def process_csv(input_path, output_path, total_files, current_file, _lock=None):

@@ -8,9 +8,11 @@ import pandas as pd
 import pytest
 
 from calculate_structure import (
+    compute_breakout_strength,
     compute_structure,
     compute_structure_columns,
     compute_support_resistance,
+    compute_support_touches,
     detect_swings,
     _cluster_levels,
 )
@@ -506,6 +508,7 @@ class TestComputeStructureColumns:
             "ta_trend", "ta_bos", "ta_choch",
             "ta_nearest_resistance", "ta_nearest_support",
             "ta_dist_resistance", "ta_dist_support",
+            "ta_breakout_strength", "ta_support_touches",
         }
         assert set(cols.keys()) == expected
 
@@ -526,6 +529,8 @@ class TestComputeStructureColumns:
         assert cols["ta_hh"] == zero
         assert cols["ta_lh"] == zero
         assert cols["ta_trend"] == zero
+        assert cols["ta_breakout_strength"] == zero
+        assert cols["ta_support_touches"] == zero
 
     def test_with_realistic_data(self):
         np.random.seed(42)
@@ -779,3 +784,185 @@ class TestEdgeCases:
         # swing_high contains the price (not boolean), so check it's not None
         assert structure["swing_high"][3] is not None
         assert structure["swing_high"][3] == 110
+
+
+# ---------------------------------------------------------------------------
+# Breakout Strength Tests
+# ---------------------------------------------------------------------------
+
+
+class TestComputeBreakoutStrength:
+    """Tests for compute_breakout_strength."""
+
+    def test_no_breakout(self):
+        """When price doesn't exceed S/R levels, strength should be 0."""
+        highs = [105] * 10
+        lows = [95] * 10
+        resistance = [110] * 10  # above all highs
+        support = [90] * 10      # below all lows
+        result = compute_breakout_strength(highs, lows, resistance, support)
+        assert result == [0.0] * 10
+
+    def test_upside_breakout(self):
+        """High exceeding resistance should produce positive strength."""
+        highs = [115] * 10  # 15% above resistance
+        lows = [90] * 10
+        resistance = [100] * 10
+        support = [90] * 10
+        result = compute_breakout_strength(highs, lows, resistance, support)
+        expected = [15.0] * 10  # (115 - 100) / 100 * 100
+        assert result == expected
+
+    def test_downside_breakout(self):
+        """Low below support should produce positive strength."""
+        highs = [110] * 10
+        lows = [85] * 10  # 16.67% below support
+        resistance = [110] * 10
+        support = [100] * 10
+        result = compute_breakout_strength(highs, lows, resistance, support)
+        expected = [15.0] * 10  # (100 - 85) / 100 * 100
+        assert result == expected
+
+    def test_max_breakout_direction(self):
+        """Should take the maximum of up and down breakout."""
+        highs = [120] * 10  # 20% above resistance
+        lows = [80] * 10    # 20% below support
+        resistance = [100] * 10
+        support = [100] * 10
+        result = compute_breakout_strength(highs, lows, resistance, support)
+        # Both breakouts are 20%, so max is 20%
+        assert result == [20.0] * 10
+
+    def test_none_levels(self):
+        """None resistance/support should be skipped."""
+        highs = [115] * 10
+        lows = [95] * 10
+        resistance = [None] * 10
+        support = [90] * 10
+        result = compute_breakout_strength(highs, lows, resistance, support)
+        assert result == [0.0] * 10  # No valid breakout levels
+
+    def test_mixed_breakout(self):
+        """Only one bar breaks out, others are 0."""
+        highs = [100, 100, 115, 100, 100]
+        lows = [95, 95, 95, 95, 95]
+        resistance = [100, 100, 100, 100, 100]
+        support = [94, 94, 94, 94, 94]
+        result = compute_breakout_strength(highs, lows, resistance, support)
+        assert result[0] == 0.0       # No breakout (high=100 not > 100)
+        assert result[2] == 15.0      # (115 - 100) / 100 * 100
+        assert result[4] == 0.0       # No breakout
+
+    def test_zero_length(self):
+        """Empty input should return empty list."""
+        result = compute_breakout_strength([], [], [], [])
+        assert result == []
+
+    def test_partial_none_levels(self):
+        """Some bars have None resistance, others don't."""
+        highs = [105, 105, 115, 105]
+        lows = [95, 95, 95, 95]
+        resistance = [100, None, 100, None]
+        support = [90, 90, 90, 90]
+        result = compute_breakout_strength(highs, lows, resistance, support)
+        assert result[0] == 5.0   # (105 - 100) / 100 * 100
+        assert result[1] == 0.0   # None resistance, no valid level
+        assert result[2] == 15.0  # (115 - 100) / 100 * 100
+        assert result[3] == 0.0   # None resistance
+
+    def test_breakout_strength_in_columns(self):
+        """Breakout strength should be included in compute_structure_columns output."""
+        np.random.seed(42)
+        n = 100
+        closes = [100.0]
+        for _ in range(n - 1):
+            closes.append(max(closes[-1] + np.random.normal(0, 1.0), 10.0))
+        highs = [c + abs(np.random.normal(0, 1.0)) for c in closes]
+        lows = [max(c - abs(np.random.normal(0, 1.0)), 1.0) for c in closes]
+
+        cols = compute_structure_columns(highs, lows, closes, n)
+        assert "ta_breakout_strength" in cols
+        assert len(cols["ta_breakout_strength"]) == n
+        # All values should be >= 0
+        for v in cols["ta_breakout_strength"]:
+            assert v >= 0
+
+
+# ---------------------------------------------------------------------------
+# Support Touches Tests
+# ---------------------------------------------------------------------------
+
+
+class TestComputeSupportTouches:
+    """Tests for compute_support_touches."""
+
+    def test_no_support(self):
+        """When no support level, count should be 0."""
+        lows = [95] * 10
+        support = [None] * 10
+        result = compute_support_touches(lows, support)
+        assert result == [0] * 10
+
+    def test_support_never_touched(self):
+        """When price is far from support, count stays 0."""
+        lows = [100] * 10  # 10% above support
+        support = [90] * 10
+        result = compute_support_touches(lows, support, tolerance_pct=0.02)
+        # Default tolerance is 2%, so 100 is not within 2% of 90
+        assert result == [0] * 10
+
+    def test_support_touches_count(self):
+        """Price touching support should increment count."""
+        np.random.seed(42)
+        # Generate prices that repeatedly touch the support level
+        support_level = 100.0
+        tolerance = 0.02  # 2%
+        # Lows just within tolerance of support (100-102 range)
+        lows = [100.0, 100.5, 101.0, 101.5, 102.0]
+        support = [support_level] * 5
+        result = compute_support_touches(lows, support, tolerance_pct=tolerance)
+        # All lows are within [98, 102], so all should count as touches
+        assert result == [1, 2, 3, 4, 5]
+
+    def test_support_broken_resets(self):
+        """When support breaks (low drops below), count resets to 0."""
+        lows = [100, 97, 100, 101]  # 97 breaks below 98 (100 * 0.98)
+        support = [100] * 4
+        result = compute_support_touches(lows, support, tolerance_pct=0.02)
+        # Index 0: low=100, within [98, 102], touch=1
+        # Index 1: low=97, below 98, support broken, count=0
+        # Index 2: low=100, within [98, 102], touch=1
+        # Index 3: low=101, within [98, 102], touch=2
+        assert result == [1, 0, 1, 2]
+
+    def test_none_support_preserves_count(self):
+        """When support is None, count is preserved (not reset)."""
+        lows = [100] * 3
+        support = [100, None, 100]
+        result = compute_support_touches(lows, support, tolerance_pct=0.02)
+        assert result == [1, 1, 2]  # None preserves current count
+
+    def test_zero_length(self):
+        """Empty input should return empty list."""
+        result = compute_support_touches([], [])
+        assert result == []
+
+    def test_support_touches_in_columns(self):
+        """Support touches should be included in compute_structure_columns output."""
+        np.random.seed(42)
+        n = 100
+        closes = [100.0]
+        for _ in range(n - 1):
+            closes.append(max(closes[-1] + np.random.normal(0, 1.0), 10.0))
+        highs = [c + abs(np.random.normal(0, 1.0)) for c in closes]
+        lows = [max(c - abs(np.random.normal(0, 1.0)), 1.0) for c in closes]
+
+        cols = compute_structure_columns(highs, lows, closes, n)
+        assert "ta_support_touches" in cols
+        assert len(cols["ta_support_touches"]) == n
+        # All values should be >= 0
+        for v in cols["ta_support_touches"]:
+            assert v >= 0
+        # Values should be integers (counts)
+        for v in cols["ta_support_touches"]:
+            assert isinstance(v, int)
