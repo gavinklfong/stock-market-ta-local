@@ -8,9 +8,11 @@ import pandas as pd
 
 from common import main, read_yfinance_csv
 
-# Suppress arch/hmmlearn noise during fitting
+# Suppress arch/hmmlearn/scipy noise during fitting
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
+warnings.filterwarnings("ignore", message=".*optimizer.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="hmmlearn")
 
 from arch import arch_model
 from hmmlearn.hmm import GaussianHMM
@@ -60,12 +62,14 @@ def compute_garch_volatility(closes, p=1, q=1):
         }
 
     try:
-        # rescale=True lets arch internally normalize y for the optimizer,
-        # suppressing the DataScaleWarning while keeping results in the
-        # original log-return scale.
-        model = arch_model(r, vol="Garch", p=p, q=q, mean="Zero",
-                           dist="normal", rescale=True)
-        result = model.fit(disp="off", options={"maxiter": 1000})
+        with warnings.catch_warnings(record=True) as caught:
+            # rescale=True lets arch internally normalize y for the optimizer,
+            # suppressing the DataScaleWarning while keeping results in the
+            # original log-return scale.
+            warnings.simplefilter("always")
+            model = arch_model(r, vol="Garch", p=p, q=q, mean="Zero",
+                               dist="normal", rescale=True)
+            result = model.fit(disp="off", options={"maxiter": 1000})
         cv = result.conditional_volatility
         cond_vol = cv.flatten() if hasattr(cv, "flatten") else np.asarray(cv).flatten()
         cond_var = cond_vol ** 2
@@ -134,26 +138,30 @@ def compute_hmm_regime(closes, n_states=3):
         }
 
     try:
-        # Standardize returns for better fitting
-        r_std = r.copy()
-        mean_r = np.mean(r_std)
-        std_r = np.std(r_std)
-        if std_r > 0:
-            r_standardized = (r_std - mean_r) / std_r
-        else:
-            r_standardized = r_std - mean_r
+        with warnings.catch_warnings(record=True) as _caught:
+            # Suppress hmmlearn/NumPy 2.5 deprecation warnings from C extensions
+            warnings.simplefilter("always")
 
-        # Reshape to 2D for hmmlearn
-        X = r_standardized.reshape(-1, 1)
+            # Standardize returns for better fitting
+            r_std = r.copy()
+            mean_r = np.mean(r_std)
+            std_r = np.std(r_std)
+            if std_r > 0:
+                r_standardized = (r_std - mean_r) / std_r
+            else:
+                r_standardized = r_std - mean_r
 
-        # Fit Gaussian HMM
-        model = GaussianHMM(
-            n_components=n_states,
-            covariance_type="full",
-            n_iter=100,
-            random_state=42,
-        )
-        model.fit(X)
+            # Reshape to 2D for hmmlearn
+            X = r_standardized.reshape(-1, 1)
+
+            # Fit Gaussian HMM
+            model = GaussianHMM(
+                n_components=n_states,
+                covariance_type="full",
+                n_iter=100,
+                random_state=42,
+            )
+            model.fit(X)
 
         # Viterbi decoding: most likely state sequence
         states = model.predict(X)

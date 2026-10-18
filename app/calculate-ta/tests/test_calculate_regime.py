@@ -111,7 +111,12 @@ class TestComputeGarchVolatility:
 
     def test_constant_prices(self):
         closes = [100.0] * 50
-        result = compute_garch_volatility(closes)
+        # Constant prices → all-zero log returns → GARCH optimizer warnings
+        # (divide-by-zero, incompatibility constraints). Wrap to suppress
+        # expected warnings for this pathological input.
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = compute_garch_volatility(closes)
         # With constant prices, log returns are all zero; GARCH should still
         # produce some values (though small). At minimum it should not crash.
         assert len(result["ta_garch_vol"]) == 50

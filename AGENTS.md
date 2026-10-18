@@ -8,6 +8,8 @@ app/
     download_tickers.py       # Bulk OHLCV → data/market-data/*.csv
     download_stock_info.py    # P/E ratios → data/pe-data/*.csv
   analysis-pipeline/    # Prefect flow orchestrating the full pipeline
+  analyse-market-data/  # Analyse market data and generate interactive HTML reports
+    run_analysis.py       # Generate market dashboard HTML reports
   calculate-ta/         # TA indicator modules (see README.md for full docs)
     common.py               # Shared: read_yfinance_csv(), main() thread-pool runner
     run_calculation.py      # Orchestrator — runs modules in parallel, then merges
@@ -37,11 +39,18 @@ python app/calculate-ta/run_calculation.py --dry-run     # preview only
 python -m app.analysis_pipeline.run_pipeline
 python -m app.analysis_pipeline.run_pipeline trend momentum
 
-# 4. Backtest (uses data/ta-data/NG.L.csv)
+# 4. Analyse market data and generate HTML report (one file per ticker)
+python app/analyse-market-data/run_analysis.py              # all tickers
+python app/analyse-market-data/run_analysis.py AAPL MSFT    # specific tickers
+python app/analyse-market-data/run_analysis.py --dry-run    # show analysis only
+
+# Output: data/reports/{ticker}_analysis.html per ticker
+
+# 5. Backtest (uses data/ta-data/NG.L.csv)
 python app/backtest/backtest_ng.py
 python app/backtest/backtest_ng.py --strategy supertrend
 
-# 5. Tests
+# 6. Tests
 python run_test.py                              # all tests
 python run_test.py calculate-ta                 # TA module tests only
 python run_test.py download-market-data             # download script tests only

@@ -236,30 +236,19 @@ def _card_html(report):
 </div>"""
 
 
-def generate_html(reports):
-    """Generate the full HTML report."""
-    # Summary table rows
-    summary_rows = ""
-    for r in reports:
-        rsi_s = f"{_fmt(r['rsi'],1)}" if r['rsi'] is not None else "N/A"
-        macd_s = "Bullish" if r['macd_hist'] and r['macd_hist'] > 0 else "Bearish" if r['macd_hist'] is not None else "N/A"
-        summary_rows += f"<tr><td><b>{r['ticker']}</b></td><td>{_fmt(r['close'])}</td><td>{rsi_s}</td><td>{macd_s}</td><td>{r['date']}</td></tr>"
+def generate_ticker_html(report):
+    """Generate a single HTML report for one ticker."""
+    card_html = _card_html(report)
 
-    cards_html = "\n".join(_card_html(r) for r in reports)
-
-    # Build chart sections
-    chart_sections = ""
-    for idx, r in enumerate(reports):
-        figs = build_charts(r["ticker"], r["df"])
-        charts = ""
-        for i, fig in enumerate(figs):
-            charts += f'<div class="chart-container"><h4>{["Price (OHLC+EMA)", "Volume + OBV", "MACD", "RSI + Bollinger"][i]}</h4>'
-            charts += fig.to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": False})
-            charts += "</div>"
-        chart_sections += f'<div class="ticker-section"><h2>{r["ticker"]}</h2>{charts}</div>'
+    figs = build_charts(report["ticker"], report["df"])
+    charts = ""
+    for i, fig in enumerate(figs):
+        charts += f'<div class="chart-container"><h4>{["Price (OHLC+EMA)", "Volume + OBV", "MACD", "RSI + Bollinger"][i]}</h4>'
+        charts += fig.to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": False})
+        charts += "</div>"
 
     html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Market Dashboard</title>
+<html><head><meta charset="utf-8"><title>{report['ticker']} Market Analysis</title>
 <script src="https://cdn.plot.ly/plotly-{PLOTLY_VERSION}.min.js"></script>
 <style>
 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }}
@@ -268,19 +257,12 @@ table {{ border-collapse: collapse; width: 100%; margin: 10px 0; }}
 td {{ padding: 6px 12px; border-bottom: 1px solid #eee; }}
 .card {{ background: #fff; border-radius: 8px; padding: 16px; margin: 12px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
 .card h3 {{ margin-top: 0; color: #333; }}
-.summary-table {{ background: #fff; border-radius: 8px; padding: 16px; margin: 12px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
-.ticker-section {{ background: #fff; border-radius: 8px; padding: 16px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
-.ticker-section h2 {{ color: #333; border-bottom: 2px solid #2196f3; padding-bottom: 8px; }}
-.chart-container {{ margin: 16px 0; }}
+.chart-container {{ background: #fff; border-radius: 8px; padding: 16px; margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
 .chart-container h4 {{ margin: 0 0 8px 0; color: #666; }}
 </style></head><body>
-<h1>Market Dashboard</h1>
-<div class="summary-table">
-<h3>Cross-Ticker Summary</h3>
-<table><tr><th>Ticker</th><th>Close</th><th>RSI(14)</th><th>MACD</th><th>Date</th></tr>{summary_rows}</table>
-</div>
-{cards_html}
-{chart_sections}
+<h1>{report['ticker']} Market Analysis</h1>
+{card_html}
+{charts}
 </body></html>"""
     return html
 
@@ -288,7 +270,7 @@ td {{ padding: 6px 12px; border-bottom: 1px solid #eee; }}
 # --- Main ---
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyse market data and generate HTML report")
+    parser = argparse.ArgumentParser(description="Analyse market data and generate per-ticker HTML reports")
     parser.add_argument("tickers", nargs="*", help="Tickers to analyse (default: all)")
     parser.add_argument("--dry-run", action="store_true", help="Show analysis only, don't generate HTML")
     parser.add_argument("--output", default=None, help="Output directory for HTML report")
@@ -313,10 +295,11 @@ def main():
 
     output_dir = Path(args.output) if args.output else DEFAULT_OUTPUT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "market_dashboard.html"
-    html = generate_html(reports)
-    output_path.write_text(html, encoding="utf-8")
-    print(f"\nReport written to {output_path}")
+    for r in reports:
+        output_path = output_dir / f"{r['ticker']}_analysis.html"
+        html = generate_ticker_html(r)
+        output_path.write_text(html, encoding="utf-8")
+        print(f"Report written to {output_path}")
 
 
 if __name__ == "__main__":
