@@ -86,10 +86,10 @@ python run_test.py download-market-data             # download script tests only
 | `calculate_trend.py` | EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA20 ratio, Aroon, ADX/DI, Donchian, Keltner |
 | `calculate_momentum.py` | RSI(14), MACD (line/signal/histogram), ROC(20), Williams %R(14), CCI(20), TSI(25,13) |
 | `calculate_volume.py` | OBV, CMF(20), VWAP(20), OFI, log volume |
-| `calculate_volatility.py` | ATR(14), Bollinger Bands(20,2), Band Width(20), %B(20) |
+| `calculate_volatility.py` | ATR(14), Bollinger Bands(20,2), Band Width(20), %B(20), Historical Volatility(20), Parkinson Volatility(20), ATR Stop Distance(3×ATR, % of price), ATR Position Size(2% risk, 3×ATR), Reward Risk Ratio(BB upper / ATR stop) |
 | `calculate_regime.py` | GARCH(1,1) vol forecast, 3-state HMM regime |
 | `calculate_structure.py` | Swing highs/lows, HH/HL/LH/LL, BOS, CHoCH, S/R |
-| `calculate_return.py` | Forward returns: 5d/10d/20d |
+| `calculate_return.py` | Forward returns: 5d/10d/20d | Past performance: 1m/3m/6m/1y (percentage) | Rolling alpha20, beta20 (vs ^FTSE, 20-day window) |
 
 All output columns use `ta_` prefix. Module details are in `app/calculate-ta/README.md`.
 
