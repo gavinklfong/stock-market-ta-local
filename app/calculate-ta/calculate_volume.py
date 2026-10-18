@@ -206,6 +206,61 @@ def compute_mfi(highs, lows, closes, volumes, period=14):
     return result
 
 
+def compute_emv(highs, lows, volumes, period=14):
+    """Compute Ease of Movement. Returns a list aligned with input."""
+    n = len(highs)
+    result = [None] * n
+    if n < 2:
+        return result
+
+    emv_raw = [0.0] * n
+
+    for i in range(n):
+        high_i = float(highs[i])
+        low_i = float(lows[i])
+        vol_i = float(volumes[i])
+
+        # Midpoint = (High + Low) / 2
+        midpoint = (high_i + low_i) / 2.0
+
+        # Distance Moved
+        if i > 0:
+            prev_midpoint = (float(highs[i - 1]) + float(lows[i - 1])) / 2.0
+            distance_moved = midpoint - prev_midpoint
+        else:
+            distance_moved = 0.0
+
+        # Box Ratio = Volume / (High - Low), 0 when High == Low
+        high_low_range = high_i - low_i
+        if high_low_range != 0 and vol_i != 0:
+            box_ratio = vol_i / high_low_range
+        else:
+            box_ratio = 0.0
+
+        # EMV raw = Distance Moved / Box Ratio, 0 when Box Ratio is 0
+        if box_ratio != 0:
+            emv_raw[i] = distance_moved / box_ratio
+        else:
+            emv_raw[i] = 0.0
+
+    # Compute SMA of EMV raw values
+    if n < period:
+        return result
+
+    # First window
+    window_sum = 0.0
+    for i in range(period):
+        window_sum += emv_raw[i]
+    result[period - 1] = window_sum / period
+
+    # Slide window
+    for i in range(period, n):
+        window_sum += emv_raw[i] - emv_raw[i - period]
+        result[i] = window_sum / period
+
+    return result
+
+
 def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     """Compute all volume indicator columns for a single ticker's data."""
     ta_obv = compute_obv(closes, volumes)
@@ -215,6 +270,7 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     ta_log_volume = [math.log(v) if v > 0 else None for v in volumes]
     ta_adl = compute_adl(highs, lows, closes, volumes)
     ta_mfi14 = compute_mfi(highs, lows, closes, volumes) if n >= 14 else [None] * n
+    ta_emv14 = compute_emv(highs, lows, volumes) if n >= 14 else [None] * n
 
     return {
         "ta_obv": ta_obv,
@@ -224,6 +280,7 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
         "ta_log_volume": ta_log_volume,
         "ta_adl": ta_adl,
         "ta_mfi14": ta_mfi14,
+        "ta_emv14": ta_emv14,
     }
 
 
@@ -255,6 +312,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volume",
-    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14)",
+    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14), EMV(14)",
     process_csv_fn=process_csv,
 )
