@@ -344,12 +344,24 @@ def compute_structure_columns(highs, lows, closes, n, lookback=5, tolerance_pct=
             "ta_choch": zero,
             "ta_nearest_resistance": empty,
             "ta_nearest_support": empty,
+            "ta_dist_resistance": empty,
+            "ta_dist_support": empty,
         }
 
     structure = compute_structure(highs, lows, lookback)
     resistance, support = compute_support_resistance(
         highs, lows, structure, lookback=100, tolerance_pct=tolerance_pct
     )
+
+    # Compute distance percentages: (level - close) / close * 100
+    dist_resistance = [None] * n
+    dist_support = [None] * n
+    for i in range(n):
+        close = closes[i]
+        if resistance[i] is not None and close > 0:
+            dist_resistance[i] = (resistance[i] - close) / close * 100.0
+        if support[i] is not None and close > 0:
+            dist_support[i] = (close - support[i]) / close * 100.0
 
     return {
         "ta_swing_high": structure["swing_high"],
@@ -365,6 +377,8 @@ def compute_structure_columns(highs, lows, closes, n, lookback=5, tolerance_pct=
         "ta_choch": structure["choch"],
         "ta_nearest_resistance": resistance,
         "ta_nearest_support": support,
+        "ta_dist_resistance": dist_resistance,
+        "ta_dist_support": dist_support,
     }
 
 
