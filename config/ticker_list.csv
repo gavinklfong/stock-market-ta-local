@@ -1,6 +1,7 @@
 Ticker,Company,Major Industry / Sector
 NG.L,National Grid,Utilities
-SSE.L, SSE plc,Utilities
+SSE.L,SSE plc,Utilities
 ^FTSE,FTSE 100 Index,Index
+ISF.L,iShares Core FTSE 100 ETF GBP Dist,Index
 HSBA.L,HSBC plc,Banking
 LSE.L,London Stock Exchange,Financial Services

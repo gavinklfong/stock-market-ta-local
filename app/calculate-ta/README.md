@@ -45,6 +45,7 @@ All technical indicators are grouped by analysis category below. Each module pro
 | | `ta_roc20` | Rate of Change (20-period, in percent) |
 | | `ta_williams_r` | Williams %R (14-period, oscillator from 0 to −100) |
 | **Volume** | `ta_obv` | On-Balance Volume (cumulative) |
+| | `ta_adl` | Accumulation Distribution Line (cumulative CLV × Volume) |
 | | `ta_cmf` | Chaikin Money Flow (20-period) |
 | | `ta_vwap` | Volume-Weighted Average Price (20-period rolling) |
 | | `ta_ofi` | Order Flow Imbalance, normalized to [−1, 1] |
@@ -156,6 +157,7 @@ All technical indicators are grouped by analysis category below. Each module pro
 | Column | Type | Description |
 |---|---|---|
 | `ta_obv` | float | On-Balance Volume (cumulative) |
+| `ta_adl` | float | Accumulation Distribution Line (cumulative CLV × Volume) |
 | `ta_cmf` | float | Chaikin Money Flow (20-period) |
 | `ta_vwap` | float | Rolling Volume-Weighted Average Price (20-period) |
 | `ta_ofi` | float | Order Flow Imbalance (normalized) |
@@ -164,6 +166,7 @@ All technical indicators are grouped by analysis category below. Each module pro
 **Calculation logic:**
 
 - **OBV** — Cumulative volume: +volume if close > previous close, −volume if close < previous close, unchanged if equal. Starts at first bar's volume.
+- **ADL** — Accumulation Distribution Line. Closing Location Value (CLV) = `((Close − Low) − (High − Close)) / (High − Low)`. CLV = 0 when High = Low. ADL = cumulative sum of CLV × Volume, starting at bar 0.
 - **CMF(20)** — Chaikin Money Flow. Money Flow Volume = `((Close − Low) − (High − Close)) / (High − Low) × Volume`. Rolling 20-period sum of MFV / sum of volume. Uses a rolling 20-element buffer with modulo indexing.
 - **VWAP(20)** — Rolling Volume-Weighted Average Price. Typical price = `(High + Low + Close) / 3`. Sliding window of 20 bars; incrementally removes oldest and adds newest element.
 - **OFI** — Order Flow Imbalance = `(Close − Open) / (High − Low)`, normalized to [−1, 1]. Returns 0 when High = Low.

@@ -129,6 +129,30 @@ def compute_vwap(highs, lows, closes, volumes, period=20):
     return result
 
 
+def compute_adl(highs, lows, closes, volumes):
+    """Compute Accumulation Distribution Line. Returns a list aligned with input."""
+    n = len(highs)
+    result = [0.0] * n
+
+    for i in range(n):
+        high_i = float(highs[i])
+        low_i = float(lows[i])
+        close_i = float(closes[i])
+        vol_i = float(volumes[i])
+
+        if high_i != low_i:
+            clv = ((close_i - low_i) - (high_i - close_i)) / (high_i - low_i)
+        else:
+            clv = 0.0
+
+        if i == 0:
+            result[i] = clv * vol_i
+        else:
+            result[i] = result[i - 1] + clv * vol_i
+
+    return result
+
+
 def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     """Compute all volume indicator columns for a single ticker's data."""
     ta_obv = compute_obv(closes, volumes)
@@ -136,6 +160,7 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     ta_vwap = compute_vwap(highs, lows, closes, volumes)
     ta_ofi = compute_ofi(opens, highs, lows, closes) if opens is not None else [None] * n
     ta_log_volume = [math.log(v) if v > 0 else None for v in volumes]
+    ta_adl = compute_adl(highs, lows, closes, volumes)
 
     return {
         "ta_obv": ta_obv,
@@ -143,6 +168,7 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
         "ta_vwap": ta_vwap,
         "ta_ofi": ta_ofi,
         "ta_log_volume": ta_log_volume,
+        "ta_adl": ta_adl,
     }
 
 
@@ -174,6 +200,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volume",
-    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume",
+    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL",
     process_csv_fn=process_csv,
 )
