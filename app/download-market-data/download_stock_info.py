@@ -307,19 +307,34 @@ def _extract_info(stock: yf.Ticker) -> dict:
     return result
 
 
-def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> tuple[pd.DataFrame, dict]:
+def calculate_pe_for_ticker(
+    ticker: str,
+    period: str = "15y",
+    existing_df: pd.DataFrame = None,
+) -> tuple[pd.DataFrame, dict]:
     """Calculate daily P/E and dividend yield using trailing metrics.
 
     Tries quarterly EPS sources first, falls back to annual.
     Dividends are fetched from historical price data.
     Fundamental metrics from stock.info are no longer retrieved.
 
+    When ``existing_df`` is provided, the function reconstructs the full
+    price history (existing + new), recalculates all metrics, and returns
+    only rows *after* the last date in ``existing_df`` — enabling
+    incremental updates without re-downloading 15 years of data.
+
     Parameters
     ----------
     ticker : str
         Stock ticker (e.g. "NG.L").
     period : str
-        How far back to get price data (passed to yfinance).
+        How far back to get price data (passed to yfinance).  Only used
+        when ``existing_df`` is None.
+    existing_df : pd.DataFrame, optional
+        Previously-saved PE DataFrame (columns: Date, Close, ta_eps_ttm,
+        ta_pe, ta_div_ttm, ta_div_yield).  When provided the caller must
+        ensure ``period`` is a short window covering only new data since
+        ``existing_df``'s last date.
 
     Returns
     -------
@@ -337,20 +352,34 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> tuple[pd.DataFr
     if hist.empty:
         raise ValueError(f"No price data for {ticker}")
 
-    prices = hist[["Close"]].copy()
-    prices.index.name = "Date"
-    prices = prices.reset_index()
-    prices["Date"] = pd.to_datetime(prices["Date"]).dt.tz_localize(None).astype("datetime64[ns]")
+    new_prices = hist[["Close"]].copy()
+    new_prices.index.name = "Date"
+    new_prices = new_prices.reset_index()
+    new_prices["Date"] = pd.to_datetime(new_prices["Date"]).dt.tz_localize(None).astype("datetime64[ns]")
+
+    # ── 2. Merge with existing data (if provided) ───────────────────
+    if existing_df is not None and not existing_df.empty and "Date" in existing_df.columns:
+        old_dates = pd.to_datetime(existing_df["Date"]).astype("datetime64[ns]")
+        old_closes = existing_df["Close"]
+
+        old_prices = pd.DataFrame({"Date": old_dates, "Close": old_closes})
+
+        # Combine old + new; new rows overwrite duplicates
+        all_prices = pd.concat([old_prices, new_prices]).drop_duplicates(
+            subset=["Date"], keep="last",
+        ).sort_values("Date").reset_index(drop=True)
+    else:
+        all_prices = new_prices.copy()
 
     # Normalize price to currency (GBp → GBP for UK stocks)
     currency = stock.info.get("currency", "")
-    close_price = prices["Close"].values.copy()
+    close_price = all_prices["Close"].values.copy()
     if currency == "GBp":
         close_price = close_price / 100
 
-    prices["Close"] = close_price
+    all_prices["Close"] = close_price
 
-    # ── 2. Get EPS (multi-source: quarterly → earnings_dates → annual) ──
+    # ── 3. Get EPS (multi-source: quarterly → earnings_dates → annual) ──
     eps_sources = [
         ("quarterly_income_stmt", fetch_quarterly_eps_from_income_stmt, True),
         ("earnings_dates", fetch_quarterly_eps_from_earnings_dates, True),
@@ -370,7 +399,7 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> tuple[pd.DataFr
     if eps_series.empty:
         raise ValueError(f"No EPS data for {ticker}")
 
-    # ── 3. Compute TTM or use raw EPS ───────────────────────────────
+    # ── 4. Compute TTM or use raw EPS ───────────────────────────────
     # TTM only makes sense for quarterly data (sum of last 4 quarters).
     # For annual data, use the latest EPS directly.
     if is_quarterly and len(eps_series) >= 4:
@@ -389,7 +418,7 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> tuple[pd.DataFr
     if len(valid_ttm) > 0:
         print(f"  Latest {label.split()[0]}: {valid_ttm.iloc[-1]:.4f}")
 
-    # ── 4. Map EPS to each price date (forward-fill) ────────────────
+    # ── 5. Map EPS to each price date (forward-fill) ────────────────
     # Sort valid EPS by date (merge_asof requires sorted input)
     valid_ttm = ttm_eps_series.dropna().sort_index()
     ttm_df = valid_ttm.reset_index()
@@ -398,7 +427,7 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> tuple[pd.DataFr
     ttm_df["EPS_Date"] = pd.to_datetime(ttm_df["EPS_Date"]).dt.tz_localize(None).astype("datetime64[ns]")
 
     # Keep Close in price_df so it survives the merge
-    price_df = prices[["Date", "Close"]].copy().sort_values("Date")
+    price_df = all_prices[["Date", "Close"]].copy().sort_values("Date")
 
     merged = pd.merge_asof(
         price_df,
@@ -408,10 +437,10 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> tuple[pd.DataFr
         direction="backward",
     )
 
-    # ── 5. Calculate P/E ────────────────────────────────────────────
+    # ── 6. Calculate P/E ────────────────────────────────────────────
     merged["ta_pe"] = merged["Close"] / merged["ta_eps_ttm"]
 
-    # ── 6. Calculate dividend yield (if data available) ─────────────
+    # ── 7. Calculate dividend yield (if data available) ─────────────
     div_series = fetch_historical_dividends(stock, period=period)
     if not div_series.empty:
         # Normalize dividend currency (GBp → GBP for UK stocks)
@@ -434,16 +463,44 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> tuple[pd.DataFr
         merged["ta_div_ttm"] = float("nan")
         merged["ta_div_yield"] = float("nan")
 
-    # ── 7. Clean up ─────────────────────────────────────────────────
+    # ── 8. Clean up ─────────────────────────────────────────────────
     result = merged[["Date", "Close", "ta_eps_ttm", "ta_pe", "ta_div_ttm", "ta_div_yield"]].copy()
     # Drop rows before we had any valid EPS
     result = result.dropna(subset=["ta_eps_ttm", "ta_pe"])
 
+    # ── 9. Filter to new rows only (when existing_df provided) ──────
+    if existing_df is not None and not existing_df.empty and "Date" in existing_df.columns:
+        old_last_date = pd.Timestamp(
+            pd.to_datetime(existing_df["Date"]).max(),
+        )
+        new_dates = pd.to_datetime(result["Date"])
+        result = result[new_dates > old_last_date].reset_index(drop=True)
+
     return result, fundamentals
 
 
+def _compute_incremental_period(last_date_str: str) -> str:
+    """Compute a short period string covering new data since *last_date_str*.
+
+    Returns a yfinance-compatible period like ``"60d"`` based on how many
+    days have passed since the last saved date.  Falls back to ``"30d"``
+    for very recent data and caps at ``"2y"`` for older data.
+    """
+    last_date = pd.Timestamp(last_date_str)
+    span_days = (pd.Timestamp.now() - last_date).days
+    span_days = max(30, span_days)
+    span_days = min(span_days, 365 * 2)  # cap at 2 years
+    return f"{span_days}d"
+
+
 def bulk_download() -> None:
-    """Read ticker_list.csv and calculate P/E for each ticker."""
+    """Read ticker_list.csv and calculate P/E for each ticker.
+
+    Increments: when a ``{ticker}_PE.csv`` already exists, only new price
+    data since the last saved date is fetched; the full calculation is
+    then performed on the combined data and only the delta rows are
+    appended.
+    """
     if not os.path.exists(input_csv):
         raise FileNotFoundError(
             f"Could not find '{input_csv}'. Make sure it exists in the same directory."
@@ -466,28 +523,55 @@ def bulk_download() -> None:
         daily_filepath = os.path.join(output_dir, f"{safe_filename}_PE.csv")
         fund_filepath = os.path.join(output_dir, f"{safe_filename}_fundamentals.csv")
 
+        # Check for existing data (incremental update)
+        existing_df = None
+        if os.path.exists(daily_filepath):
+            try:
+                existing_df = pd.read_csv(daily_filepath)
+                existing_df = existing_df.dropna(subset=["Date"])
+                if not existing_df.empty and "Date" in existing_df.columns:
+                    last_date = pd.to_datetime(existing_df["Date"]).max()
+                    print(f"  Existing data up to {last_date.date()}")
+                    period = _compute_incremental_period(last_date)
+                else:
+                    existing_df = None
+                    period = PERIOD
+            except Exception:
+                existing_df = None
+                period = PERIOD
+        else:
+            period = PERIOD
+
         print(f"Processing [{yf_ticker}] -> {safe_filename} ...")
         try:
-            result, fundamentals = calculate_pe_for_ticker(yf_ticker, period=PERIOD)
+            result, fundamentals = calculate_pe_for_ticker(
+                yf_ticker, period=period, existing_df=existing_df,
+            )
             if result.empty:
-                print(f"  Skipped {yf_ticker}: No valid P/E data.\n")
+                print(f"  No new data for {yf_ticker}.")
+                print()
                 continue
 
-            result = result.sort_values("Date").reset_index(drop=True)
-            result.to_csv(daily_filepath, index=False)
-            print(f"  Saved {len(result)} daily rows to {daily_filepath}")
-            print(f"  Latest P/E: {result['ta_pe'].iloc[-1]:.2f}", end="")
-            if "ta_div_yield" in result.columns and pd.notna(result["ta_div_yield"].iloc[-1]):
-                print(f"  | Div Yield: {result['ta_div_yield'].iloc[-1]:.2f}%")
+            # Append new rows to existing file
+            if existing_df is not None and not existing_df.empty:
+                combined = pd.concat([existing_df, result])
+                combined = combined.sort_values("Date").reset_index(drop=True)
+                combined.to_csv(daily_filepath, index=False)
+                print(f"  Appended {len(result)} new rows ({len(combined)} total)")
+                print(f"  Latest P/E: {combined['ta_pe'].iloc[-1]:.2f}", end="")
+                if "ta_div_yield" in combined.columns and pd.notna(combined["ta_div_yield"].iloc[-1]):
+                    print(f"  | Div Yield: {combined['ta_div_yield'].iloc[-1]:.2f}%")
+                else:
+                    print()
             else:
-                print()
-
-            # Write fundamentals CSV (single row, static metrics)
-            # fund_df = pd.DataFrame([fundamentals])
-            # fund_df.to_csv(fund_filepath, index=False)
-            # valid_fund_cols = [c for c in fund_df.columns if fund_df[c].notna().any()]
-            # print(f"  Saved {len(valid_fund_cols)} fundamental metrics to {fund_filepath}")
-            # print()
+                result = result.sort_values("Date").reset_index(drop=True)
+                result.to_csv(daily_filepath, index=False)
+                print(f"  Saved {len(result)} daily rows to {daily_filepath}")
+                print(f"  Latest P/E: {result['ta_pe'].iloc[-1]:.2f}", end="")
+                if "ta_div_yield" in result.columns and pd.notna(result["ta_div_yield"].iloc[-1]):
+                    print(f"  | Div Yield: {result['ta_div_yield'].iloc[-1]:.2f}%")
+                else:
+                    print()
 
         except Exception as e:
             print(f"  Error processing {yf_ticker}: {e}\n")

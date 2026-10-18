@@ -560,10 +560,188 @@ class TestCalculatePeForTicker:
         finally:
             self._unpatch_yf_ticker()
 
+    def test_incremental_existing_df(self):
+        """When existing_df is provided, only new rows should be returned."""
+        # Old data: 50 trading days from 2023-01-01 → ~2023-03-10
+        old_dates = pd.date_range("2023-01-01", periods=50, freq="D").strftime("%Y-%m-%d").tolist()
+        old_closes = [100.0] * 50
+        old_df = pd.DataFrame({
+            "Date": pd.to_datetime(old_dates),
+            "Close": old_closes,
+            "ta_eps_ttm": [1.4] * 50,
+            "ta_pe": [100.0 / 1.4] * 50,
+            "ta_div_ttm": [0.0] * 50,
+            "ta_div_yield": [0.0] * 50,
+        })
+
+        # New mock data: 400 daily periods from 2023-01-01 → ~2024-01-25
+        # EPS dates: 4 quarterly values ending 2023-12-31 → TTM valid from 2023-12-31
+        new_price_dates = pd.date_range("2023-01-01", periods=400, freq="D").strftime("%Y-%m-%d").tolist()
+        new_closes = [100.0] * 400
+        eps_dates = ["2023-03-31", "2023-06-30", "2023-09-30", "2023-12-31"]
+        eps_values = [1.0, 1.2, 1.3, 1.4]
+
+        mock_ticker = self._make_mock_ticker(
+            new_price_dates, new_closes,
+            eps_dates, eps_values,
+        )
+        self._patch_yf_ticker(mock_ticker)
+
+        try:
+            result, fundamentals = mod.calculate_pe_for_ticker(
+                "INC", period="30d", existing_df=old_df,
+            )
+            assert isinstance(fundamentals, dict)
+            assert fundamentals == {}
+            # Should return rows after the last old date (~2023-03-10)
+            old_last = pd.to_datetime(old_df["Date"]).max()
+            result_last = pd.to_datetime(result["Date"]).max()
+            assert result_last > old_last, \
+                f"Expected new rows beyond {old_last.date()}, got {result_last}"
+            assert len(result) > 0
+        finally:
+            self._unpatch_yf_ticker()
+
+    def test_incremental_no_new_data(self):
+        """When new data doesn't extend past existing data, result is empty."""
+        old_dates = pd.date_range("2023-01-01", periods=400, freq="D").strftime("%Y-%m-%d").tolist()
+        old_closes = [100.0] * 400
+        old_df = pd.DataFrame({
+            "Date": pd.to_datetime(old_dates),
+            "Close": old_closes,
+            "ta_eps_ttm": [1.4] * 400,
+            "ta_pe": [100.0 / 1.4] * 400,
+            "ta_div_ttm": [0.0] * 400,
+            "ta_div_yield": [0.0] * 400,
+        })
+
+        # New data: same date range as old
+        same_price_dates = pd.date_range("2023-01-01", periods=400, freq="D").strftime("%Y-%m-%d").tolist()
+        same_closes = [100.0] * 400
+        eps_dates = ["2023-03-31", "2023-06-30", "2023-09-30", "2023-12-31"]
+        eps_values = [1.0, 1.2, 1.3, 1.4]
+
+        mock_ticker = self._make_mock_ticker(
+            same_price_dates, same_closes,
+            eps_dates, eps_values,
+        )
+        self._patch_yf_ticker(mock_ticker)
+
+        try:
+            result, fundamentals = mod.calculate_pe_for_ticker(
+                "NO-NEW", period="30d", existing_df=old_df,
+            )
+            assert result.empty
+        finally:
+            self._unpatch_yf_ticker()
+
+    def test_incremental_empty_existing_df(self):
+        """When existing_df is empty, full calculation runs."""
+        price_dates = pd.date_range("2023-01-01", periods=400, freq="D").strftime("%Y-%m-%d").tolist()
+        closes = [100.0] * 400
+        eps_dates = ["2023-03-31", "2023-06-30", "2023-09-30", "2023-12-31"]
+        eps_values = [1.0, 1.2, 1.3, 1.4]
+
+        mock_ticker = self._make_mock_ticker(
+            price_dates, closes,
+            eps_dates, eps_values,
+        )
+        self._patch_yf_ticker(mock_ticker)
+
+        try:
+            empty_df = pd.DataFrame()
+            result, fundamentals = mod.calculate_pe_for_ticker(
+                "EMPTY", period="15y", existing_df=empty_df,
+            )
+            assert len(result) > 0
+        finally:
+            self._unpatch_yf_ticker()
+
+    def test_incremental_missing_date_column(self):
+        """When existing_df has no Date column, full calculation runs."""
+        price_dates = pd.date_range("2023-01-01", periods=400, freq="D").strftime("%Y-%m-%d").tolist()
+        closes = [100.0] * 400
+        eps_dates = ["2023-03-31", "2023-06-30", "2023-09-30", "2023-12-31"]
+        eps_values = [1.0, 1.2, 1.3, 1.4]
+
+        mock_ticker = self._make_mock_ticker(
+            price_dates, closes,
+            eps_dates, eps_values,
+        )
+        self._patch_yf_ticker(mock_ticker)
+
+        try:
+            no_date_df = pd.DataFrame({"Close": [100.0]})
+            result, fundamentals = mod.calculate_pe_for_ticker(
+                "NO-DT", period="15y", existing_df=no_date_df,
+            )
+            assert len(result) > 0
+        finally:
+            self._unpatch_yf_ticker()
+
+    def test_incremental_gb_pence(self):
+        """Incremental: GBp currency conversion should apply to merged data."""
+        old_dates = pd.date_range("2023-01-01", periods=50, freq="D").strftime("%Y-%m-%d").tolist()
+        old_closes = [5000] * 50  # GBp
+        old_df = pd.DataFrame({
+            "Date": pd.to_datetime(old_dates),
+            "Close": old_closes,
+            "ta_eps_ttm": [140.0] * 50,
+            "ta_pe": [50.0 / 1.4] * 50,
+            "ta_div_ttm": [0.0] * 50,
+            "ta_div_yield": [0.0] * 50,
+        })
+
+        new_price_dates = pd.date_range("2023-01-01", periods=400, freq="D").strftime("%Y-%m-%d").tolist()
+        new_closes = [5000] * 400  # GBp
+        eps_dates = ["2023-03-31", "2023-06-30", "2023-09-30", "2023-12-31"]
+        eps_values = [100.0, 120.0, 130.0, 140.0]
+
+        mock_ticker = self._make_mock_ticker(
+            new_price_dates, new_closes,
+            eps_dates, eps_values,
+            currency="GBp",
+        )
+        self._patch_yf_ticker(mock_ticker)
+
+        try:
+            result, _ = mod.calculate_pe_for_ticker(
+                "NG.INC", period="30d", existing_df=old_df,
+            )
+            assert len(result) > 0
+            # Close should be converted to GBP (5000 GBp -> 50.0 GBP)
+            assert (result["Close"] == 50.0).all()
+        finally:
+            self._unpatch_yf_ticker()
+
 
 # ---------------------------------------------------------------------------
-# _extract_info
+# _compute_incremental_period
 # ---------------------------------------------------------------------------
+
+class TestComputeIncrementalPeriod:
+    """Tests for _compute_incremental_period."""
+
+    def test_recent_date(self):
+        """A very recent date should yield a short period (30d minimum)."""
+        from datetime import timedelta
+        yesterday = (pd.Timestamp.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        result = mod._compute_incremental_period(yesterday)
+        assert "30d" in result
+
+    def test_60_days_ago(self):
+        """60 days ago should yield ~60d."""
+        from datetime import timedelta
+        date_60 = (pd.Timestamp.now() - timedelta(days=60)).strftime("%Y-%m-%d")
+        result = mod._compute_incremental_period(date_60)
+        assert "60d" in result
+
+    def test_caps_at_2_years(self):
+        """Dates older than ~730 days should cap at 730d."""
+        old_date = "2020-01-01"
+        result = mod._compute_incremental_period(old_date)
+        # Should be 730d (2 years capped)
+        assert "730d" in result or "2y" in result.lower()
 
 class TestExtractInfo:
     """Tests for _extract_info."""
