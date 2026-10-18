@@ -14,6 +14,7 @@ from calculate_volume import (
     compute_vwap,
     compute_volume_columns,
     compute_volume_oscillator,
+    compute_volume_percentile,
     compute_volume_zscore,
 )
 
@@ -45,7 +46,7 @@ class TestComputeVolumeColumns:
     def test_expected_keys(self):
         highs, lows, closes, volumes = _make_sample(50)
         cols = compute_volume_columns(highs, lows, closes, volumes, 50)
-        assert set(cols.keys()) == {"ta_obv", "ta_cmf", "ta_vwap", "ta_ofi", "ta_log_volume", "ta_adl", "ta_mfi14", "ta_emv14", "ta_volume_osc", "ta_volume_zscore"}
+        assert set(cols.keys()) == {"ta_obv", "ta_cmf", "ta_vwap", "ta_ofi", "ta_log_volume", "ta_adl", "ta_mfi14", "ta_emv14", "ta_volume_osc", "ta_volume_zscore", "ta_volume_percentile"}
 
     def test_all_same_length(self):
         highs, lows, closes, volumes = _make_sample(50)
@@ -94,6 +95,12 @@ class TestComputeVolumeColumns:
         valid = [v for v in cols["ta_volume_zscore"] if v is not None]
         assert len(valid) > 0
 
+    def test_volume_percentile_present(self):
+        highs, lows, closes, volumes = _make_sample(50)
+        cols = compute_volume_columns(highs, lows, closes, volumes, 50)
+        valid = [v for v in cols["ta_volume_percentile"] if v is not None]
+        assert len(valid) > 0
+
     def test_short_data(self):
         n = 5
         cols = compute_volume_columns(
@@ -112,6 +119,8 @@ class TestComputeVolumeColumns:
         assert all(v is None for v in cols["ta_volume_osc"])
         assert len(cols["ta_volume_zscore"]) == 5
         assert all(v is None for v in cols["ta_volume_zscore"])
+        assert len(cols["ta_volume_percentile"]) == 5
+        assert all(v is None for v in cols["ta_volume_percentile"])
 
     def test_all_same_length(self):
         highs, lows, closes, volumes = _make_sample(100)

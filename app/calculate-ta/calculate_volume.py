@@ -329,6 +329,45 @@ def compute_volume_zscore(volumes, window=20):
     return result
 
 
+def compute_volume_percentile(volumes, window=20):
+    """Compute rolling percentile rank of volume.
+
+    Volume percentile = percentage of values in the rolling window
+    that are less than the current volume.
+
+    This tells us where the current volume ranks relative to its recent
+    distribution. A percentile of 90 means volume is higher than 90% of
+    the past 20 bars — a potential breakout signal.
+
+    Parameters
+    ----------
+    volumes : list[float]
+        Volume for each bar.
+    window : int
+        Rolling window for percentile calculation (default 20).
+
+    Returns
+    -------
+    list[float | None]
+        Percentile values (0–100) aligned with input; None before warmup.
+    """
+    n = len(volumes)
+    result = [None] * n
+
+    if n < window:
+        return result
+
+    for i in range(window - 1, n):
+        window_vols = [float(volumes[j]) for j in range(i - window + 1, i + 1)]
+        current_vol = float(volumes[i])
+
+        # Count values strictly below current volume
+        below_count = sum(1 for v in window_vols if v < current_vol)
+        result[i] = (below_count / window) * 100.0
+
+    return result
+
+
 def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     """Compute all volume indicator columns for a single ticker's data."""
     ta_obv = compute_obv(closes, volumes)
@@ -341,6 +380,7 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     ta_emv14 = compute_emv(highs, lows, volumes) if n >= 14 else [None] * n
     ta_volume_osc = compute_volume_oscillator(volumes) if n >= 28 else [None] * n
     ta_volume_zscore = compute_volume_zscore(volumes) if n >= 20 else [None] * n
+    ta_volume_percentile = compute_volume_percentile(volumes) if n >= 20 else [None] * n
 
     return {
         "ta_obv": ta_obv,
@@ -353,6 +393,7 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
         "ta_emv14": ta_emv14,
         "ta_volume_osc": ta_volume_osc,
         "ta_volume_zscore": ta_volume_zscore,
+        "ta_volume_percentile": ta_volume_percentile,
     }
 
 
@@ -384,6 +425,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volume",
-    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14), EMV(14), Volume Oscillator(14,28), Volume Z-Score(20)",
+    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14), EMV(14), Volume Oscillator(14,28), Volume Z-Score(20), Volume Percentile(20)",
     process_csv_fn=process_csv,
 )

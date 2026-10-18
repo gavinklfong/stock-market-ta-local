@@ -14,6 +14,7 @@ from calculate_volume import (
     compute_vwap,
     compute_volume_columns,
     compute_volume_oscillator,
+    compute_volume_percentile,
     compute_volume_zscore,
 )
 
@@ -119,6 +120,7 @@ class TestProcessCSV:
         assert "ta_emv14" in df.columns
         assert "ta_volume_osc" in df.columns
         assert "ta_volume_zscore" in df.columns
+        assert "ta_volume_percentile" in df.columns
 
     def test_realistic_data(self, tmp_path):
         input_dir = tmp_path / "market-data"
