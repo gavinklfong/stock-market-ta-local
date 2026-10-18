@@ -119,11 +119,53 @@ def compute_roc(values, period=20):
     return result
 
 
+def compute_stochastic(values, k_period=14, d_period=3):
+    """Compute Stochastic %K and %D. Returns dict with stoch_k and stoch_d lists."""
+    n = len(values)
+    result_k = [None] * n
+    result_d = [None] * n
+
+    if n < k_period:
+        return {"ta_stoch_k": result_k, "ta_stoch_d": result_d}
+
+    lowest_low = [None] * n
+    highest_high = [None] * n
+
+    # Compute rolling min/max over k_period, store at the last index of the window
+    for i in range(k_period - 1, n):
+        window = [float(values[j]) for j in range(i - k_period + 1, i + 1)]
+        lowest_low[i] = min(window)
+        highest_high[i] = max(window)
+
+    # %K = (Close - Lowest Low) / (Highest High - Lowest Low) * 100
+    for i in range(k_period - 1, n):
+        hh = highest_high[i]
+        ll = lowest_low[i]
+        if hh != ll:
+            result_k[i] = ((float(values[i]) - ll) / (hh - ll)) * 100.0
+
+    # %D = SMA of %K over d_period
+    k_valid = []
+    k_valid_indices = []
+    for i in range(n):
+        if result_k[i] is not None:
+            k_valid.append(result_k[i])
+            k_valid_indices.append(i)
+
+    for local_idx, i in enumerate(k_valid_indices):
+        if local_idx >= d_period - 1:
+            window = k_valid[local_idx - d_period + 1 : local_idx + 1]
+            result_d[i] = sum(window) / d_period
+
+    return {"ta_stoch_k": result_k, "ta_stoch_d": result_d}
+
+
 def compute_momentum_columns(closes, n):
     """Compute all momentum indicator columns for a single ticker's data."""
     ta_rsi = compute_rsi(closes, 14) if n >= 15 else [None] * n
     ta_roc = compute_roc(closes, 20) if n >= 21 else [None] * n
     macd = compute_macd(closes)
+    stoch = compute_stochastic(closes) if n >= 14 else {"ta_stoch_k": [None] * n, "ta_stoch_d": [None] * n}
 
     return {
         "ta_rsi14": ta_rsi,
@@ -131,6 +173,8 @@ def compute_momentum_columns(closes, n):
         "ta_macd_signal": macd["signal_line"],
         "ta_macd_histogram": macd["histogram"],
         "ta_roc20": ta_roc,
+        "ta_stoch_k": stoch["ta_stoch_k"],
+        "ta_stoch_d": stoch["ta_stoch_d"],
     }
 
 
@@ -159,6 +203,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 if __name__ == "__main__":
     main(
         module_name="calculate_momentum",
-        description="momentum indicators: RSI(14), MACD, ROC(20)",
+        description="momentum indicators: RSI(14), MACD, ROC(20), Stochastic %K/%D",
         process_csv_fn=process_csv,
     )
