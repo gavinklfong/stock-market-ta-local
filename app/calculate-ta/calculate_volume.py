@@ -289,6 +289,46 @@ def compute_volume_oscillator(volumes, period_fast=14, period_slow=28):
     return result
 
 
+def compute_volume_zscore(volumes, window=20):
+    """Compute Z-score of volume over a rolling window.
+
+    Volume Z-score = (volume - mean(volume_window)) / std(volume_window)
+
+    This tells us how unusual the current volume is relative to its recent
+    distribution. A Z-score of +2 means volume is 2 standard deviations
+    above its rolling mean — a potential breakout signal.
+
+    Parameters
+    ----------
+    volumes : list[float]
+        Volume for each bar.
+    window : int
+        Rolling window for Z-score calculation (default 20).
+
+    Returns
+    -------
+    list[float | None]
+        Z-score values aligned with input; None before warmup.
+    """
+    n = len(volumes)
+    result = [None] * n
+
+    if n < window:
+        return result
+
+    for i in range(window - 1, n):
+        window_vols = [float(volumes[j]) for j in range(i - window + 1, i + 1)]
+
+        mean_vol = sum(window_vols) / window
+        variance = sum((v - mean_vol) ** 2 for v in window_vols) / window
+        std_vol = variance ** 0.5
+
+        if std_vol > 0:
+            result[i] = (float(volumes[i]) - mean_vol) / std_vol
+
+    return result
+
+
 def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     """Compute all volume indicator columns for a single ticker's data."""
     ta_obv = compute_obv(closes, volumes)
@@ -300,6 +340,7 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     ta_mfi14 = compute_mfi(highs, lows, closes, volumes) if n >= 14 else [None] * n
     ta_emv14 = compute_emv(highs, lows, volumes) if n >= 14 else [None] * n
     ta_volume_osc = compute_volume_oscillator(volumes) if n >= 28 else [None] * n
+    ta_volume_zscore = compute_volume_zscore(volumes) if n >= 20 else [None] * n
 
     return {
         "ta_obv": ta_obv,
@@ -311,6 +352,7 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
         "ta_mfi14": ta_mfi14,
         "ta_emv14": ta_emv14,
         "ta_volume_osc": ta_volume_osc,
+        "ta_volume_zscore": ta_volume_zscore,
     }
 
 
@@ -342,6 +384,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volume",
-    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14), EMV(14), Volume Oscillator(14,28)",
+    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14), EMV(14), Volume Oscillator(14,28), Volume Z-Score(20)",
     process_csv_fn=process_csv,
 )
