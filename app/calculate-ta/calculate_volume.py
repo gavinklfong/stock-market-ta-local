@@ -261,6 +261,34 @@ def compute_emv(highs, lows, volumes, period=14):
     return result
 
 
+def compute_volume_oscillator(volumes, period_fast=14, period_slow=28):
+    """Compute Volume Oscillator (fast EMA - slow EMA of volume). Returns a list aligned with input."""
+    n = len(volumes)
+    result = [None] * n
+    if n < period_slow:
+        return result
+
+    # Compute fast EMA
+    fast_ema = [0.0] * n
+    multiplier_fast = 2.0 / (period_fast + 1)
+    fast_ema[period_fast - 1] = sum(float(v) for v in volumes[:period_fast]) / period_fast
+    for i in range(period_fast, n):
+        fast_ema[i] = (float(volumes[i]) - fast_ema[i - 1]) * multiplier_fast + fast_ema[i - 1]
+
+    # Compute slow EMA
+    slow_ema = [0.0] * n
+    multiplier_slow = 2.0 / (period_slow + 1)
+    slow_ema[period_slow - 1] = sum(float(v) for v in volumes[:period_slow]) / period_slow
+    for i in range(period_slow, n):
+        slow_ema[i] = (float(volumes[i]) - slow_ema[i - 1]) * multiplier_slow + slow_ema[i - 1]
+
+    # Volume Oscillator = Fast EMA - Slow EMA (first valid at period_slow - 1)
+    for i in range(period_slow - 1, n):
+        result[i] = fast_ema[i] - slow_ema[i]
+
+    return result
+
+
 def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     """Compute all volume indicator columns for a single ticker's data."""
     ta_obv = compute_obv(closes, volumes)
@@ -271,6 +299,7 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     ta_adl = compute_adl(highs, lows, closes, volumes)
     ta_mfi14 = compute_mfi(highs, lows, closes, volumes) if n >= 14 else [None] * n
     ta_emv14 = compute_emv(highs, lows, volumes) if n >= 14 else [None] * n
+    ta_volume_osc = compute_volume_oscillator(volumes) if n >= 28 else [None] * n
 
     return {
         "ta_obv": ta_obv,
@@ -281,6 +310,7 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
         "ta_adl": ta_adl,
         "ta_mfi14": ta_mfi14,
         "ta_emv14": ta_emv14,
+        "ta_volume_osc": ta_volume_osc,
     }
 
 
@@ -312,6 +342,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volume",
-    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14), EMV(14)",
+    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14), EMV(14), Volume Oscillator(14,28)",
     process_csv_fn=process_csv,
 )

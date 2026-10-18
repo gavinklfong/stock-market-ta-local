@@ -13,6 +13,7 @@ from calculate_volume import (
     compute_obv,
     compute_vwap,
     compute_volume_columns,
+    compute_volume_oscillator,
 )
 
 
@@ -705,6 +706,114 @@ class TestComputeEMV:
 
 
 # ---------------------------------------------------------------------------
+# TestComputeVolumeOscillator
+# ---------------------------------------------------------------------------
+
+class TestComputeVolumeOscillator:
+    def test_length(self):
+        volumes = [1000.0 + i for i in range(50)]
+        result = compute_volume_oscillator(volumes)
+        assert len(result) == 50
+
+    def test_short_data(self):
+        """When fewer than period_slow (28) rows, all values are None."""
+        volumes = [1000.0 + i for i in range(20)]
+        result = compute_volume_oscillator(volumes)
+        assert all(v is None for v in result)
+
+    def test_first_valid_at_period_slow_minus_one(self):
+        """First valid VO at index period_slow-1 (27 for default periods)."""
+        volumes = [1000.0 + i for i in range(50)]
+        result = compute_volume_oscillator(volumes)
+        for i in range(27):
+            assert result[i] is None
+        assert result[27] is not None
+
+    def test_constant_volume_zero_oscillator(self):
+        """When all volumes are equal, fast EMA = slow EMA → VO = 0."""
+        volumes = [1000.0] * 50
+        result = compute_volume_oscillator(volumes)
+        # First valid at index 27
+        for i in range(27, len(result)):
+            assert result[i] == pytest.approx(0.0)
+
+    def test_increasing_volume_positive_oscillator(self):
+        """When volumes increase, fast EMA > slow EMA → VO > 0."""
+        n = 50
+        volumes = [1000.0 + i * 100.0 for i in range(n)]  # linearly increasing
+        result = compute_volume_oscillator(volumes)
+        valid = [v for v in result if v is not None]
+        assert len(valid) > 0
+        assert valid[-1] > 0
+
+    def test_decreasing_volume_negative_oscillator(self):
+        """When volumes decrease, fast EMA < slow EMA → VO < 0."""
+        n = 50
+        volumes = [6000.0 - i * 100.0 for i in range(n)]  # linearly decreasing
+        result = compute_volume_oscillator(volumes)
+        valid = [v for v in result if v is not None]
+        assert len(valid) > 0
+        assert valid[-1] < 0
+
+    def test_oscillator_finite(self):
+        """All VO values should be finite (no NaN/Inf)."""
+        volumes = [1000.0 + i * (i % 3) for i in range(100)]
+        result = compute_volume_oscillator(volumes)
+        valid = [v for v in result if v is not None]
+        assert len(valid) > 0
+        for v in valid:
+            assert v == v  # not NaN
+            assert abs(v) < 1e15  # not Inf
+
+    def test_empty(self):
+        result = compute_volume_oscillator([])
+        assert result == []
+
+    def test_single_value(self):
+        """Single value needs at least period_slow (28) bars."""
+        result = compute_volume_oscillator([1000.0])
+        assert result == [None]
+
+    def test_custom_periods(self):
+        """VO with custom periods should work."""
+        volumes = [1000.0 + i for i in range(50)]
+        result = compute_volume_oscillator(volumes, period_fast=5, period_slow=10)
+        # First valid at index 9 (period_slow - 1)
+        for i in range(9):
+            assert result[i] is None
+        assert result[9] is not None
+        valid = [v for v in result if v is not None]
+        assert len(valid) > 0
+
+    def test_volatile_volume(self):
+        """Highly volatile volumes should produce reasonable VO values."""
+        n = 50
+        volumes = [1000.0 if i % 2 == 0 else 2000.0 for i in range(n)]
+        result = compute_volume_oscillator(volumes)
+        valid = [v for v in result if v is not None]
+        assert len(valid) > 0
+        for v in valid:
+            assert v == v  # not NaN
+            assert abs(v) < 1e10  # not Inf
+
+    def test_zero_volume(self):
+        """All zero volumes should produce 0 VO."""
+        volumes = [0.0] * 50
+        result = compute_volume_oscillator(volumes)
+        for i in range(27, len(result)):
+            assert result[i] == pytest.approx(0.0)
+
+    def test_exact_period_slow_length(self):
+        """Exactly period_slow bars should produce one valid value."""
+        volumes = [1000.0] * 28
+        result = compute_volume_oscillator(volumes)
+        for i in range(27):
+            assert result[i] is None
+        assert result[27] is not None
+        assert result[27] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
 # TestComputeVolumeColumns
 # ---------------------------------------------------------------------------
 
@@ -712,7 +821,7 @@ class TestComputeVolumeColumns:
     def test_expected_keys(self):
         highs, lows, closes, volumes = _make_sample(50)
         cols = compute_volume_columns(highs, lows, closes, volumes, 50)
-        assert set(cols.keys()) == {"ta_obv", "ta_cmf", "ta_vwap", "ta_ofi", "ta_log_volume", "ta_adl", "ta_mfi14", "ta_emv14"}
+        assert set(cols.keys()) == {"ta_obv", "ta_cmf", "ta_vwap", "ta_ofi", "ta_log_volume", "ta_adl", "ta_mfi14", "ta_emv14", "ta_volume_osc"}
 
     def test_all_same_length(self):
         highs, lows, closes, volumes = _make_sample(50)
@@ -749,6 +858,12 @@ class TestComputeVolumeColumns:
         valid = [v for v in cols["ta_mfi14"] if v is not None]
         assert len(valid) > 0
 
+    def test_volume_osc_present(self):
+        highs, lows, closes, volumes = _make_sample(50)
+        cols = compute_volume_columns(highs, lows, closes, volumes, 50)
+        valid = [v for v in cols["ta_volume_osc"] if v is not None]
+        assert len(valid) > 0
+
     def test_short_data(self):
         n = 5
         cols = compute_volume_columns(
@@ -763,6 +878,8 @@ class TestComputeVolumeColumns:
         assert all(v is None for v in cols["ta_mfi14"])
         assert len(cols["ta_emv14"]) == 5
         assert all(v is None for v in cols["ta_emv14"])
+        assert len(cols["ta_volume_osc"]) == 5
+        assert all(v is None for v in cols["ta_volume_osc"])
 
     def test_all_same_length(self):
         highs, lows, closes, volumes = _make_sample(100)
@@ -852,6 +969,7 @@ class TestProcessCSV:
         assert "ta_adl" in df.columns
         assert "ta_mfi14" in df.columns
         assert "ta_emv14" in df.columns
+        assert "ta_volume_osc" in df.columns
 
     def test_realistic_data(self, tmp_path):
         input_dir = tmp_path / "market-data"
@@ -968,6 +1086,7 @@ class TestEdgeCases:
         assert len(cols["ta_adl"]) == 3
         assert len(cols["ta_mfi14"]) == 3
         assert len(cols["ta_emv14"]) == 3
+        assert len(cols["ta_volume_osc"]) == 3
         assert all(v is None for v in cols["ta_cmf"])
 
     def test_compute_volume_columns_all_none_cmf(self):
