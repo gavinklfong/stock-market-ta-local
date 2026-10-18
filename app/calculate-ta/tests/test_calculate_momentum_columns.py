@@ -12,6 +12,7 @@ from calculate_momentum import (
     compute_ema,
     compute_macd,
     compute_momentum_columns,
+    compute_rsi_zscore,
     compute_roc,
     compute_rsi,
     compute_stochastic,
@@ -63,7 +64,7 @@ class TestComputeMomentumColumns:
         assert set(cols.keys()) == {
             "ta_rsi14", "ta_macd_line", "ta_macd_signal",
             "ta_macd_histogram", "ta_roc20", "ta_stoch_k", "ta_stoch_d",
-            "ta_williams_r", "ta_cci", "ta_tsi",
+            "ta_williams_r", "ta_cci", "ta_tsi", "ta_rsi_zscore",
         }
 
     def test_all_same_length(self):
@@ -97,6 +98,7 @@ class TestComputeMomentumColumns:
         assert cols["ta_williams_r"] == [None] * 5
         assert cols["ta_cci"] == [None] * 5
         assert cols["ta_tsi"] == [None] * 5
+        assert cols["ta_rsi_zscore"] == [None] * 5
         # MACD may produce some values even for short data
         assert len(cols["ta_macd_line"]) == 5
 
@@ -122,6 +124,14 @@ class TestComputeMomentumColumns:
         closes = [100.0 + i * 0.1 + np.random.uniform(-1, 1) for i in range(100)]
         cols = compute_momentum_columns(closes, [c + 1 for c in closes], [c - 1 for c in closes], 100)
         valid = [v for v in cols["ta_tsi"] if v is not None]
+        assert len(valid) > 0
+
+    def test_rsi_zscore_present(self):
+        """RSI Z-score should be present and have valid values."""
+        np.random.seed(0)
+        closes = [100.0 + i * 0.1 + np.random.uniform(-1, 1) for i in range(100)]
+        cols = compute_momentum_columns(closes, [c + 1 for c in closes], [c - 1 for c in closes], 100)
+        valid = [v for v in cols["ta_rsi_zscore"] if v is not None]
         assert len(valid) > 0
 
     def test_all_same_length(self):

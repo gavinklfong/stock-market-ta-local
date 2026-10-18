@@ -12,6 +12,7 @@ from calculate_momentum import (
     compute_ema,
     compute_macd,
     compute_momentum_columns,
+    compute_rsi_zscore,
     compute_roc,
     compute_rsi,
     compute_stochastic,
@@ -116,6 +117,7 @@ class TestProcessCSV:
         assert "ta_roc20" in df.columns
         assert "ta_stoch_k" in df.columns
         assert "ta_stoch_d" in df.columns
+        assert "ta_rsi_zscore" in df.columns
 
     def test_realistic_data(self, tmp_path):
         input_dir = tmp_path / "market-data"

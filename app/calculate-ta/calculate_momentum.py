@@ -316,6 +316,62 @@ def compute_tsi(closes, fast=25, slow=13):
     return result
 
 
+def compute_rsi_zscore(closes, rsi_period=14, window=20):
+    """Compute Z-score of RSI over a rolling window.
+
+    RSI Z-score = (RSI - mean(RSI_window)) / std(RSI_window)
+
+    This tells us how extreme the current RSI is relative to its recent
+    distribution. A Z-score of +2 means the current RSI is 2 standard
+    deviations above its rolling mean — potentially overbought beyond
+    what the recent RSI distribution would suggest.
+
+    Parameters
+    ----------
+    closes : list[float]
+        Close prices for each bar.
+    rsi_period : int
+        RSI lookback period (default 14).
+    window : int
+        Rolling window for Z-score calculation (default 20).
+
+    Returns
+    -------
+    list[float | None]
+        Z-score values aligned with input; None before warmup.
+    """
+    n = len(closes)
+    result = [None] * n
+
+    if n < rsi_period + window:
+        return result
+
+    # Compute RSI
+    rsi_values = compute_rsi(closes, rsi_period)
+
+    # Compute Z-score of RSI over rolling window
+    # First RSI valid index = rsi_period - 1
+    # First Z-score = rsi_period + window - 1
+    for i in range(rsi_period + window - 1, n):
+        window_rsi = []
+        for j in range(i - window + 1, i + 1):
+            v = rsi_values[j]
+            if v is not None:
+                window_rsi.append(v)
+
+        if len(window_rsi) < 2:
+            continue
+
+        mean_rsi = sum(window_rsi) / len(window_rsi)
+        variance = sum((x - mean_rsi) ** 2 for x in window_rsi) / len(window_rsi)
+        std_rsi = variance ** 0.5
+
+        if std_rsi > 0:
+            result[i] = (rsi_values[i] - mean_rsi) / std_rsi
+
+    return result
+
+
 def compute_momentum_columns(closes, highs, lows, n):
     """Compute all momentum indicator columns for a single ticker's data."""
     ta_rsi = compute_rsi(closes, 14) if n >= 15 else [None] * n
@@ -325,6 +381,7 @@ def compute_momentum_columns(closes, highs, lows, n):
     ta_williams_r = compute_williams_r(highs, lows, closes, 14) if n >= 14 else [None] * n
     ta_cci = compute_cci(highs, lows, closes, 20) if n >= 20 else [None] * n
     ta_tsi = compute_tsi(closes, 25, 13) if n >= 39 else [None] * n
+    ta_rsi_zscore = compute_rsi_zscore(closes) if n >= 35 else [None] * n
 
     return {
         "ta_rsi14": ta_rsi,
@@ -337,6 +394,7 @@ def compute_momentum_columns(closes, highs, lows, n):
         "ta_williams_r": ta_williams_r,
         "ta_cci": ta_cci,
         "ta_tsi": ta_tsi,
+        "ta_rsi_zscore": ta_rsi_zscore,
     }
 
 
