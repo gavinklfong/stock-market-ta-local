@@ -96,6 +96,44 @@ def compute_historical_volatility(closes, period=20, annualize=True):
     return result
 
 
+def compute_parkinson_volatility(highs, lows, period=20, annualize=True):
+    """Compute Parkinson Volatility from high-low ranges.
+
+    Parkinson volatility uses the intra-bar high-low range, which is a
+    more efficient estimator of volatility than close-to-close returns
+    (the factor 4 * ln(2) accounts for the expected ratio of ranges
+    to close-to-close estimators).
+
+    Formula: sqrt( (1 / (4 * ln(2) * n)) * sum(ln(high_i / low_i)^2) )
+
+    Returns a list aligned with *highs*; ``None`` where insufficient data.
+    """
+    n = len(highs)
+    result = [None] * n
+
+    if n < period:
+        return result
+
+    _CONST = 4.0 * math.log(2)
+
+    # Precompute ln(high/low) for each bar
+    hl_log = [0.0] * n
+    for i in range(n):
+        if highs[i] > 0 and lows[i] > 0:
+            hl_log[i] = math.log(highs[i] / lows[i])
+        else:
+            hl_log[i] = 0.0
+
+    factor = math.sqrt(_ANNUALIZATION_FACTOR) if annualize else 1.0
+
+    for i in range(period - 1, n):
+        sum_sq = sum(hl_log[j] ** 2 for j in range(i - period + 1, i + 1))
+        parkinson = math.sqrt(sum_sq / (_CONST * period))
+        result[i] = parkinson * factor
+
+    return result
+
+
 def compute_volatility_columns(highs, lows, closes, n):
     """Compute all volatility indicator columns for a single ticker's data."""
     ta_atr = compute_atr(highs, lows, closes, 14) if n >= 15 else [None] * n
@@ -117,6 +155,7 @@ def compute_volatility_columns(highs, lows, closes, n):
             ta_bband_pctb[i] = (closes[i] - bb["lower"][i]) / (bb["upper"][i] - bb["lower"][i])
 
     ta_hvol20 = compute_historical_volatility(closes) if n >= 21 else [None] * n
+    ta_parkinson_vol = compute_parkinson_volatility(highs, lows) if n >= 20 else [None] * n
 
     return {
         "ta_atr14": ta_atr,
@@ -127,6 +166,7 @@ def compute_volatility_columns(highs, lows, closes, n):
         "ta_bband_width": ta_bband_width,
         "ta_bband_pctb": ta_bband_pctb,
         "ta_hvol20": ta_hvol20,
+        "ta_parkinson_vol": ta_parkinson_vol,
     }
 
 
@@ -156,6 +196,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volatility",
-    description="volatility indicators: ATR(14), Bollinger Bands(20,2), Band Width(20), %B(20), Historical Volatility(20, annualized)",
+    description="volatility indicators: ATR(14), Bollinger Bands(20,2), Band Width(20), %B(20), Historical Volatility(20, annualized), Parkinson Volatility(20, annualized)",
     process_csv_fn=process_csv,
 )

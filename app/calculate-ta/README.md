@@ -17,7 +17,7 @@ python app/calculate-ta/run_calculation.py trend momentum
 | File Pattern | Contents |
 |---|---|
 | `data/ta-data/{ticker}_ta_{type}.csv` | Per-module output: `Date` + only this module's `ta_` columns |
-| `data/ta-data/{ticker}.csv` | Merged file: `Date` + all `ta_` columns from all 7 modules |
+| `data/ta-data/{ticker}.csv` | Merged file: `Date` + all `ta_` columns from all 8 modules |
 
 Each per-module CSV contains **only** `Date` and the indicators that module produces — no OHLCV columns, no columns from other modules.
 
@@ -54,6 +54,7 @@ All technical indicators are grouped by analysis category below. Each module pro
 | | `ta_bband_upper`, `ta_bband_lower` | Bollinger Bands upper/lower (20-period, 2σ) |
 | | `ta_bband_middle` | Bollinger middle = SMA(20) |
 | | `ta_hvol20` | Historical Volatility (20-period log-return std dev, annualized) |
+| | `ta_parkinson_vol` | Parkinson Volatility (20-period high-low range, annualized) |
 | **Regime** | `ta_hmm_regime` | HMM regime state: 0 = Bull, 1 = Bear, 2 = Volatile |
 | | `ta_hmm_regime_prob_0/1/2` | Posterior probability for Bull, Bear, Volatile |
 | | `ta_garch_vol`, `ta_garch_sq` | GARCH(1,1) conditional volatility and variance |
@@ -188,6 +189,7 @@ All technical indicators are grouped by analysis category below. Each module pro
 | `ta_bband_middle` | float | Bollinger Bands middle = SMA(20) |
 | `ta_bband_lower` | float | Bollinger Bands lower (20, 2σ) |
 | `ta_hvol20` | float | Historical Volatility (20-period, annualized) |
+| `ta_parkinson_vol` | float | Parkinson Volatility (20-period, annualized) |
 
 **Calculation logic:**
 
@@ -195,8 +197,9 @@ All technical indicators are grouped by analysis category below. Each module pro
 - **Normalized ATR** — `ATR / Close`, giving ATR as a fraction of price.
 - **Bollinger Bands(20, 2)** — Middle = SMA(20). Upper/Lower = Middle ± 2 × population standard deviation of the 20-bar window.
 - **Historical Volatility(20)** — Standard deviation of 20-period log returns, annualized by multiplying by √252. Log return = `ln(close[t] / close[t−1])`. Population std dev (not sample). Returns `None` for the first 20 bars.
+- **Parkinson Volatility(20)** — Uses the intra-bar high-low range to estimate volatility, which is more statistically efficient than close-to-close returns. Formula: `sqrt( (1 / (4 × ln(2) × n)) × Σ ln(high_i / low_i)² )`. Annualized by multiplying by √252. Returns `None` for the first 19 bars (needs 20 bars for the first complete window).
 
-**Minimum data:** 15 bars for ATR; 20 bars for Bollinger Bands; 21 bars for Historical Volatility.
+**Minimum data:** 15 bars for ATR; 20 bars for Bollinger Bands; 21 bars for Historical Volatility; 20 bars for Parkinson Volatility.
 
 ---
 
