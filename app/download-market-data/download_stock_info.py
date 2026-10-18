@@ -18,7 +18,7 @@ Additional fundamental metrics are extracted from stock.info (single API call pe
 
 Output files per ticker:
   - data/pe-data/<ticker>_PE.csv      — Daily: Date, Close, ta_eps_ttm, ta_pe, ta_div_ttm, ta_div_yield
-  - data/pe-data/<ticker>_fundamentals.csv — Static: valuation multiples, margins, growth, balance sheet
+  - data/pe-data/<ticker>_fundamentals.csv — REMOVED (static metrics no longer written)
 """
 
 import os
@@ -312,7 +312,7 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> tuple[pd.DataFr
 
     Tries quarterly EPS sources first, falls back to annual.
     Dividends are fetched from historical price data.
-    Fundamental metrics are extracted from stock.info.
+    Fundamental metrics from stock.info are no longer retrieved.
 
     Parameters
     ----------
@@ -326,10 +326,11 @@ def calculate_pe_for_ticker(ticker: str, period: str = "15y") -> tuple[pd.DataFr
     tuple[pd.DataFrame, dict]
         (daily_df, fundamentals)
         daily_df: Columns: Date, Close, ta_eps_ttm, ta_pe, ta_div_ttm, ta_div_yield
-        fundamentals: dict of fundamental metric values (see _extract_info)
+        fundamentals: empty dict (stock.info no longer queried)
     """
     stock = yf.Ticker(ticker)
-    fundamentals = _extract_info(stock)
+    # fundamentals = _extract_info(stock)
+    fundamentals = {}
 
     # ── 1. Get historical daily closing prices ──────────────────────
     hist = stock.history(period=period)
@@ -458,7 +459,7 @@ def bulk_download() -> None:
     tickers = list(ticker_map.values())
 
     print(f"Loaded {len(tickers)} tickers from '{input_csv}'.")
-    print(f"Downloading P/E, dividend, and fundamental data...\n")
+    print(f"Downloading P/E and dividend data...\n")
 
     for original_ticker, yf_ticker in ticker_map.items():
         safe_filename = original_ticker.replace("/", "_")
@@ -482,11 +483,11 @@ def bulk_download() -> None:
                 print()
 
             # Write fundamentals CSV (single row, static metrics)
-            fund_df = pd.DataFrame([fundamentals])
-            fund_df.to_csv(fund_filepath, index=False)
-            valid_fund_cols = [c for c in fund_df.columns if fund_df[c].notna().any()]
-            print(f"  Saved {len(valid_fund_cols)} fundamental metrics to {fund_filepath}")
-            print()
+            # fund_df = pd.DataFrame([fundamentals])
+            # fund_df.to_csv(fund_filepath, index=False)
+            # valid_fund_cols = [c for c in fund_df.columns if fund_df[c].notna().any()]
+            # print(f"  Saved {len(valid_fund_cols)} fundamental metrics to {fund_filepath}")
+            # print()
 
         except Exception as e:
             print(f"  Error processing {yf_ticker}: {e}\n")

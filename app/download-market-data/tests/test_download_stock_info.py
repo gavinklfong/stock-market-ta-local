@@ -540,7 +540,7 @@ class TestCalculatePeForTicker:
             self._unpatch_yf_ticker()
 
     def test_returns_fundamentals_dict(self):
-        """calculate_pe_for_ticker should return a fundamentals dict with expected keys."""
+        """calculate_pe_for_ticker returns an empty fundamentals dict (stock.info no longer queried)."""
         price_dates = pd.date_range("2023-01-01", periods=50, freq="D").strftime("%Y-%m-%d").tolist()
         closes = [100.0] * 50
         eps_dates = ["2023-03-31", "2023-06-30", "2023-09-30", "2023-12-31"]
@@ -555,12 +555,8 @@ class TestCalculatePeForTicker:
         try:
             result, fundamentals = mod.calculate_pe_for_ticker("FUND")
             assert isinstance(fundamentals, dict)
-            # All 25 expected keys should be present
-            assert "ta_pe_ttm_yf" in fundamentals
-            assert "ta_pe_forward" in fundamentals
-            assert "ta_earnings_growth" in fundamentals
-            assert "ta_mkt_cap" in fundamentals
-            assert "ta_next_ex_div_date" in fundamentals
+            # stock.info no longer queried — fundamentals dict is empty
+            assert fundamentals == {}
         finally:
             self._unpatch_yf_ticker()
 
