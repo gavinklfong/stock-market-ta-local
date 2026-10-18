@@ -160,35 +160,51 @@ def compute_stochastic(values, k_period=14, d_period=3):
     return {"ta_stoch_k": result_k, "ta_stoch_d": result_d}
 
 
-def compute_williams_r(closes, period=14):
+def compute_williams_r(highs, lows, closes, period=14):
     """Compute Williams %R. Returns a list aligned with input.
 
     Williams %R = (Highest High − Close) / (Highest High − Lowest Low) × −100
     Range: 0 to −100. Overbought above −20, oversold below −80.
+
+    Parameters
+    ----------
+    highs : list[float]
+        High prices for each bar.
+    lows : list[float]
+        Low prices for each bar.
+    closes : list[float]
+        Close prices for each bar.
+    period : int
+        Lookback period (default 14).
     """
     n = len(closes)
+    assert len(highs) == n and len(lows) == n, (
+        f"highs, lows, and closes must have the same length ({n})"
+    )
     result = [None] * n
 
     if n < period:
         return result
 
     for i in range(period - 1, n):
-        window = [float(closes[j]) for j in range(i - period + 1, i + 1)]
-        highest_high = max(window)
-        lowest_low = min(window)
+        window_highs = [float(highs[j]) for j in range(i - period + 1, i + 1)]
+        window_lows = [float(lows[j]) for j in range(i - period + 1, i + 1)]
+        highest_high = max(window_highs)
+        lowest_low = min(window_lows)
         if highest_high != lowest_low:
-            result[i] = ((highest_high - float(closes[i])) / (highest_high - lowest_low)) * -100.0
+            result[i] = ((highest_high - float(closes[i])) /
+                         (highest_high - lowest_low)) * -100.0
 
     return result
 
 
-def compute_momentum_columns(closes, n):
+def compute_momentum_columns(closes, highs, lows, n):
     """Compute all momentum indicator columns for a single ticker's data."""
     ta_rsi = compute_rsi(closes, 14) if n >= 15 else [None] * n
     ta_roc = compute_roc(closes, 20) if n >= 21 else [None] * n
     macd = compute_macd(closes)
     stoch = compute_stochastic(closes) if n >= 14 else {"ta_stoch_k": [None] * n, "ta_stoch_d": [None] * n}
-    ta_williams_r = compute_williams_r(closes, 14) if n >= 14 else [None] * n
+    ta_williams_r = compute_williams_r(highs, lows, closes, 14) if n >= 14 else [None] * n
 
     return {
         "ta_rsi14": ta_rsi,
@@ -209,9 +225,11 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     file_total = len(raw_df)
 
     closes = raw_df["Close"].tolist()
+    highs = raw_df["High"].tolist()
+    lows = raw_df["Low"].tolist()
 
     # Compute this module's TA columns only
-    momentum_cols = compute_momentum_columns(closes, file_total)
+    momentum_cols = compute_momentum_columns(closes, highs, lows, file_total)
 
     # Build output: Date + own ta_ columns (no OHLCV, no other modules' columns)
     df = pd.DataFrame({"Date": raw_df["Date"]})
