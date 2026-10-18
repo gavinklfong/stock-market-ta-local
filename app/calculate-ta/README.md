@@ -23,6 +23,47 @@ Each per-module CSV contains **only** `Date` and the indicators that module prod
 
 ---
 
+## Indicator Summary
+
+All technical indicators are grouped by analysis category below. Each module produces independent `ta_`-prefixed columns that are later merged into a unified CSV per ticker.
+
+| Category | Column | Description |
+|---|---|---|
+| **Trend** | `ta_ema20`, `ta_ema50`, `ta_ema200` | Exponential Moving Averages (20, 50, 200 periods) |
+| | `ta_ma20`, `ta_ma50`, `ta_sma10` | Simple Moving Averages (20, 50, 10 periods) |
+| | `ta_price_ma20_ratio` | Close / MA20 — price relative to 20-day MA |
+| | `ta_ma20_slope`, `ta_ma50_slope` | Rate of change of MA20/MA50 over 10-bar lookback |
+| | `ta_supertrend` | SuperTrend indicator line value |
+| | `ta_supertrend_direction` | +1 = uptrend, −1 = downtrend |
+| | `ta_supertrend_upper`, `ta_supertrend_lower` | Active SuperTrend band (upper in downtrend, lower in uptrend) |
+| **Momentum** | `ta_rsi14` | Relative Strength Index (14-period, Wilder's smoothing) |
+| | `ta_macd_line` | MACD line (EMA12 − EMA26) |
+| | `ta_macd_signal` | Signal line (EMA9 of MACD line) |
+| | `ta_macd_histogram` | MACD − Signal (divergence/convergence) |
+| | `ta_roc20` | Rate of Change (20-period, in percent) |
+| **Volume** | `ta_obv` | On-Balance Volume (cumulative) |
+| | `ta_cmf` | Chaikin Money Flow (20-period) |
+| | `ta_vwap` | Volume-Weighted Average Price (20-period rolling) |
+| | `ta_ofi` | Order Flow Imbalance, normalized to [−1, 1] |
+| | `ta_log_volume` | Natural log of volume |
+| **Volatility** | `ta_atr14` | Average True Range (14-period, Wilder's smoothing) |
+| | `ta_normalized_atr14` | ATR / Close — volatility as a percentage of price |
+| | `ta_bband_upper`, `ta_bband_lower` | Bollinger Bands upper/lower (20-period, 2σ) |
+| | `ta_bband_middle` | Bollinger middle = SMA(20) |
+| **Regime** | `ta_hmm_regime` | HMM regime state: 0 = Bull, 1 = Bear, 2 = Volatile |
+| | `ta_hmm_regime_prob_0/1/2` | Posterior probability for Bull, Bear, Volatile |
+| | `ta_garch_vol`, `ta_garch_sq` | GARCH(1,1) conditional volatility and variance |
+| | `ta_log_return` | Log return: `ln(close[t] / close[t−1])` |
+| **Structure** | `ta_swing_high`, `ta_swing_low` | Price at most recent swing high / low |
+| | `ta_swing_high_idx`, `ta_swing_low_idx` | Index of most recent swing high / low |
+| | `ta_hh`, `ta_hl`, `ta_lh`, `ta_ll` | Higher High, Higher Low, Lower High, Lower Low flags |
+| | `ta_trend` | Net trend: 1 = bullish, −1 = bearish, 0 = undetermined |
+| | `ta_bos`, `ta_choch` | Break of Structure (continuation) / Change of Character (reversal) |
+| | `ta_nearest_resistance`, `ta_nearest_support` | Clusters of swing highs/lows within 100-bar lookback |
+| **Return** | `ta_return_5d`, `ta_return_10d`, `ta_return_20d` | Forward return over 5, 10, 20 trading days |
+
+---
+
 ## Modules
 
 ### 1. Trend (`calculate_trend.py`)

@@ -34,6 +34,30 @@ def _fmt(val, d=2):
     return f"{float(val):.{d}f}" if isinstance(val, (float, int)) else str(val)
 
 
+def _price_change_pct(df, close_col="Close", periods=None):
+    """Calculate close price change % over the given periods from the last date.
+
+    Returns dict like {"1Y": 12.3, "6M": -3.4, ...} or None for any missing window.
+    """
+    if periods is None:
+        periods = {"1Y": pd.DateOffset(years=1), "6M": pd.DateOffset(months=6),
+                    "3M": pd.DateOffset(months=3), "1M": pd.DateOffset(months=1)}
+    latest = df[close_col].iloc[-1]
+    results = {}
+    for label, offset in periods.items():
+        cutoff = df["Date"].max() - offset
+        subset = df[df["Date"] < cutoff]
+        if len(subset) == 0:
+            results[label] = None
+            continue
+        base = subset[close_col].iloc[-1]
+        if pd.isna(base) or base == 0:
+            results[label] = None
+        else:
+            results[label] = (latest - base) / base * 100
+    return results
+
+
 # --- Condition Analysis ---
 
 def analyse_ticker(df):
@@ -153,6 +177,9 @@ def analyse_ticker(df):
         if changed_fn(cur, prev):
             changes.append(name)
 
+    # Multi-period price change
+    price_chg_periods = _price_change_pct(df)
+
     return {
         "ticker": "",  # set by caller
         "date": date_str, "close": close, "rsi": rsi, "macd_hist": macd_hist,
@@ -165,7 +192,31 @@ def analyse_ticker(df):
         "prev_st_dir": prev_st_dir, "prev_cmf": prev_cmf, "prev_atr": prev_atr,
         "prev_norm_atr": prev_norm_atr, "prev_roc": prev_rroc, "prev_regime": prev_regime,
         "prev_volume": prev_volume, "price_chg": price_chg, "price_chg_pct": price_chg_pct,
+        # Multi-period price change
+        "price_chg_periods": price_chg_periods,
     }
+
+
+BENCHMARK_TICKER = "^FTSE"
+TICKER_LIST = BASE_DIR / "config" / "ticker_list.csv"
+
+_ticker_info_cache = None
+
+
+def _load_ticker_info():
+    """Load ticker list and return dict mapping ticker -> company name."""
+    global _ticker_info_cache
+    if _ticker_info_cache is not None:
+        return _ticker_info_cache
+    info = {}
+    if TICKER_LIST.exists():
+        df = pd.read_csv(TICKER_LIST)
+        for _, row in df.iterrows():
+            ticker = str(row["Ticker"]).strip()
+            company = str(row["Company"]).strip()
+            info[ticker] = company
+    _ticker_info_cache = info
+    return info
 
 
 def discover_tickers(tickers=None):
@@ -193,8 +244,11 @@ def load_ticker(name):
 # --- Chart Building ---
 
 def build_charts(name, df):
-    """Build 4 Plotly figures per ticker."""
+    """Build 4 Plotly figures per ticker, showing the past 1 year of data."""
     df = df.sort_values("Date").reset_index(drop=True)
+    # Filter to the past 1 year for charts
+    one_year_ago = df["Date"].max() - pd.DateOffset(years=1)
+    df = df[df["Date"] >= one_year_ago].reset_index(drop=True)
     dates = df["Date"].dt.strftime("%Y-%m-%d")
 
     # 1. OHLC + EMA
@@ -254,6 +308,67 @@ def _price_icon(chg_pct):
     if chg_pct is None:
         return "\U0001f7e9"
     return "\u2705" if chg_pct > 0 else "\U0001f534" if chg_pct < 0 else "\U0001f7e9"
+
+
+def _period_returns_card_html(report):
+    """Generate a standalone card for multi-period price changes."""
+    periods = report.get("price_chg_periods", {})
+    if not periods:
+        return ""
+
+    benchmark_periods = report.get("benchmark_periods")
+
+    header_labels = []
+    ticker_cells = []
+    bench_cells = []
+    alpha_cells = []
+    for label in ["1Y", "6M", "3M", "1M"]:
+        header_labels.append(f"<th style='text-align:center;padding:6px;color:#333'>{label}</th>")
+
+        # Ticker return
+        val = periods.get(label)
+        if val is None:
+            ticker_cells.append("<td style='color:#999;text-align:center'>N/A</td>")
+        else:
+            icon = _price_icon(val)
+            color = "#26a69a" if val > 0 else "#ef5350" if val < 0 else "#999"
+            ticker_cells.append(f"<td style='text-align:center;color:{color}'><b>{icon}</b> {val:+.2f}%</td>")
+
+        # Benchmark return
+        bench_val = benchmark_periods.get(label) if benchmark_periods else None
+        if bench_val is None:
+            bench_cells.append("<td style='color:#999;text-align:center'>N/A</td>")
+        else:
+            b_icon = _price_icon(bench_val)
+            b_color = "#26a69a" if bench_val > 0 else "#ef5350" if bench_val < 0 else "#999"
+            bench_cells.append(f"<td style='text-align:center;color:{b_color}'>{b_icon} {bench_val:+.2f}%</td>")
+
+        # Alpha (ticker - benchmark)
+        if val is not None and bench_val is not None:
+            alpha_val = val - bench_val
+            a_icon = _price_icon(alpha_val)
+            a_color = "#26a69a" if alpha_val > 0 else "#ef5350" if alpha_val < 0 else "#999"
+            alpha_cells.append(f"<td style='text-align:center;color:{a_color};font-weight:bold'>{a_icon} {alpha_val:+.2f}%</td>")
+        else:
+            alpha_cells.append("<td style='color:#999;text-align:center'>N/A</td>")
+
+    header_row = "<tr style='border-bottom:2px solid #2196f3'><th></th>" + "".join(header_labels) + "</tr>"
+    ticker_name = report.get("company_name", report.get("ticker", ""))
+    ticker_row = f"<tr><td style='font-weight:bold;padding:6px'>{ticker_name} ({report.get('ticker','')})</td>{''.join(ticker_cells)}</tr>"
+    bench_row = f"<tr><td style='font-weight:bold;padding:6px'>FTSE 100 (Market Benchmark)</td>{''.join(bench_cells)}</tr>"
+    alpha_row = f"<tr><td style='font-weight:bold;padding:6px'>Alpha (vs FTSE)</td>{''.join(alpha_cells)}</tr>"
+
+    return f"""
+<div class="card" style="background:linear-gradient(135deg,#f5f7fa,#e8ecf1);border-left:4px solid #2196f3">
+<h3 style="margin-top:0;color:#333">Price Performance</h3>
+<table style="border-collapse:collapse;width:100%">
+<caption style="text-align:left;font-size:0.85em;color:#666;padding-bottom:4px;font-weight:bold">Period Returns</caption>
+{header_row}
+{ticker_row}
+{bench_row}
+{alpha_row}
+</table>
+</div>"""
 
 
 def _summary_table_html(report):
@@ -368,6 +483,7 @@ def _card_html(report):
 def generate_ticker_html(report):
     """Generate a single HTML report for one ticker."""
     card_html = _card_html(report)
+    period_card_html = _period_returns_card_html(report)
 
     figs = build_charts(report["ticker"], report["df"])
     charts = ""
@@ -376,8 +492,9 @@ def generate_ticker_html(report):
         charts += fig.to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": False})
         charts += "</div>"
 
+    display_name = f"{report.get('company_name', report['ticker'])} ({report['ticker']})"
     html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>{report['ticker']} Market Analysis</title>
+<html><head><meta charset="utf-8"><title>{display_name} Market Analysis</title>
 <script src="https://cdn.plot.ly/plotly-{PLOTLY_VERSION}.min.js"></script>
 <style>
 body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }}
@@ -389,7 +506,8 @@ td {{ padding: 6px 12px; border-bottom: 1px solid #eee; }}
 .chart-container {{ background: #fff; border-radius: 8px; padding: 16px; margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
 .chart-container h4 {{ margin: 0 0 8px 0; color: #666; }}
 </style></head><body>
-<h1>{report['ticker']} Market Analysis</h1>
+<h1>{display_name} Market Analysis</h1>
+{period_card_html}
 {card_html}
 {charts}
 </body></html>"""
@@ -405,6 +523,15 @@ def main():
     parser.add_argument("--output", default=None, help="Output directory for HTML report")
     args = parser.parse_args()
 
+    # Load benchmark (FTSE) once
+    benchmark_periods = None
+    if BENCHMARK_TICKER in discover_tickers():
+        print(f"Loading benchmark {BENCHMARK_TICKER}...")
+        bench_df = load_ticker(BENCHMARK_TICKER)
+        benchmark_periods = _price_change_pct(bench_df)
+        print(f"  Benchmark 1Y: {benchmark_periods.get('1Y')}")
+
+    ticker_info = _load_ticker_info()
     tickers = discover_tickers(args.tickers)
     reports = []
     for t in tickers:
@@ -412,6 +539,8 @@ def main():
         df = load_ticker(t)
         r = analyse_ticker(df)
         r["ticker"] = t
+        r["company_name"] = ticker_info.get(t, t)
+        r["benchmark_periods"] = benchmark_periods
         reports.append(r)
         # Print quick summary
         print(f"  Close={_fmt(r['close'])}, RSI={_fmt(r['rsi'],1)}, MACD_hist={_fmt(r['macd_hist'])}")
