@@ -50,6 +50,7 @@ All technical indicators are grouped by analysis category below. Each module pro
 | | `ta_vwap` | Volume-Weighted Average Price (20-period rolling) |
 | | `ta_ofi` | Order Flow Imbalance, normalized to [−1, 1] |
 | | `ta_log_volume` | Natural log of volume |
+| | `ta_mfi14` | Money Flow Index (14-period oscillator from 0 to 100) |
 | **Volatility** | `ta_atr14` | Average True Range (14-period, Wilder's smoothing) |
 | | `ta_normalized_atr14` | ATR / Close — volatility as a percentage of price |
 | | `ta_bband_upper`, `ta_bband_lower` | Bollinger Bands upper/lower (20-period, 2σ) |
@@ -162,6 +163,7 @@ All technical indicators are grouped by analysis category below. Each module pro
 | `ta_vwap` | float | Rolling Volume-Weighted Average Price (20-period) |
 | `ta_ofi` | float | Order Flow Imbalance (normalized) |
 | `ta_log_volume` | float | Natural log of volume |
+| `ta_mfi14` | float | Money Flow Index (14-period oscillator) |
 
 **Calculation logic:**
 
@@ -171,8 +173,9 @@ All technical indicators are grouped by analysis category below. Each module pro
 - **VWAP(20)** — Rolling Volume-Weighted Average Price. Typical price = `(High + Low + Close) / 3`. Sliding window of 20 bars; incrementally removes oldest and adds newest element.
 - **OFI** — Order Flow Imbalance = `(Close − Open) / (High − Low)`, normalized to [−1, 1]. Returns 0 when High = Low.
 - **Log Volume** — `ln(Volume)` for `Volume > 0`, else `None`.
+- **MFI(14)** — Money Flow Index. Typical Price = `(High + Low + Close) / 3`. Raw Money Flow = Typical Price × Volume. Positive money flow when TP > previous TP; negative when TP < previous TP. MFI = `100 − (100 / (1 + MF_Ratio))` where MF_Ratio = positive money flow sum / negative money flow sum over 14 periods. When both sums are 0 (TP unchanged), MFI = 50 (neutral). When negative sum is 0, MFI = 100. When positive sum is 0, MFI = 0.
 
-**Minimum data:** 20 bars for CMF and VWAP. OBV and OFI work from bar 1+.
+**Minimum data:** 20 bars for CMF and VWAP, 14 bars for MFI. OBV, ADL, OFI and Log Volume work from bar 0+.
 
 ---
 

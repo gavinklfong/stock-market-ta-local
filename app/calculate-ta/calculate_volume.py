@@ -153,6 +153,59 @@ def compute_adl(highs, lows, closes, volumes):
     return result
 
 
+def compute_mfi(highs, lows, closes, volumes, period=14):
+    """Compute Money Flow Index. Returns a list aligned with input."""
+    n = len(highs)
+    result = [None] * n
+    if n < period + 1:
+        return result
+
+    pos_sum = 0.0
+    neg_sum = 0.0
+
+    # Compute first window
+    for i in range(period):
+        typical_price = (float(highs[i]) + float(lows[i]) + float(closes[i])) / 3.0
+        raw_mf = typical_price * float(volumes[i])
+        if i > 0:
+            prev_tp = (float(highs[i - 1]) + float(lows[i - 1]) + float(closes[i - 1])) / 3.0
+            if typical_price > prev_tp:
+                pos_sum += raw_mf
+            elif typical_price < prev_tp:
+                neg_sum += raw_mf
+
+    if neg_sum == 0 and pos_sum == 0:
+        result[period - 1] = 50.0
+    elif neg_sum == 0:
+        result[period - 1] = 100.0
+    else:
+        mf_ratio = pos_sum / neg_sum
+        result[period - 1] = 100.0 - (100.0 / (1.0 + mf_ratio))
+
+    # Slide window
+    for i in range(period, n):
+        typical_price = (float(highs[i]) + float(lows[i]) + float(closes[i])) / 3.0
+        raw_mf = typical_price * float(volumes[i])
+
+        prev_tp = (float(highs[i - 1]) + float(lows[i - 1]) + float(closes[i - 1])) / 3.0
+        prev_raw_mf = prev_tp * float(volumes[i - 1])
+
+        if typical_price > prev_tp:
+            pos_sum += raw_mf - prev_raw_mf
+        elif typical_price < prev_tp:
+            neg_sum += raw_mf - prev_raw_mf
+
+        if neg_sum == 0 and pos_sum == 0:
+            result[i] = 50.0
+        elif neg_sum == 0:
+            result[i] = 100.0
+        else:
+            mf_ratio = pos_sum / neg_sum
+            result[i] = 100.0 - (100.0 / (1.0 + mf_ratio))
+
+    return result
+
+
 def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     """Compute all volume indicator columns for a single ticker's data."""
     ta_obv = compute_obv(closes, volumes)
@@ -161,6 +214,7 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     ta_ofi = compute_ofi(opens, highs, lows, closes) if opens is not None else [None] * n
     ta_log_volume = [math.log(v) if v > 0 else None for v in volumes]
     ta_adl = compute_adl(highs, lows, closes, volumes)
+    ta_mfi14 = compute_mfi(highs, lows, closes, volumes) if n >= 14 else [None] * n
 
     return {
         "ta_obv": ta_obv,
@@ -169,6 +223,7 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
         "ta_ofi": ta_ofi,
         "ta_log_volume": ta_log_volume,
         "ta_adl": ta_adl,
+        "ta_mfi14": ta_mfi14,
     }
 
 
@@ -200,6 +255,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volume",
-    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL",
+    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14)",
     process_csv_fn=process_csv,
 )
