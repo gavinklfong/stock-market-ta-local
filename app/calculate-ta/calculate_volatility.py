@@ -134,6 +134,86 @@ def compute_parkinson_volatility(highs, lows, period=20, annualize=True):
     return result
 
 
+def compute_atr_stop_distance(closes, atr_values, multiplier=3.0):
+    """Compute ATR-based stop distance as a percentage of price.
+
+    The stop level is ``close - multiplier * ATR`` (a trailing ATR stop).
+    This function returns the distance from current close to stop level,
+    expressed as a percentage of the current close:
+
+        ta_atr_stop_dist = (multiplier * ATR / close) * 100
+
+    A larger value means the stop is farther away (wider buffer).
+
+    Returns a list aligned with *closes*; ``None`` where ATR is unavailable.
+    """
+    n = len(closes)
+    result = [None] * n
+    for i in range(n):
+        if (atr_values[i] is not None and closes[i] is not None
+                and closes[i] != 0 and atr_values[i] > 0):
+            result[i] = (multiplier * atr_values[i] / closes[i]) * 100
+    return result
+
+
+def compute_atr_position_size(closes, atr_values, risk_pct=2.0, multiplier=3.0):
+    """Compute ATR-based position size as a percentage of portfolio.
+
+    Position sizing uses your risk budget and the ATR-based stop distance
+    to determine the maximum position size as a percentage of your portfolio.
+
+    Formula::
+
+        stop_distance_pct = (multiplier * ATR / close) * 100
+        position_size_pct = risk_pct / stop_distance_pct * 100
+
+    A smaller ATR (tighter stop) allows a larger position; a larger ATR
+    (wider stop) reduces the maximum position.
+
+    Returns a list aligned with *closes*; ``None`` where ATR is unavailable
+    or values are zero.
+    """
+    n = len(closes)
+    result = [None] * n
+    for i in range(n):
+        if (atr_values[i] is not None and closes[i] is not None
+                and closes[i] != 0 and atr_values[i] > 0):
+            stop_distance_pct = (multiplier * atr_values[i] / closes[i]) * 100
+            if stop_distance_pct > 0:
+                result[i] = risk_pct / stop_distance_pct * 100
+    return result
+
+
+def compute_rr_ratio(closes, atr_values, bb_upper, multiplier=3.0):
+    """Compute Reward-to-Risk ratio using ATR stop and Bollinger Band target.
+
+    This indicator compares the potential reward (upside to the upper Bollinger
+    Band) against the risk (downside to the ATR-based stop level).
+
+    Formula::
+
+        reward  = BB_upper - close
+        risk    = multiplier * ATR
+        rr_ratio = reward / risk
+
+    A value greater than 1 means the potential upside exceeds the downside
+    risk; less than 1 means the risk outweighs the reward.
+
+    Returns a list aligned with *closes*; ``None`` where ATR, close, or
+    BB upper is unavailable.
+    """
+    n = len(closes)
+    result = [None] * n
+    for i in range(n):
+        if (atr_values[i] is not None and closes[i] is not None
+                and bb_upper[i] is not None and atr_values[i] > 0
+                and closes[i] != 0):
+            risk = multiplier * atr_values[i]
+            if risk > 0:
+                result[i] = (bb_upper[i] - closes[i]) / risk
+    return result
+
+
 def compute_volatility_columns(highs, lows, closes, n):
     """Compute all volatility indicator columns for a single ticker's data."""
     ta_atr = compute_atr(highs, lows, closes, 14) if n >= 15 else [None] * n
@@ -156,6 +236,9 @@ def compute_volatility_columns(highs, lows, closes, n):
 
     ta_hvol20 = compute_historical_volatility(closes) if n >= 21 else [None] * n
     ta_parkinson_vol = compute_parkinson_volatility(highs, lows) if n >= 20 else [None] * n
+    ta_atr_stop_dist = compute_atr_stop_distance(closes, ta_atr, multiplier=3.0)
+    ta_atr_position = compute_atr_position_size(closes, ta_atr, risk_pct=2.0, multiplier=3.0)
+    ta_rr_ratio = compute_rr_ratio(closes, ta_atr, bb["upper"], multiplier=3.0)
 
     return {
         "ta_atr14": ta_atr,
@@ -167,6 +250,9 @@ def compute_volatility_columns(highs, lows, closes, n):
         "ta_bband_pctb": ta_bband_pctb,
         "ta_hvol20": ta_hvol20,
         "ta_parkinson_vol": ta_parkinson_vol,
+        "ta_atr_stop_dist": ta_atr_stop_dist,
+        "ta_atr_position": ta_atr_position,
+        "ta_rr_ratio": ta_rr_ratio,
     }
 
 
@@ -196,6 +282,6 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
 
 main(
     module_name="calculate_volatility",
-    description="volatility indicators: ATR(14), Bollinger Bands(20,2), Band Width(20), %B(20), Historical Volatility(20, annualized), Parkinson Volatility(20, annualized)",
+    description="volatility indicators: ATR(14), Bollinger Bands(20,2), Band Width(20), %B(20), Historical Volatility(20, annualized), Parkinson Volatility(20, annualized), ATR Stop Distance(3×ATR, % of price), ATR Position Size(2% risk, 3×ATR), Reward Risk Ratio(BB upper / ATR stop)",
     process_csv_fn=process_csv,
 )
