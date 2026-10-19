@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import pandas as pd
@@ -465,12 +466,149 @@ def compute_support_touches(lows, support, tolerance_pct=0.02):
     return support_touches
 
 
+# =============================================================================
+# State file helpers
+# =============================================================================
+
+
+def _save_state(state, state_path):
+    """Persist computation state to a JSON file."""
+    with open(state_path, "w") as f:
+        json.dump(state, f)
+
+
+def _load_state(state_path):
+    """Load computation state from a JSON file.
+
+    Returns None if the file does not exist or is corrupted.
+    """
+    if not os.path.exists(state_path):
+        return None
+    try:
+        with open(state_path, "r") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
 def process_csv(input_path, output_path, total_files, current_file, _lock=None):
+    """Process a single ticker's OHLCV data into structure indicator output.
+
+    When a previous output file and state file exist, this function performs
+    **incremental computation**: it only computes indicators for rows that
+    were appended since the last run, greatly improving efficiency for
+    tickers that gain new data points regularly.
+
+    For swing detection (lookback=5), old rows near the end may have their
+    swing status confirmed or invalidated when new data fills the "after"
+    window. These rows are updated, and the cascade effect on structure
+    outputs (HH/HL/LH/LL, BOS, CHoCH, trend) is handled by recomputing
+    from the boundary point.
+
+    Parameters
+    ----------
+    input_path : str
+        Path to the OHLCV CSV (yfinance format).
+    output_path : str
+        Path to write the structure indicator CSV.
+    total_files : int
+        Total number of files in the batch (for progress reporting).
+    current_file : int
+        1-based index of this file in the batch.
+    _lock : threading.Lock, optional
+        Unused lock (kept for API compatibility).
+
+    Returns
+    -------
+    int
+        Total number of rows written to the output CSV.
+    """
     raw_df = read_yfinance_csv(input_path)
     raw_df["Date"] = pd.to_datetime(raw_df["Date"])
     raw_df = raw_df.sort_values("Date").reset_index(drop=True)
     file_total = len(raw_df)
 
+    # State file lives alongside the output CSV
+    base, ext = os.path.splitext(output_path)
+    state_path = base + "_state.json"
+
+    # Determine if we have previous output
+    prev_output_exists = os.path.exists(output_path)
+
+    if prev_output_exists and file_total == 0:
+        # Edge case: file exists but input is now empty
+        return 0
+
+    if prev_output_exists and file_total > 0:
+        # Check if there are new rows to compute
+        prev_df = pd.read_csv(output_path)
+        prev_row_count = len(prev_df)
+
+        if file_total <= prev_row_count:
+            # No new rows — but recompute in case input changed
+            # (safety net for corrupted previous state)
+            pass  # fall through to full computation below
+        else:
+            # There are new rows — try incremental computation
+            new_row_count = file_total - prev_row_count
+
+            # Load state; if missing, fall back to full computation
+            state = _load_state(state_path)
+            if state is not None and state.get("_version") == 1:
+                try:
+                    # --- Incremental path ---
+                    closes = raw_df["Close"].tolist()
+                    highs = raw_df["High"].tolist()
+                    lows = raw_df["Low"].tolist()
+
+                    # Structure uses lookback=5 for swing detection.
+                    # Swing at index i depends on bars i-5 to i+5.
+                    # Old rows where i+5 >= prev_row_count could change:
+                    #   i >= prev_row_count - 5
+                    # Use a generous buffer (2*lookback) to be safe.
+                    lookback = 5
+                    boundary_start = max(0, prev_row_count - 2 * lookback)
+
+                    # Full computation for all rows (needed because swing
+                    # changes cascade through sequential structure algorithm)
+                    structure_cols = compute_structure_columns(
+                        highs, lows, closes, file_total,
+                        lookback=lookback,
+                    )
+
+                    # Copy old values for rows well before boundary
+                    # (these are unchanged)
+                    for col in structure_cols:
+                        for i in range(boundary_start, prev_row_count):
+                            prev_df.loc[i, col] = structure_cols[col][i]
+
+                    # Build new rows DataFrame
+                    df_new_full = pd.DataFrame(
+                        {"Date": raw_df["Date"].iloc[prev_row_count:]}
+                    )
+                    for col, values in structure_cols.items():
+                        df_new_full[col] = values[prev_row_count:]
+
+                    # Merge with old output
+                    merged = pd.concat(
+                        [prev_df, df_new_full.reset_index(drop=True)],
+                        ignore_index=True,
+                    )
+                    merged = merged.sort_values("Date").reset_index(drop=True)
+                    merged.to_csv(output_path, index=False)
+
+                    # Update state
+                    state["prev_row_count"] = file_total
+                    state["last_close"] = closes[-1]
+                    _save_state(state, state_path)
+
+                    return len(merged)
+
+                except Exception:
+                    # Incremental computation failed — fall back to full
+                    pass
+
+    # === Full computation path ===
     closes = raw_df["Close"].tolist()
     highs = raw_df["High"].tolist()
     lows = raw_df["Low"].tolist()
@@ -487,6 +625,15 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     df = df.sort_values("Date").reset_index(drop=True)
 
     df.to_csv(output_path, index=False)
+
+    # Save state for next incremental run
+    state = {
+        "_version": 1,
+        "prev_row_count": file_total,
+        "last_close": closes[-1],
+    }
+    _save_state(state, state_path)
+
     return len(df)
 
 
