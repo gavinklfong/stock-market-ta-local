@@ -1,5 +1,7 @@
+import json
 import os
 import sys
+
 import pandas as pd
 
 from common import (
@@ -284,7 +286,6 @@ def _load_benchmark(input_dir):
 
     Returns a DataFrame with Date and Close columns, or None on failure.
     """
-    import os
     bench_path = os.path.join(input_dir, "^FTSE.csv")
     if not os.path.exists(bench_path):
         return None
@@ -297,15 +298,155 @@ def _load_benchmark(input_dir):
         return None
 
 
+# =============================================================================
+# State file helpers
+# =============================================================================
+
+
+def _save_state(state, state_path):
+    """Persist computation state to a JSON file."""
+    with open(state_path, "w") as f:
+        json.dump(state, f)
+
+
+def _load_state(state_path):
+    """Load computation state from a JSON file.
+
+    Returns None if the file does not exist or is corrupted.
+    """
+    if not os.path.exists(state_path):
+        return None
+    try:
+        with open(state_path, "r") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
 def process_csv(input_path, output_path, total_files, current_file, _lock=None):
+    """Process a single ticker's OHLCV data into return indicator output.
+
+    When a previous output file and state file exist, this function performs
+    **incremental computation**: it only computes indicators for rows that
+    were appended since the last run, greatly improving efficiency for
+    tickers that gain new data points regularly.
+
+    For future returns specifically, old rows near the end of the previous
+    output may now have valid values (previously None because horizon data
+    was unavailable). These rows are updated in-place.
+
+    Parameters
+    ----------
+    input_path : str
+        Path to the OHLCV CSV (yfinance format).
+    output_path : str
+        Path to write the return indicator CSV.
+    total_files : int
+        Total number of files in the batch (for progress reporting).
+    current_file : int
+        1-based index of this file in the batch.
+    _lock : threading.Lock, optional
+        Unused lock (kept for API compatibility).
+
+    Returns
+    -------
+    int
+        Total number of rows written to the output CSV.
+    """
     raw_df = read_yfinance_csv(input_path)
     raw_df["Date"] = pd.to_datetime(raw_df["Date"])
     raw_df = raw_df.sort_values("Date").reset_index(drop=True)
     file_total = len(raw_df)
 
+    # State file lives alongside the output CSV
+    base, ext = os.path.splitext(output_path)
+    state_path = base + "_state.json"
+
+    # Determine if we have previous output
+    prev_output_exists = os.path.exists(output_path)
+
+    if prev_output_exists and file_total == 0:
+        # Edge case: file exists but input is now empty
+        return 0
+
+    if prev_output_exists and file_total > 0:
+        # Check if there are new rows to compute
+        prev_df = pd.read_csv(output_path)
+        prev_row_count = len(prev_df)
+
+        if file_total <= prev_row_count:
+            # No new rows — but recompute in case input changed
+            # (safety net for corrupted previous state)
+            pass  # fall through to full computation below
+        else:
+            # There are new rows — try incremental computation
+            new_row_count = file_total - prev_row_count
+
+            # Load state; if missing, fall back to full computation
+            state = _load_state(state_path)
+            if state is not None and state.get("_version") == 1:
+                try:
+                    # --- Incremental path ---
+                    closes = raw_df["Close"].tolist()
+                    highs = raw_df["High"].tolist()
+                    lows = raw_df["Low"].tolist()
+                    volumes = raw_df["Volume"].tolist()
+                    dates = raw_df["Date"].tolist()
+
+                    # Load benchmark
+                    script_dir = os.path.dirname(os.path.abspath(__file__))
+                    base_dir = os.path.dirname(os.path.dirname(script_dir))
+                    input_dir = os.path.join(base_dir, "data", "market-data")
+                    benchmark_df = _load_benchmark(input_dir)
+
+                    # Full computation for all rows (needed for correct
+                    # future returns that span the boundary)
+                    return_cols = compute_return_columns(
+                        highs, lows, closes, volumes, file_total, dates,
+                        benchmark_df=benchmark_df,
+                    )
+
+                    # Update future returns for old rows near the end that
+                    # now have valid data (previously None)
+                    max_horizon = 20
+                    future_start = max(0, prev_row_count - max_horizon)
+
+                    for h in (5, 10, 20):
+                        col_name = f"ta_return_{h}d"
+                        if future_start < prev_row_count:
+                            for i in range(future_start, prev_row_count):
+                                prev_df.loc[i, col_name] = return_cols[col_name][i]
+
+                    # Build new rows DataFrame
+                    df_new_full = pd.DataFrame(
+                        {"Date": raw_df["Date"].iloc[prev_row_count:]}
+                    )
+                    for col, values in return_cols.items():
+                        df_new_full[col] = values[prev_row_count:]
+
+                    # Merge with old output
+                    merged = pd.concat(
+                        [prev_df, df_new_full.reset_index(drop=True)],
+                        ignore_index=True,
+                    )
+                    merged = merged.sort_values("Date").reset_index(drop=True)
+                    merged.to_csv(output_path, index=False)
+
+                    # Update state
+                    state["prev_row_count"] = file_total
+                    state["last_close"] = closes[-1]
+                    _save_state(state, state_path)
+
+                    return len(merged)
+
+                except Exception:
+                    # Incremental computation failed — fall back to full
+                    pass
+
+    # === Full computation path ===
+    closes = raw_df["Close"].tolist()
     highs = raw_df["High"].tolist()
     lows = raw_df["Low"].tolist()
-    closes = raw_df["Close"].tolist()
     volumes = raw_df["Volume"].tolist()
     dates = raw_df["Date"].tolist()
 
@@ -329,6 +470,15 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     df = df.sort_values("Date").reset_index(drop=True)
 
     df.to_csv(output_path, index=False)
+
+    # Save state for next incremental run
+    state = {
+        "_version": 1,
+        "prev_row_count": file_total,
+        "last_close": closes[-1],
+    }
+    _save_state(state, state_path)
+
     return len(df)
 
 
