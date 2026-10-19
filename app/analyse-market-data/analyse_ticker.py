@@ -842,19 +842,18 @@ def generate_ticker_html(report):
     card_html = _card_html(report)
     period_card_html = _period_returns_card_html(report)
 
+    # Build comparison chart first (to be placed second, after OHLC)
+    comp_fig = build_comparison_chart(report["ticker"], report["df"], report.get("benchmark_close", []))
     figs = build_charts(report["ticker"], report["df"])
+
+    # Order: OHLC, Comparison, Volume+OBV, MACD, RSI+BB
+    all_figs = [figs[0], comp_fig] + figs[1:]
+    chart_titles = ["Price (OHLC + EMA)", "1Y Price Change Comparison", "Volume + OBV", "MACD", "RSI + Bollinger Bands"]
     charts = ""
-    chart_titles = ["Price (OHLC + EMA)", "Volume + OBV", "MACD", "RSI + Bollinger Bands"]
-    for i, fig in enumerate(figs):
+    for i, fig in enumerate(all_figs):
         charts += f'<div class="chart-container"><h4>{chart_titles[i]}</h4>'
         charts += fig.to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": False})
         charts += "</div>"
-
-    # Comparison chart: stock vs FTSE 100 cumulative % change
-    comp_fig = build_comparison_chart(report["ticker"], report["df"], report.get("benchmark_close", []))
-    charts += '<div class="chart-container"><h4>1Y Price Change Comparison</h4>'
-    charts += comp_fig.to_html(full_html=False, include_plotlyjs=False, config={"displayModeBar": False})
-    charts += "</div>"
 
     display_name = f"{report.get('company_name', report['ticker'])} ({report['ticker']})"
     html = f"""<!DOCTYPE html>
