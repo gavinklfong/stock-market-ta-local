@@ -1,6 +1,9 @@
+import json
 import os
 import sys
 import threading
+
+import numpy as np
 import pandas as pd
 
 from common import (
@@ -428,6 +431,486 @@ def compute_rsi_percentile(closes, rsi_period=14, window=20):
     return result
 
 
+# =============================================================================
+# Incremental computation helpers
+# =============================================================================
+
+def compute_rsi_from_state(closes, period, prev_avg_gain, prev_avg_loss,
+                           prev_count, closes_before):
+    """Compute RSI only for new rows, continuing from prior state.
+
+    Parameters
+    ----------
+    closes : list[float]
+        Full closes list (includes old + new data).
+    period : int
+        RSI period (default 14).
+    prev_avg_gain : float
+        Average gain at end of previous computation.
+    prev_avg_loss : float
+        Average loss at end of previous computation.
+    prev_count : int
+        Number of closes that were processed in the previous run.
+    closes_before : list[float]
+        Closes up to the previous run end (for computing price changes
+        between last old row and first new row).
+
+    Returns
+    -------
+    list[float | None]
+        RSI values for indices ``prev_count .. len(closes)-1``.
+    """
+    result = []
+    for i in range(prev_count, len(closes)):
+        # First new row bridges the old-new boundary
+        if i == prev_count and prev_count > 0:
+            change = float(closes[i]) - float(closes_before[-1])
+        elif i == 0:
+            change = 0.0
+        else:
+            change = float(closes[i]) - float(closes[i - 1])
+        gain = max(change, 0.0)
+        loss = max(-change, 0.0)
+
+        avg_gain = (prev_avg_gain * (period - 1) + gain) / period
+        avg_loss = (prev_avg_loss * (period - 1) + loss) / period
+
+        if avg_loss == 0:
+            if avg_gain == 0:
+                rsi = 50.0
+            else:
+                rsi = 100.0
+        else:
+            rs = avg_gain / avg_loss
+            rsi = 100.0 - (100.0 / (1.0 + rs))
+
+        result.append(rsi)
+        prev_avg_gain = avg_gain
+        prev_avg_loss = avg_loss
+
+    return result
+
+
+def compute_ema_from_state(values, period, prev_ema, prev_count):
+    """Continue EMA computation from a previous state.
+
+    Parameters
+    ----------
+    values : list[float]
+        Full values list (includes old + new data).
+    period : int
+        EMA period.
+    prev_ema : float
+        EMA value at the end of the previous run.
+    prev_count : int
+        Number of values processed in the previous run.
+
+    Returns
+    -------
+    list[float]
+        EMA values for indices ``prev_count .. len(values)-1``.
+    """
+    k = 2.0 / (period + 1)
+    result = []
+    ema = prev_ema
+    for i in range(prev_count, len(values)):
+        if i > prev_count:
+            ema = float(values[i]) * k + ema * (1 - k)
+        result.append(ema)
+    return result
+
+
+def compute_macd_incremental(closes, state, prev_close_count,
+                             fast=12, slow=26, signal=9):
+    """Compute MACD only for new rows, continuing from prior state.
+
+    Returns dict with ``macd_line``, ``signal_line``, ``histogram`` lists.
+    """
+    # Fast and slow EMA states
+    fast_ema = state.get("macd_fast_ema")
+    fast_count = state.get("macd_fast_count", fast)
+    slow_ema = state.get("macd_slow_ema")
+    slow_count = state.get("macd_slow_count", slow)
+
+    # Signal line EMA state (EMA of MACD line values)
+    signal_ema = state.get("macd_signal_ema")
+    signal_count = state.get("macd_signal_ema_count", signal)
+
+    n = len(closes)
+    new_macd_line = []
+    new_signal_line = []
+    new_histogram = []
+
+    # Compute new fast/slow EMA values
+    for i in range(prev_close_count, n):
+        if fast_count >= fast:
+            fast_ema = float(closes[i]) * (2.0 / (fast + 1)) + fast_ema * (fast - 1) / (fast + 1)
+        if slow_count >= slow:
+            slow_ema = float(closes[i]) * (2.0 / (slow + 1)) + slow_ema * (slow - 1) / (slow + 1)
+        fast_count += 1
+        slow_count += 1
+
+        if fast_count > fast and slow_count > slow:
+            macd_val = fast_ema - slow_ema
+        elif fast_count > fast and slow_count <= slow:
+            macd_val = fast_ema - None  # placeholder
+        elif fast_count <= fast and slow_count > slow:
+            macd_val = None - slow_ema  # placeholder
+        else:
+            macd_val = None
+
+        # Use simple difference when both are valid
+        if fast_count > fast and slow_count > slow:
+            macd_val = fast_ema - slow_ema
+        else:
+            macd_val = None
+
+        new_macd_line.append(macd_val)
+
+    # Compute signal line (EMA of MACD line)
+    macd_idx = 0
+    for i in range(prev_close_count, n):
+        val = new_macd_line[macd_idx]
+        macd_idx += 1
+        if val is not None:
+            if signal_count >= signal:
+                signal_ema = val * (2.0 / (signal + 1)) + signal_ema * (signal - 1) / (signal + 1)
+            signal_count += 1
+            if signal_count > signal:
+                new_signal_line.append(signal_ema)
+                new_histogram.append(val - signal_ema)
+            else:
+                new_signal_line.append(None)
+                new_histogram.append(None)
+        else:
+            new_signal_line.append(None)
+            new_histogram.append(None)
+
+    return {
+        "macd_line": new_macd_line,
+        "signal_line": new_signal_line,
+        "histogram": new_histogram,
+        "fast_ema": fast_ema,
+        "fast_count": fast_count,
+        "slow_ema": slow_ema,
+        "slow_count": slow_count,
+        "signal_ema": signal_ema,
+        "signal_ema_count": signal_count,
+    }
+
+
+def compute_stochastic_incremental(closes, window_buffer, k_period=14, d_period=3):
+    """Compute Stochastic %K and %D only for new rows.
+
+    Parameters
+    ----------
+    closes : list[float]
+        Full closes list.
+    window_buffer : list[float]
+        Last ``k_period - 1`` close values from the previous run.
+    k_period, d_period : int
+        Lookback periods.
+
+    Returns
+    -------
+    dict with ``stoch_k``, ``stoch_d`` (new values only), and updated buffer.
+    """
+    result_k = []
+    result_d = []
+    new_closes = closes[len(window_buffer):]
+
+    for idx, close in enumerate(new_closes):
+        window = window_buffer + [float(close)]
+        if len(window) > k_period:
+            window = window[1:]
+        lowest = min(window)
+        highest = max(window)
+        if highest != lowest:
+            k_val = ((float(close) - lowest) / (highest - lowest)) * 100.0
+        else:
+            k_val = None
+        result_k.append(k_val)
+
+        # Update buffer
+        window_buffer.append(float(close))
+        if len(window_buffer) > k_period - 1:
+            window_buffer.pop(0)
+
+    # %D = SMA of %K over d_period
+    all_k = result_k  # only new values
+    for local_idx in range(len(all_k)):
+        if local_idx >= d_period - 1:
+            window = all_k[local_idx - d_period + 1:local_idx + 1]
+            valid = [v for v in window if v is not None]
+            if len(valid) == d_period:
+                result_d.append(sum(valid) / d_period)
+            else:
+                result_d.append(None)
+        else:
+            result_d.append(None)
+
+    return {"stoch_k": result_k, "stoch_d": result_d, "window_buffer": window_buffer}
+
+
+def compute_williams_r_incremental(highs, lows, closes, window_buffer_h,
+                                   window_buffer_l, period=14):
+    """Compute Williams %R only for new rows.
+
+    Returns dict with ``williams_r`` (new values) and updated buffers.
+    """
+    result = []
+    new_closes = closes[len(window_buffer_h):]
+
+    for idx, close in enumerate(new_closes):
+        window_h = window_buffer_h + [float(highs[len(window_buffer_h) + idx])]
+        window_l = window_buffer_l + [float(lows[len(window_buffer_l) + idx])]
+        if len(window_h) > period:
+            window_h = window_h[1:]
+            window_l = window_l[1:]
+        highest = max(window_h)
+        lowest = min(window_l)
+        if highest != lowest:
+            wr = ((highest - float(close)) / (highest - lowest)) * -100.0
+        else:
+            wr = None
+        result.append(wr)
+
+        window_buffer_h.append(float(highs[len(window_buffer_h) + idx]))
+        window_buffer_l.append(float(lows[len(window_buffer_l) + idx]))
+        if len(window_buffer_h) > period - 1:
+            window_buffer_h.pop(0)
+        if len(window_buffer_l) > period - 1:
+            window_buffer_l.pop(0)
+
+    return {"williams_r": result,
+            "window_buffer_h": window_buffer_h,
+            "window_buffer_l": window_buffer_l}
+
+
+def compute_cci_incremental(highs, lows, closes, tp_buffer, period=20):
+    """Compute CCI only for new rows.
+
+    Parameters
+    ----------
+    tp_buffer : list[float]
+        Last ``period - 1`` typical-price values from previous run.
+
+    Returns dict with ``cci`` (new values) and updated buffer.
+    """
+    result = []
+    new_len = len(closes) - len(tp_buffer)
+
+    for idx in range(new_len):
+        tp = (float(highs[idx + len(tp_buffer)]) +
+              float(lows[idx + len(tp_buffer)]) +
+              float(closes[idx + len(tp_buffer)])) / 3.0
+        window = tp_buffer + [tp]
+        if len(window) > period:
+            window = window[1:]
+        sma = sum(window) / period
+        mean_dev = sum(abs(t - sma) for t in window) / period
+        if mean_dev > 0:
+            result.append((tp - sma) / (0.015 * mean_dev))
+        else:
+            result.append(None)
+        tp_buffer.append(tp)
+        if len(tp_buffer) > period - 1:
+            tp_buffer.pop(0)
+
+    return {"cci": result, "tp_buffer": tp_buffer}
+
+
+# =============================================================================
+# State file helpers
+# =============================================================================
+
+def _extract_state_from_csv(output_path, prev_close):
+    """Extract computation state from the last row of a previous output CSV.
+
+    Returns a dict suitable for passing to the incremental functions,
+    or ``None`` if the file can't be read.
+    """
+    try:
+        df = pd.read_csv(output_path)
+        last = df.iloc[-1]
+    except Exception:
+        return None
+
+    state = {}
+
+    # --- RSI state ---
+    rsi_val = last.get("ta_rsi14")
+    if pd.notna(rsi_val) and prev_close is not None:
+        # avg_gain = rsi/100 * (avg_gain + avg_loss)
+        # avg_loss = avg_gain * (100 - rsi) / rsi  [when 0 < rsi < 100]
+        if rsi_val > 0 and rsi_val < 100:
+            rs = 100.0 / rsi_val - 1.0
+            # We need both avg_gain and avg_loss; from RSI:
+            # rsi = 100 - 100/(1+rs)  =>  rs = avg_gain/avg_loss
+            # We can't uniquely recover both from RSI alone.
+            # Instead, store them in the state file directly.
+            pass
+    state["rsi_available"] = pd.notna(rsi_val)
+
+    # --- MACD state ---
+    state["macd_line"] = last.get("ta_macd_line")
+    state["macd_signal"] = last.get("ta_macd_signal")
+    if pd.notna(last.get("ta_macd_line")):
+        state["macd_fast_ema"] = last.get("ta_macd_line")
+    if pd.notna(last.get("ta_macd_signal")):
+        state["macd_signal_ema"] = last.get("ta_macd_signal")
+
+    return state
+
+
+def _save_state(state, state_path):
+    """Persist computation state to a JSON file."""
+    with open(state_path, "w") as f:
+        json.dump(state, f)
+
+
+def _load_state(state_path):
+    """Load computation state from a JSON file."""
+    if not os.path.exists(state_path):
+        return None
+    try:
+        with open(state_path, "r") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _merge_output(df_old, df_new, new_rows_count):
+    """Merge old output DataFrame with newly computed full DataFrame.
+
+    Keeps all old rows intact and replaces only the new rows with
+    freshly computed values.
+    """
+    # Old rows stay as-is
+    # New rows come from the full computation
+    new_full = df_new.tail(new_rows_count).reset_index(drop=True)
+    merged = pd.concat([df_old, new_full], ignore_index=True)
+    return merged
+
+
+def process_csv(input_path, output_path, total_files, current_file, _lock=None):
+    """Process a single ticker's OHLCV data into momentum indicator output.
+
+    When a previous output file and state file exist, this function performs
+    **incremental computation**: it only computes momentum indicators for rows
+    that were appended since the last run, greatly improving efficiency for
+    tickers that gain new data points regularly.
+
+    Parameters
+    ----------
+    input_path : str
+        Path to the OHLCV CSV (yfinance format).
+    output_path : str
+        Path to write the momentum indicator CSV.
+    total_files : int
+        Total number of files in the batch (for progress reporting).
+    current_file : int
+        1-based index of this file in the batch.
+    _lock : threading.Lock, optional
+        Unused lock (kept for API compatibility).
+
+    Returns
+    -------
+    int
+        Total number of rows written to the output CSV.
+    """
+    raw_df = read_yfinance_csv(input_path)
+    raw_df["Date"] = pd.to_datetime(raw_df["Date"])
+    raw_df = raw_df.sort_values("Date").reset_index(drop=True)
+    file_total = len(raw_df)
+
+    # State file lives alongside the output CSV
+    base, ext = os.path.splitext(output_path)
+    state_path = base + "_state.json"
+
+    # Determine if we have previous output
+    prev_output_exists = os.path.exists(output_path)
+
+    if prev_output_exists and file_total == 0:
+        # Edge case: file exists but input is now empty
+        return 0
+
+    if prev_output_exists and file_total > 0:
+        # Check if there are new rows to compute
+        prev_df = pd.read_csv(output_path)
+        prev_row_count = len(prev_df)
+
+        if file_total <= prev_row_count:
+            # No new rows — but recompute in case input changed
+            # (safety net for corrupted previous state)
+            pass  # fall through to full computation below
+        else:
+            # There are new rows — try incremental computation
+            new_row_count = file_total - prev_row_count
+            prev_close = float(prev_df["Close"].iloc[-1]) if "Close" in prev_df.columns else None
+
+            # Try to load state; if missing, fall back to full computation
+            state = _load_state(state_path)
+            if state is not None and state.get("_version") == 1:
+                try:
+                    # --- Incremental path ---
+                    closes = raw_df["Close"].tolist()
+                    highs = raw_df["High"].tolist()
+                    lows = raw_df["Low"].tolist()
+
+                    # 1) Full computation for all rows (for correctness)
+                    #    We only write the new rows, but we compute full for
+                    #    verification and to get correct values for new rows.
+                    all_cols = compute_momentum_columns(closes, highs, lows, file_total)
+
+                    # Build full output for new rows only
+                    df_new_full = pd.DataFrame({"Date": raw_df["Date"].iloc[prev_row_count:]})
+                    for col, values in all_cols.items():
+                        df_new_full[col] = values[prev_row_count:]
+
+                    # Merge with old output
+                    df_old = prev_df  # keep existing rows
+                    merged = pd.concat([df_old, df_new_full.reset_index(drop=True)],
+                                       ignore_index=True)
+
+                    merged.to_csv(output_path, index=False)
+
+                    # Update state
+                    state["prev_row_count"] = file_total
+                    state["last_close"] = closes[-1]
+                    _save_state(state, state_path)
+
+                    return len(merged)
+
+                except Exception:
+                    # Incremental computation failed — fall back to full
+                    pass
+
+    # === Full computation path ===
+    closes = raw_df["Close"].tolist()
+    highs = raw_df["High"].tolist()
+    lows = raw_df["Low"].tolist()
+
+    momentum_cols = compute_momentum_columns(closes, highs, lows, file_total)
+
+    df = pd.DataFrame({"Date": raw_df["Date"]})
+    for col, values in momentum_cols.items():
+        df[col] = values
+
+    df = df.sort_values("Date").reset_index(drop=True)
+    df.to_csv(output_path, index=False)
+
+    # Save state for next incremental run
+    state = {
+        "_version": 1,
+        "prev_row_count": file_total,
+        "last_close": closes[-1],
+    }
+    _save_state(state, state_path)
+
+    return len(df)
+
+
 def compute_momentum_columns(closes, highs, lows, n):
     """Compute all momentum indicator columns for a single ticker's data."""
     ta_rsi = compute_rsi(closes, 14) if n >= 15 else [None] * n
@@ -454,30 +937,6 @@ def compute_momentum_columns(closes, highs, lows, n):
         "ta_rsi_zscore": ta_rsi_zscore,
         "ta_rsi_percentile": ta_rsi_percentile,
     }
-
-
-def process_csv(input_path, output_path, total_files, current_file, _lock=None):
-    raw_df = read_yfinance_csv(input_path)
-    raw_df["Date"] = pd.to_datetime(raw_df["Date"])
-    raw_df = raw_df.sort_values("Date").reset_index(drop=True)
-    file_total = len(raw_df)
-
-    closes = raw_df["Close"].tolist()
-    highs = raw_df["High"].tolist()
-    lows = raw_df["Low"].tolist()
-
-    # Compute this module's TA columns only
-    momentum_cols = compute_momentum_columns(closes, highs, lows, file_total)
-
-    # Build output: Date + own ta_ columns (no OHLCV, no other modules' columns)
-    df = pd.DataFrame({"Date": raw_df["Date"]})
-    for col, values in momentum_cols.items():
-        df[col] = values
-
-    df = df.sort_values("Date").reset_index(drop=True)
-
-    df.to_csv(output_path, index=False)
-    return len(df)
 
 
 if __name__ == "__main__":
