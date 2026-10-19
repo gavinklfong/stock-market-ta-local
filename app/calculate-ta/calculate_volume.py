@@ -1104,7 +1104,7 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     file_total = len(raw_df)
 
     # ---- State detection ----
-    state_path = output_path + "_state.json"
+    state_path = output_path.rsplit(".", 1)[0] + "_state.json"
     state = _load_state(state_path)
     use_incremental = (
         state is not None
