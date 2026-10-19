@@ -1,7 +1,28 @@
 Ticker,Company,Major Industry / Sector
+AV.L,Aviva,Insurance
+BA.L,BAE Systems,Aerospace & Defence
+BARC.L,Barclays,Banking
+BP.L,BP,Energy
+CCH.L,Coca-Cola HBC,Beverages
+CNA.L,Centrica,Utilities
+GSK.L,GSK,Healthcare
+HSBA.L,HSBC Holdings,Banking
+JD.L,JD Sports Fashion,Retail
+LGEN.L,Legal & General,Insurance
+LLOY.L,Lloyds Banking Group,Banking
+LSEG.L,London Stock Exchange Group,Financial Services
+MKS.L,Marks & Spencer,Retail
 NG.L,National Grid,Utilities
-SSE.L,SSE plc,Utilities
-^FTSE,FTSE 100 Index,Index
-ISF.L,iShares Core FTSE 100 ETF GBP Dist,Index
-HSBA.L,HSBC plc,Banking
-LSE.L,London Stock Exchange,Financial Services
+NWG.L,NatWest Group,Banking
+PRU.L,Prudential,Insurance
+RR.L,Rolls-Royce Holdings,Aerospace & Defence
+SBRY.L,Sainsbury,Retail
+SDP.L,Schroders,Asset Management
+SGE.L,Sage Group,Software
+SHEL.L,Shell,Energy
+SSE.L,SSE,Utilities
+STAN.L,Standard Chartered,Banking
+SVT.L,Severn Trent,Utilities
+TSCO.L,Tesco,Retail
+UU.L,United Utilities,Utilities
+VOD.L,Vodafone Group,Telecommunications

@@ -40,7 +40,3 @@ Thumbs.db
 .env
 
 # Data (untracked files)
-data/market-data/*.csv
-
-data/
-data/**/*.csv
