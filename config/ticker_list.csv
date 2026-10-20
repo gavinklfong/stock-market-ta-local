@@ -1,18 +1,18 @@
 Ticker,Company,Major Industry / Sector
 AV.L,Aviva,Insurance
 BA.L,BAE Systems,Aerospace & Defence
-BARC.L,Barclays,Banking
+BARC.L,Barclays,Financial Services
 BP.L,BP,Energy
 CNA.L,Centrica,Utilities
 GSK.L,GSK,Healthcare
-HSBA.L,HSBC Holdings,Banking
+HSBA.L,HSBC Holdings,Financial Services
 JD.L,JD Sports Fashion,Retail
 LGEN.L,Legal & General,Insurance
-LLOY.L,Lloyds Banking Group,Banking
+LLOY.L,Lloyds Banking Group,Financial Services
 LSEG.L,London Stock Exchange Group,Financial Services
 MKS.L,Marks & Spencer,Retail
 NG.L,National Grid,Utilities
-NWG.L,NatWest Group,Banking
+NWG.L,NatWest Group,Financial Services
 PRU.L,Prudential,Insurance
 RR.L,Rolls-Royce Holdings,Aerospace & Defence
 SBRY.L,Sainsbury,Retail
@@ -20,9 +20,14 @@ SDP.L,Schroders,Asset Management
 SGE.L,Sage Group,Software
 SHEL.L,Shell,Energy
 SSE.L,SSE,Utilities
-STAN.L,Standard Chartered,Banking
+STAN.L,Standard Chartered,Financial Services
 SVT.L,Severn Trent,Utilities
 TSCO.L,Tesco,Retail
 UU.L,United Utilities,Utilities
 VOD.L,Vodafone Group,Telecommunications
 ^FTSE,FTSE 100 Index,Index
+ISF.L,iShares Core FTSE 100 UCITS ETF (Dist),ETF
+CUKX.L,iShares Core FTSE 100 UCITS ETF (Acc),ETF
+VUKG.L,Vanguard FTSE 100 UCITS ETF (Acc),ETF
+VUKE.L,Vanguard FTSE 100 UCITS ETF (Dist),ETF
+HUKX.L,HSBC FTSE 100 UCITS ETF,ETF
