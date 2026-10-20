@@ -67,8 +67,15 @@ def _price_change_pct(df, close_col="Close", periods=None):
 
 # --- Condition Analysis ---
 
-def analyse_ticker(df):
-    """Analyse a ticker's latest data and return a summary dict."""
+def _common_analysis(df):
+    """Shared analysis logic for both ticker and benchmark.
+
+    Returns a dict with keys: date, close, trend, momentum, volume,
+    volatility, regime, structure, prev_close, prev_rsi, prev_macd_hist,
+    prev_ema20, prev_ema50, prev_ema200, prev_st_dir, prev_cmf, prev_atr,
+    prev_norm_atr, prev_roc, prev_regime, prev_volume, price_chg,
+    price_chg_pct, price_chg_periods.
+    """
     df = df.sort_values("Date").reset_index(drop=True)
     L = df.iloc[-1]
     P = df.iloc[-2] if len(df) > 1 else L
@@ -79,14 +86,34 @@ def analyse_ticker(df):
     # Trend
     ema20, ema50, ema200 = _v(L, "ta_ema20"), _v(L, "ta_ema50"), _v(L, "ta_ema200")
     st_dir = _v(L, "ta_supertrend_direction")
+    ma20_slope = _v(L, "ta_ma20_slope")
+    ma50_slope = _v(L, "ta_ma50_slope")
+    donch_upper = _v(L, "ta_donchian_upper")
+    donch_lower = _v(L, "ta_donchian_lower")
+    kelt_upper = _v(L, "ta_keltner_upper")
+    kelt_lower = _v(L, "ta_keltner_lower")
+    aroon_up = _v(L, "ta_aroon_up")
+    aroon_down = _v(L, "ta_aroon_down")
     price_above_ema20 = close > ema20 if close and ema20 else None
     ema_bullish = ema20 and ema50 and ema200 and ema20 > ema50 > ema200
     ema_bearish = ema20 and ema50 and ema200 and ema20 < ema50 < ema200
     st_bullish = st_dir == 1 if st_dir is not None else None
+    donch_breakout = close > donch_upper if close and donch_upper else None
+    donch_breakdown = close < donch_lower if close and donch_lower else None
+    kelt_breakout = close > kelt_upper if close and kelt_upper else None
+    kelt_breakdown = close < kelt_lower if close and kelt_lower else None
+    aroon_bullish = (aroon_up and aroon_down and aroon_up > aroon_down) if aroon_up and aroon_down else None
     trend_items = [
         ("EMA20 > EMA50 > EMA200", ema_bullish, f"20:{_fmt(ema20)} > 50:{_fmt(ema50)} > 200:{_fmt(ema200)} ({'Bearish' if ema_bearish else 'Bullish' if ema_bullish else 'Neutral'})"),
         ("SuperTrend", st_bullish, "Uptrend" if st_bullish == True else "Downtrend" if st_bullish == False else "N/A"),
         ("Price vs EMA20", price_above_ema20, f"Close:{_fmt(close)} vs EMA20:{_fmt(ema20)} ({'Above' if price_above_ema20 else 'Below' if price_above_ema20 is False else 'N/A'})"),
+        ("MA20 Slope", ma20_slope is not None, f"{_fmt(ma20_slope,2)}% ({'Increasing' if ma20_slope > 0 else 'Decreasing' if ma20_slope is not None else 'N/A'})"),
+        ("MA50 Slope", ma50_slope is not None, f"{_fmt(ma50_slope,2)}% ({'Increasing' if ma50_slope > 0 else 'Decreasing' if ma50_slope is not None else 'N/A'})"),
+        ("Donchian Breakout", donch_breakout, "Yes" if donch_breakout else "No" if donch_breakout is False else "N/A"),
+        ("Donchian Breakdown", donch_breakdown, "Yes" if donch_breakdown else "No" if donch_breakdown is False else "N/A"),
+        ("Keltner Breakout", kelt_breakout, "Yes" if kelt_breakout else "No" if kelt_breakout is False else "N/A"),
+        ("Keltner Breakdown", kelt_breakdown, "Yes" if kelt_breakdown else "No" if kelt_breakdown is False else "N/A"),
+        ("Aroon", aroon_bullish, f"Up:{_fmt(aroon_up,1)} Down:{_fmt(aroon_down,1)} ({'Bullish' if aroon_bullish else 'Bearish' if (aroon_up and aroon_down and aroon_up < aroon_down) else 'Neutral'})"),
     ]
 
     # Momentum
@@ -95,26 +122,34 @@ def analyse_ticker(df):
     macd_line = _v(L, "ta_macd_line")
     macd_signal = _v(L, "ta_macd_signal")
     roc = _v(L, "ta_roc20")
+    williams_r = _v(L, "ta_williams_r")
     rsi_overbought = rsi > 70 if rsi else None
     rsi_oversold = rsi < 30 if rsi else None
     macd_bullish = macd_hist > 0 if macd_hist else None
     macd_cross = macd_line > macd_signal if macd_line and macd_signal else None
+    williams_overbought = williams_r > -20 if williams_r else None
+    williams_oversold = williams_r < -80 if williams_r else None
     momentum_items = [
         ("RSI(14)", None if rsi is None else (rsi_overbought or rsi_oversold), f"{_fmt(rsi,1)}{' (Overbought)' if rsi_overbought else ' (Oversold)' if rsi_oversold else ' (Neutral)'}"),
         ("MACD Histogram", macd_bullish, f"{_fmt(macd_hist)} ({'Positive' if macd_bullish else 'Negative' if macd_bullish is False else 'N/A'})"),
         ("MACD Cross", macd_cross, "Line > Signal" if macd_cross else "Line < Signal"),
         ("ROC(20)", None if roc is None else roc > 0, f"{_fmt(roc,1)}% ({'Positive' if roc > 0 else 'Negative' if roc is not None else 'N/A'})"),
+        ("Williams %R", None if williams_r is None else (williams_overbought or williams_oversold), f"{_fmt(williams_r,1)} {' (Overbought)' if williams_overbought else ' (Oversold)' if williams_oversold else ' (Neutral)' if williams_r is not None else ''}"),
     ]
 
     # Volume
     obv = _v(L, "ta_obv")
+    adl = _v(L, "ta_adl")
     cmf = _v(L, "ta_cmf")
     vol = _v(L, "Volume")
     obv_5 = df["ta_obv"].iloc[-5:].tolist() if "ta_obv" in df.columns else []
     obv_rising = len(obv_5) == 5 and obv_5[-1] > obv_5[0] if obv_5 else None
+    adl_5 = df["ta_adl"].iloc[-5:].tolist() if "ta_adl" in df.columns else []
+    adl_rising = len(adl_5) == 5 and adl_5[-1] > adl_5[0] if adl_5 else None
     cmf_pos = cmf > 0 if cmf else None
     volume_items = [
         ("OBV Trend (5-bar)", obv_rising, f"Rising" if obv_rising else "Falling" if obv_rising is False else "N/A"),
+        ("ADL Trend (5-bar)", adl_rising, f"Rising" if adl_rising else "Falling" if adl_rising is False else "N/A"),
         ("CMF(20)", cmf_pos, f"{_fmt(cmf,4)} ({'Positive' if cmf_pos else 'Negative' if cmf_pos is False else 'N/A'})"),
         ("Volume", vol is not None, f"{vol:,.0f}" if vol else "N/A"),
     ]
@@ -122,15 +157,23 @@ def analyse_ticker(df):
     # Volatility
     atr = _v(L, "ta_atr14")
     norm_atr = _v(L, "ta_normalized_atr14")
+    hvol20 = _v(L, "ta_hvol20")
+    parkinson_vol = _v(L, "ta_parkinson_vol")
     bb_upper = _v(L, "ta_bband_upper")
     bb_lower = _v(L, "ta_bband_lower")
     bb_middle = _v(L, "ta_bband_middle")
+    bb_width = _v(L, "ta_bband_width")
+    bb_pctb = _v(L, "ta_bband_pctb")
     atr_pct = norm_atr if norm_atr else None
     price_in_bb = (close > bb_lower and close < bb_upper) if close and bb_upper and bb_lower else None
     price_near_upper = close > bb_upper * 0.98 if close and bb_upper else None
     volatility_items = [
         ("ATR(14) %", atr_pct is not None, f"{_fmt(atr_pct,2)}% ({'High' if atr_pct > 2 else 'Normal' if atr_pct else 'N/A'})"),
+        ("Hist. Volatility(20)", hvol20 is not None, f"{_fmt(hvol20,2)}% ({'Low' if hvol20 is not None and hvol20 < 15 else 'Normal' if hvol20 is not None else 'N/A'})"),
+        ("Parkinson Vol", parkinson_vol is not None, f"{_fmt(parkinson_vol,2)}%"),
         ("Price in BB", price_in_bb, f"Inside ({_fmt(close)} vs {_fmt(bb_lower)}-{_fmt(bb_upper)})"),
+        ("BB Width", bb_width is not None, f"{_fmt(bb_width,2)}%"),
+        ("BB %B", bb_pctb is not None, f"{_fmt(bb_pctb,3)}"),
         ("Price near BB Upper", price_near_upper, "Yes" if price_near_upper else "No"),
     ]
 
@@ -145,141 +188,29 @@ def analyse_ticker(df):
         ("HMM Regime", regime is not None, f"{regime_labels.get(regime, 'Unknown')} ({_fmt(hmm_0,1)}/{_fmt(hmm_1,1)}/{_fmt(hmm_2,1)})"),
     ]
 
-    # Previous day values for comparison
-    L_prev = df.iloc[-2]
-    prev_close = _v(L_prev, "Close") or _v(L_prev, "Adj Close")
-    prev_rsi = _v(L_prev, "ta_rsi14")
-    prev_macd_hist = _v(L_prev, "ta_macd_histogram")
-    prev_macd_line = _v(L_prev, "ta_macd_line")
-    prev_macd_signal = _v(L_prev, "ta_macd_signal")
-    prev_ema20 = _v(L_prev, "ta_ema20")
-    prev_ema50 = _v(L_prev, "ta_ema50")
-    prev_ema200 = _v(L_prev, "ta_ema200")
-    prev_st_dir = _v(L_prev, "ta_supertrend_direction")
-    prev_cmf = _v(L_prev, "ta_cmf")
-    prev_atr = _v(L_prev, "ta_atr14")
-    prev_norm_atr = _v(L_prev, "ta_normalized_atr14")
-    prev_rroc = _v(L_prev, "ta_roc20")
-    prev_regime = _v(L_prev, "ta_hmm_regime")
-    prev_volume = _v(L_prev, "Volume")
-
-    # Price change
-    price_chg = close - prev_close if close and prev_close else None
-    price_chg_pct = (price_chg / prev_close * 100) if price_chg and prev_close else None
-
-    # Changes
-    L2 = df.iloc[-3] if len(df) > 2 else P
-    changes = []
-    change_fields = [
-        ("RSI", _v(L, "ta_rsi14"), _v(L2, "ta_rsi14"), lambda a, b: (a > 70) != (b > 70)),
-        ("MACD Hist", _v(L, "ta_macd_histogram"), _v(L2, "ta_macd_histogram"), lambda a, b: (a > 0) != (b > 0)),
-        ("SuperTrend", _v(L, "ta_supertrend_direction"), _v(L2, "ta_supertrend_direction"), lambda a, b: a != b),
-        ("CMF", _v(L, "ta_cmf"), _v(L2, "ta_cmf"), lambda a, b: (a > 0) != (b > 0) if a is not None and b is not None else False),
-        ("HMM Regime", _v(L, "ta_hmm_regime"), _v(L2, "ta_hmm_regime"), lambda a, b: int(a) != int(b) if a is not None and b is not None else False),
-        ("Price", close, _v(L2, "Close"), lambda a, b: a > b if a and b else False),
-    ]
-    for name, cur, prev, changed_fn in change_fields:
-        if cur is None or prev is None:
-            continue
-        if changed_fn(cur, prev):
-            changes.append(name)
-
-    # Multi-period price change
-    price_chg_periods = _price_change_pct(df)
-
-    return {
-        "ticker": "",  # set by caller
-        "date": date_str, "close": close, "rsi": rsi, "macd_hist": macd_hist,
-        "trend": trend_items, "momentum": momentum_items, "volume": volume_items,
-        "volatility": volatility_items, "regime": regime_items,
-        "changes": changes, "df": df,
-        # Previous day comparison
-        "prev_close": prev_close, "prev_rsi": prev_rsi, "prev_macd_hist": prev_macd_hist,
-        "prev_ema20": prev_ema20, "prev_ema50": prev_ema50, "prev_ema200": prev_ema200,
-        "prev_st_dir": prev_st_dir, "prev_cmf": prev_cmf, "prev_atr": prev_atr,
-        "prev_norm_atr": prev_norm_atr, "prev_roc": prev_rroc, "prev_regime": prev_regime,
-        "prev_volume": prev_volume, "price_chg": price_chg, "price_chg_pct": price_chg_pct,
-        # Multi-period price change
-        "price_chg_periods": price_chg_periods,
-    }
-
-
-def analyse_benchmark(df):
-    """Analyse the benchmark index and return a summary dict (same structure as analyse_ticker)."""
-    df = df.sort_values("Date").reset_index(drop=True)
-    L = df.iloc[-1]
-    P = df.iloc[-2] if len(df) > 1 else L
-
-    close = _v(L, "Close") or _v(L, "Adj Close")
-    date_str = str(L.get("Date", "N/A"))[:10]
-
-    # Trend
-    ema20, ema50, ema200 = _v(L, "ta_ema20"), _v(L, "ta_ema50"), _v(L, "ta_ema200")
-    st_dir = _v(L, "ta_supertrend_direction")
-    price_above_ema20 = close > ema20 if close and ema20 else None
-    ema_bullish = ema20 and ema50 and ema200 and ema20 > ema50 > ema200
-    ema_bearish = ema20 and ema50 and ema200 and ema20 < ema50 < ema200
-    st_bullish = st_dir == 1 if st_dir is not None else None
-    trend_items = [
-        ("EMA20 > EMA50 > EMA200", ema_bullish, f"20:{_fmt(ema20)} > 50:{_fmt(ema50)} > 200:{_fmt(ema200)} ({'Bearish' if ema_bearish else 'Bullish' if ema_bullish else 'Neutral'})"),
-        ("SuperTrend", st_bullish, "Uptrend" if st_bullish == True else "Downtrend" if st_bullish == False else "N/A"),
-        ("Price vs EMA20", price_above_ema20, f"Close:{_fmt(close)} vs EMA20:{_fmt(ema20)} ({'Above' if price_above_ema20 else 'Below' if price_above_ema20 is False else 'N/A'})"),
-    ]
-
-    # Momentum
-    rsi = _v(L, "ta_rsi14")
-    macd_hist = _v(L, "ta_macd_histogram")
-    macd_line = _v(L, "ta_macd_line")
-    macd_signal = _v(L, "ta_macd_signal")
-    roc = _v(L, "ta_roc20")
-    rsi_overbought = rsi > 70 if rsi else None
-    rsi_oversold = rsi < 30 if rsi else None
-    macd_bullish = macd_hist > 0 if macd_hist else None
-    macd_cross = macd_line > macd_signal if macd_line and macd_signal else None
-    momentum_items = [
-        ("RSI(14)", None if rsi is None else (rsi_overbought or rsi_oversold), f"{_fmt(rsi,1)}{' (Overbought)' if rsi_overbought else ' (Oversold)' if rsi_oversold else ' (Neutral)'}"),
-        ("MACD Histogram", macd_bullish, f"{_fmt(macd_hist)} ({'Positive' if macd_bullish else 'Negative' if macd_bullish is False else 'N/A'})"),
-        ("MACD Cross", macd_cross, "Line > Signal" if macd_cross else "Line < Signal"),
-        ("ROC(20)", None if roc is None else roc > 0, f"{_fmt(roc,1)}% ({'Positive' if roc > 0 else 'Negative' if roc is not None else 'N/A'})"),
-    ]
-
-    # Volume
-    obv = _v(L, "ta_obv")
-    cmf = _v(L, "ta_cmf")
-    vol = _v(L, "Volume")
-    obv_5 = df["ta_obv"].iloc[-5:].tolist() if "ta_obv" in df.columns else []
-    obv_rising = len(obv_5) == 5 and obv_5[-1] > obv_5[0] if obv_5 else None
-    cmf_pos = cmf > 0 if cmf else None
-    volume_items = [
-        ("OBV Trend (5-bar)", obv_rising, f"Rising" if obv_rising else "Falling" if obv_rising is False else "N/A"),
-        ("CMF(20)", cmf_pos, f"{_fmt(cmf,4)} ({'Positive' if cmf_pos else 'Negative' if cmf_pos is False else 'N/A'})"),
-        ("Volume", vol is not None, f"{vol:,.0f}" if vol else "N/A"),
-    ]
-
-    # Volatility
-    atr = _v(L, "ta_atr14")
-    norm_atr = _v(L, "ta_normalized_atr14")
-    bb_upper = _v(L, "ta_bband_upper")
-    bb_lower = _v(L, "ta_bband_lower")
-    bb_middle = _v(L, "ta_bband_middle")
-    atr_pct = norm_atr if norm_atr else None
-    price_in_bb = (close > bb_lower and close < bb_upper) if close and bb_upper and bb_lower else None
-    price_near_upper = close > bb_upper * 0.98 if close and bb_upper else None
-    volatility_items = [
-        ("ATR(14) %", atr_pct is not None, f"{_fmt(atr_pct,2)}% ({'High' if atr_pct > 2 else 'Normal' if atr_pct else 'N/A'})"),
-        ("Price in BB", price_in_bb, f"Inside ({_fmt(close)} vs {_fmt(bb_lower)}-{_fmt(bb_upper)})"),
-        ("Price near BB Upper", price_near_upper, "Yes" if price_near_upper else "No"),
-    ]
-
-    # Regime
-    hmm_regime = _v(L, "ta_hmm_regime")
-    hmm_0 = _v(L, "ta_hmm_regime_prob_0")
-    hmm_1 = _v(L, "ta_hmm_regime_prob_1")
-    hmm_2 = _v(L, "ta_hmm_regime_prob_2")
-    regime_labels = {0: "Bull", 1: "Bear", 2: "Volatile"}
-    regime = int(hmm_regime) if hmm_regime is not None else None
-    regime_items = [
-        ("HMM Regime", regime is not None, f"{regime_labels.get(regime, 'Unknown')} ({_fmt(hmm_0,1)}/{_fmt(hmm_1,1)}/{_fmt(hmm_2,1)})"),
+    # Market Structure
+    swing_high_idx = _v(L, "ta_swing_high_idx")
+    swing_low_idx = _v(L, "ta_swing_low_idx")
+    hh = _v(L, "ta_hh")
+    hl = _v(L, "ta_hl")
+    lh = _v(L, "ta_lh")
+    ll = _v(L, "ta_ll")
+    bos = _v(L, "ta_bos")
+    choch = _v(L, "ta_choch")
+    bars_since_sh = (len(df) - 1 - int(swing_high_idx)) if swing_high_idx is not None else None
+    bars_since_sl = (len(df) - 1 - int(swing_low_idx)) if swing_low_idx is not None else None
+    fresh_high = bars_since_sh is not None and bars_since_sh < 5
+    fresh_low = bars_since_sl is not None and bars_since_sl < 5
+    aging_trend = bars_since_sh is not None and bars_since_sh > 50
+    structure_items = [
+        ("Swing High Index", swing_high_idx is not None, f"Bar {int(swing_high_idx)} ago ({'Fresh' if fresh_high else 'Aging' if aging_trend else 'Normal'})"),
+        ("Swing Low Index", swing_low_idx is not None, f"Bar {int(swing_low_idx)} ago ({'Fresh' if fresh_low else 'Normal'})"),
+        ("Higher High", hh is not None and hh == 1, "Yes" if (hh is not None and hh == 1) else "No"),
+        ("Higher Low", hl is not None and hl == 1, "Yes" if (hl is not None and hl == 1) else "No"),
+        ("Lower High", lh is not None and lh == 1, "Yes" if (lh is not None and lh == 1) else "No"),
+        ("Lower Low", ll is not None and ll == 1, "Yes" if (ll is not None and ll == 1) else "No"),
+        ("BOS", bos is not None and bos == 1, "Yes" if (bos is not None and bos == 1) else "No"),
+        ("CHoCH", choch is not None and choch == 1, "Yes" if (choch is not None and choch == 1) else "No"),
     ]
 
     # Previous day values
@@ -306,18 +237,61 @@ def analyse_benchmark(df):
     price_chg_periods = _price_change_pct(df)
 
     return {
-        "ticker": "",  # set by caller
         "date": date_str, "close": close, "rsi": rsi, "macd_hist": macd_hist,
         "trend": trend_items, "momentum": momentum_items, "volume": volume_items,
-        "volatility": volatility_items, "regime": regime_items,
-        "changes": [],  # not applicable for benchmark
-        "df": df,
+        "volatility": volatility_items, "regime": regime_items, "structure": structure_items,
         "prev_close": prev_close, "prev_rsi": prev_rsi, "prev_macd_hist": prev_macd_hist,
         "prev_ema20": prev_ema20, "prev_ema50": prev_ema50, "prev_ema200": prev_ema200,
         "prev_st_dir": prev_st_dir, "prev_cmf": prev_cmf, "prev_atr": prev_atr,
         "prev_norm_atr": prev_norm_atr, "prev_roc": prev_rroc, "prev_regime": prev_regime,
         "prev_volume": prev_volume, "price_chg": price_chg, "price_chg_pct": price_chg_pct,
         "price_chg_periods": price_chg_periods,
+        "_df": df,  # internal: popped by callers
+    }
+
+
+def analyse_ticker(df):
+    """Analyse a ticker's latest data and return a summary dict."""
+    result = _common_analysis(df)
+    df = result.pop("_df")  # restore df (added by _common_analysis)
+
+    # Changes — unique to ticker analysis (not benchmark)
+    L = df.iloc[-1]
+    P = df.iloc[-2] if len(df) > 1 else L
+    close = _v(L, "Close") or _v(L, "Adj Close")
+    L2 = df.iloc[-3] if len(df) > 2 else P
+    changes = []
+    change_fields = [
+        ("RSI", _v(L, "ta_rsi14"), _v(L2, "ta_rsi14"), lambda a, b: (a > 70) != (b > 70)),
+        ("MACD Hist", _v(L, "ta_macd_histogram"), _v(L2, "ta_macd_histogram"), lambda a, b: (a > 0) != (b > 0)),
+        ("SuperTrend", _v(L, "ta_supertrend_direction"), _v(L2, "ta_supertrend_direction"), lambda a, b: a != b),
+        ("CMF", _v(L, "ta_cmf"), _v(L2, "ta_cmf"), lambda a, b: (a > 0) != (b > 0) if a is not None and b is not None else False),
+        ("HMM Regime", _v(L, "ta_hmm_regime"), _v(L2, "ta_hmm_regime"), lambda a, b: int(a) != int(b) if a is not None and b is not None else False),
+        ("Price", close, _v(L2, "Close"), lambda a, b: a > b if a and b else False),
+    ]
+    for name, cur, prev, changed_fn in change_fields:
+        if cur is None or prev is None:
+            continue
+        if changed_fn(cur, prev):
+            changes.append(name)
+
+    return {
+        "ticker": "",  # set by caller
+        **result,
+        "changes": changes,
+        "df": df,
+    }
+
+
+def analyse_benchmark(df):
+    """Analyse the benchmark index and return a summary dict (same structure as analyse_ticker)."""
+    result = _common_analysis(df)
+    df = result.pop("_df")  # drop internal key, restore df
+    return {
+        "ticker": "",  # set by caller
+        **result,
+        "changes": [],  # not applicable for benchmark
+        "df": df,
     }
 
 
@@ -702,6 +676,7 @@ def _benchmark_card_html(bench):
     vol_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in bench["volume"])
     vola_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in bench["volatility"])
     reg_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in bench["regime"])
+    struct_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in bench["structure"])
 
     regime_bar_html = _regime_bar_html(bench)
 
@@ -782,6 +757,10 @@ def _benchmark_card_html(bench):
 <h3><span class="icon">📉</span> Volatility</h3>
 <table>{vola_html}</table>
 </div>
+<div class="card" style="background:#fff;border:1px solid #e2e8f0;margin-bottom:0">
+<h3><span class="icon">🏗️</span> Market Structure</h3>
+<table>{struct_html}</table>
+</div>
 {regime_bar_html}
 </div>
 </div>"""
@@ -799,6 +778,7 @@ def _card_html(report):
     vol_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in report["volume"])
     vola_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in report["volatility"])
     reg_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in report["regime"])
+    struct_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in report["structure"])
 
     # Regime probability bar
     regime_bar_html = _regime_bar_html(report)
@@ -832,6 +812,10 @@ def _card_html(report):
 <h3><span class="icon">📉</span> Volatility</h3>
 <table>{vola_html}</table>
 </div>
+<div class="card">
+<h3><span class="icon">🏗️</span> Market Structure</h3>
+<table>{struct_html}</table>
+</div>
 {regime_bar_html}
 </div>
 </div>"""
@@ -841,6 +825,7 @@ def generate_ticker_html(report):
     """Generate a single HTML report for one ticker."""
     card_html = _card_html(report)
     period_card_html = _period_returns_card_html(report)
+    bench_html = _benchmark_card_html(report.get("benchmark_analysis"))
 
     # Build comparison chart first (to be placed second, after OHLC)
     comp_fig = build_comparison_chart(report["ticker"], report["df"], report.get("benchmark_close", []))
@@ -1053,6 +1038,7 @@ body {{
 
 <div class="container">
 {period_card_html}
+{bench_html}
 {card_html}
 {charts}
 
