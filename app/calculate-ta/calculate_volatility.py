@@ -729,7 +729,7 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
         # Build output: Date + own ta_ columns
         df = pd.DataFrame({"Date": raw_df["Date"]})
         for col, values in new_cols.items():
-            if col in df_old.columns:
+            if df_old is not None and col in df_old.columns:
                 old_vals = df_old[col].tolist()
                 merged = old_vals[:state_pr] + values[state_pr:]
                 df[col] = merged

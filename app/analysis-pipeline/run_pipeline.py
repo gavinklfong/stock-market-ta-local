@@ -143,7 +143,7 @@ def merge_analysis_data() -> None:
             pe_df = pd.read_csv(pe_file)
             # Align Date format to the merged DataFrame (YYYY-MM-DD strings)
             pe_df["Date"] = pd.to_datetime(pe_df["Date"]).dt.strftime("%Y-%m-%d")
-            pe_merged = merged.merge(pe_df, on="Date", how="left")
+            pe_merged = merged.merge(pe_df, on="Date", how="left").copy()
             # Keep the more complete Close column (from market data)
             if "Close_x" in pe_merged.columns and "Close_y" in pe_merged.columns:
                 pe_merged["Close"] = pe_merged["Close_x"].combine_first(pe_merged["Close_y"])
