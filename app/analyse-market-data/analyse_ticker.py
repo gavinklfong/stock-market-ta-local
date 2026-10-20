@@ -812,111 +812,6 @@ def _regime_bar_html(report):
 </div>"""
 
 
-def _benchmark_card_html(bench):
-    """Generate HTML for the market benchmark (FTSE 100) metrics card."""
-    if bench is None:
-        return ""
-
-    def row(emoji, label, val):
-        return f"<tr><td class='metric-label'>{label}</td><td class='metric-value'>{val}</td></tr>"
-
-    def signal_row(signal, label, val):
-        return f"<tr><td class='metric-label'>{label}</td><td class='metric-value'>{signal}</td></tr>"
-
-    trend_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in bench["trend"])
-    mom_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in bench["momentum"])
-    vol_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in bench["volume"])
-    vola_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in bench["volatility"])
-    reg_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in bench["regime"])
-    struct_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in bench["structure"])
-
-    regime_bar_html = _regime_bar_html(bench)
-
-    # Price change for benchmark
-    pchg = bench.get("price_chg")
-    pchg_pct = bench.get("price_chg_pct")
-    if pchg is not None and pchg_pct is not None:
-        price_label = f"{_fmt(bench['close'])} ({pchg:+.2f}, {pchg_pct:+.2f}%)"
-    else:
-        price_label = f"{_fmt(bench['close'])}"
-
-    # Quick summary badge row for benchmark
-    rsi = bench["rsi"]
-    macd_hist = bench["macd_hist"]
-    st_dir = bench["trend"][1][1]
-    ema_trend = bench["trend"][0][1]
-    cmf = bench["volume"][1][1]
-    roc = bench["momentum"][3][1]
-
-    regime_labels = {0: "Bull", 1: "Bear", 2: "Volatile"}
-    regime = bench["regime"][0][2].split("(")[0].strip()
-
-    def badge(ok, label, color_class):
-        if ok is None:
-            return f"<span class='badge badge-neutral'>Neutral</span>"
-        if ok:
-            return f"<span class='badge badge-bull'>{label}</span>"
-        return f"<span class='badge badge-bear'>{label}</span>"
-
-    rsi_state = ""
-    if rsi is not None:
-        if rsi > 70:
-            rsi_state = " (Overbought)"
-        elif rsi < 30:
-            rsi_state = " (Oversold)"
-
-    macd_cur = "Bullish" if macd_hist and macd_hist > 0 else "Bearish" if macd_hist is not None else "N/A"
-    st_cur = "Uptrend" if st_dir == True else "Downtrend" if st_dir == False else "N/A"
-    ema_cur = "Bullish" if ema_trend == True else "Bearish" if ema_trend == False else "N/A"
-    cmf_str = "Positive" if cmf else "Negative"
-    roc_str = "Positive" if roc else "Negative"
-
-    return f"""
-<div class="card" style="background:linear-gradient(135deg,#f0f7ff,#e8f4fd);border-left:4px solid #3b82f6">
-<h3><span class="icon">🌐</span> Market Benchmark — FTSE 100</h3>
-<table style="border-collapse:collapse;width:100%;font-size:0.9rem;margin-bottom:12px">
-<tbody>
-{row(None, "Close", price_label)}
-{row(None, "RSI(14)", f"{_fmt(rsi,1)}{rsi_state}")}
-{row(None, "MACD Histogram", macd_cur)}
-{row(None, "SuperTrend", st_cur)}
-{row(None, "EMA Trend", ema_cur)}
-{row(None, "CMF(20)", cmf_str)}
-{row(None, "Regime", regime)}
-{row(None, "ROC(20)", roc_str)}
-</tbody>
-</table>
-<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px">
-{badge(st_dir, st_cur, "st")}
-{badge(ema_trend, ema_cur, "ema")}
-{badge(cmf, cmf_str, "cmf")}
-{badge(roc, roc_str, "roc")}
-</div>
-<div class="analysis-grid">
-<div class="card" style="background:#fff;border:1px solid #e2e8f0;margin-bottom:0">
-<h3><span class="icon">📈</span> Trend</h3>
-<table>{trend_html}</table>
-</div>
-<div class="card" style="background:#fff;border:1px solid #e2e8f0;margin-bottom:0">
-<h3><span class="icon">⚡</span> Momentum</h3>
-<table>{mom_html}</table>
-</div>
-<div class="card" style="background:#fff;border:1px solid #e2e8f0;margin-bottom:0">
-<h3><span class="icon">📊</span> Volume</h3>
-<table>{vol_html}</table>
-</div>
-<div class="card" style="background:#fff;border:1px solid #e2e8f0;margin-bottom:0">
-<h3><span class="icon">📉</span> Volatility</h3>
-<table>{vola_html}</table>
-</div>
-<div class="card" style="background:#fff;border:1px solid #e2e8f0;margin-bottom:0">
-<h3><span class="icon">🏗️</span> Market Structure</h3>
-<table>{struct_html}</table>
-</div>
-{regime_bar_html}
-</div>
-</div>"""
-
 
 def _card_html(report):
     """Generate HTML for a single ticker summary card."""
@@ -980,7 +875,6 @@ def generate_ticker_html(report):
     """Generate a single HTML report for one ticker."""
     card_html = _card_html(report)
     period_card_html = _period_returns_card_html(report)
-    bench_html = _benchmark_card_html(report.get("benchmark_analysis"))
 
     # Build comparison chart first (to be placed second, after OHLC)
     comp_fig = build_comparison_chart(report["ticker"], report["df"], report.get("benchmark_close", []))
@@ -1205,7 +1099,6 @@ body {{
 
 <div class="container">
 {period_card_html}
-{bench_html}
 {card_html}
 {charts}
 
