@@ -389,6 +389,142 @@ def build_charts(name, df):
     return [fig1, fig2, fig3, fig4]
 
 
+def build_volatility_chart(df):
+    """Build a volatility analysis chart: ATR + Historical Volatility + Bollinger Width."""
+    df = df.sort_values("Date").reset_index(drop=True)
+    one_year_ago = df["Date"].max() - pd.DateOffset(years=1)
+    df = df[df["Date"] >= one_year_ago].reset_index(drop=True)
+    dates = df["Date"].dt.strftime("%Y-%m-%d").tolist()
+
+    fig = go.Figure()
+
+    # ATR(14) — left axis
+    if "ta_atr14" in df.columns:
+        fig.add_trace(go.Scatter(
+            x=dates, y=df["ta_atr14"], mode="lines", name="ATR(14)",
+            line=dict(color="#f59e0b", width=2), yaxis="y"
+        ))
+
+    # Historical Volatility(20) — right axis (%)
+    if "ta_hvol20" in df.columns:
+        fig.add_trace(go.Scatter(
+            x=dates, y=df["ta_hvol20"], mode="lines", name="Hist. Vol(20)",
+            line=dict(color="#8b5cf6", width=1.5, dash="dash"), yaxis="y2"
+        ))
+
+    # Bollinger Width — right axis (%)
+    if "ta_bband_width" in df.columns:
+        fig.add_trace(go.Scatter(
+            x=dates, y=df["ta_bband_width"], mode="lines", name="BB Width",
+            line=dict(color="#06b6d4", width=1, dash="dot"), yaxis="y2"
+        ))
+
+    fig.update_layout(
+        hovermode="x unified",
+        height=320,
+        margin=dict(l=50, r=20, t=30, b=40),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
+        yaxis=dict(title_text="ATR", side="left", gridcolor="#f1f5f9"),
+        yaxis2=dict(title_text="Volatility %", side="right", overlaying="y", gridcolor="rgba(0,0,0,0)"),
+    )
+    return fig
+
+
+def build_structure_chart(df):
+    """Build a market structure chart: swing highs/lows, S/R levels, structure events on price."""
+    df = df.sort_values("Date").reset_index(drop=True)
+    one_year_ago = df["Date"].max() - pd.DateOffset(years=1)
+    df = df[df["Date"] >= one_year_ago].reset_index(drop=True)
+    dates = df["Date"].dt.strftime("%Y-%m-%d").tolist()
+
+    fig = go.Figure()
+
+    # Candlestick
+    fig.add_trace(go.Candlestick(
+        x=dates, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
+        name="OHLC", increasing_line_color="#26a69a", decreasing_line_color="#ef5350"
+    ))
+
+    # Swing highs (triangles pointing up)
+    if "ta_swing_high_idx" in df.columns:
+        # Mark all swing highs (where ta_structure is 1 for swing high detection)
+        sh_mask = df.columns.str.startswith("ta_swing")
+        if sh_mask.any():
+            # Use swing_high_idx column to mark the last swing high
+            sh_idx_col = df.columns.get_loc("ta_swing_high_idx") if "ta_swing_high_idx" in df.columns else None
+            if sh_idx_col is not None:
+                last_sh = df.iloc[-1].get("ta_swing_high_idx")
+                if pd.notna(last_sh):
+                    idx = int(last_sh)
+                    if idx < len(df):
+                        fig.add_trace(go.Scatter(
+                            x=[dates[idx]], y=[df["High"].iloc[idx]],
+                            mode="markers", marker=dict(symbol="triangle-up", size=10, color="#ef4444"),
+                            name="Swing High", hoverinfo="text",
+                            hovertext=f"Swing High<br>{dates[idx]}<br>{df['High'].iloc[idx]:.2f}"
+                        ))
+
+    # Swing lows
+    if "ta_swing_low_idx" in df.columns:
+        last_sl = df.iloc[-1].get("ta_swing_low_idx")
+        if pd.notna(last_sl):
+            idx = int(last_sl)
+            if idx < len(df):
+                fig.add_trace(go.Scatter(
+                    x=[dates[idx]], y=[df["Low"].iloc[idx]],
+                    mode="markers", marker=dict(symbol="triangle-down", size=10, color="#22c55e"),
+                    name="Swing Low", hoverinfo="text",
+                    hovertext=f"Swing Low<br>{dates[idx]}<br>{df['Low'].iloc[idx]:.2f}"
+                ))
+
+    # Support / Resistance levels
+    if "ta_sr_resistance" in df.columns:
+        sr_res = df["ta_sr_resistance"].dropna()
+        for _, row in sr_res.tail(3).iterrows():
+            idx = int(row.name) if hasattr(row.name, "__int__") else list(sr_res.index).index(row.name)
+            if idx < len(df):
+                fig.add_trace(go.Scatter(
+                    x=dates[idx:idx+1], y=[row["ta_sr_resistance"]],
+                    mode="lines+markers", line=dict(color="#f59e0b", width=1.5, dash="dash"),
+                    marker=dict(symbol="x", size=8), name="Resistance", showlegend=True
+                ))
+
+    if "ta_sr_support" in df.columns:
+        sr_sup = df["ta_sr_support"].dropna()
+        for _, row in sr_sup.tail(3).iterrows():
+            idx = int(row.name) if hasattr(row.name, "__int__") else list(sr_sup.index).index(row.name)
+            if idx < len(df):
+                fig.add_trace(go.Scatter(
+                    x=dates[idx:idx+1], y=[row["ta_sr_support"]],
+                    mode="lines+markers", line=dict(color="#3b82f6", width=1.5, dash="dash"),
+                    marker=dict(symbol="x", size=8), name="Support", showlegend=True
+                ))
+
+    # Donchian channel
+    if "ta_donchian_upper" in df.columns and "ta_donchian_lower" in df.columns:
+        fig.add_trace(go.Scatter(
+            x=dates, y=df["ta_donchian_upper"], mode="lines",
+            line=dict(color="#a855f7", width=0.8, dash="dot"), name="Donchian Upper"
+        ))
+        fig.add_trace(go.Scatter(
+            x=dates, y=df["ta_donchian_lower"], mode="lines",
+            line=dict(color="#a855f7", width=0.8, dash="dot"), fill="tonexty",
+            fillcolor="rgba(168,85,247,0.05)", name="Donchian Lower"
+        ))
+
+    fig.update_layout(
+        hovermode="x unified",
+        height=400,
+        margin=dict(l=50, r=20, t=30, b=40),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
+    )
+    return fig
+
+
 def build_comparison_chart(name, df, bench_close):
     """Build a chart comparing cumulative % price change of the stock vs FTSE 100 over the past 1 year."""
     df = df.sort_values("Date").reset_index(drop=True)
@@ -831,9 +967,21 @@ def generate_ticker_html(report):
     comp_fig = build_comparison_chart(report["ticker"], report["df"], report.get("benchmark_close", []))
     figs = build_charts(report["ticker"], report["df"])
 
-    # Order: OHLC, Comparison, Volume+OBV, MACD, RSI+BB
-    all_figs = [figs[0], comp_fig] + figs[1:]
-    chart_titles = ["Price (OHLC + EMA)", "1Y Price Change Comparison", "Volume + OBV", "MACD", "RSI + Bollinger Bands"]
+    # Build additional charts
+    vol_fig = build_volatility_chart(report["df"])
+    struct_fig = build_structure_chart(report["df"])
+
+    # Order: OHLC, Comparison, Volume+OBV, MACD, RSI+BB, Volatility, Structure
+    all_figs = [figs[0], comp_fig] + figs[1:] + [vol_fig, struct_fig]
+    chart_titles = [
+        "Price (OHLC + EMA)",
+        "1Y Price Change Comparison",
+        "Volume + OBV",
+        "MACD",
+        "RSI + Bollinger Bands",
+        "Volatility (ATR + Historical Volatility)",
+        "Market Structure (Swing Points, S/R, Donchian)",
+    ]
     charts = ""
     for i, fig in enumerate(all_figs):
         charts += f'<div class="chart-container"><h4>{chart_titles[i]}</h4>'
