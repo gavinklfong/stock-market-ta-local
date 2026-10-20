@@ -625,7 +625,7 @@ def _period_returns_card_html(report):
         # Ticker return
         val = periods.get(label)
         if val is None:
-            ticker_cells.append("<td style='color:#94a3b8;text-align:center'>N/A</td>")
+            ticker_cells.append("<td style='text-align:center'>N/A</td>")
         else:
             icon = _price_icon(val)
             color = "#26a69a" if val > 0 else "#ef5350" if val < 0 else "#94a3b8"
@@ -634,7 +634,7 @@ def _period_returns_card_html(report):
         # Benchmark return
         bench_val = benchmark_periods.get(label) if benchmark_periods else None
         if bench_val is None:
-            bench_cells.append("<td style='color:#94a3b8;text-align:center'>N/A</td>")
+            bench_cells.append("<td style='text-align:center'>N/A</td>")
         else:
             b_icon = _price_icon(bench_val)
             b_color = "#26a69a" if bench_val > 0 else "#ef5350" if bench_val < 0 else "#94a3b8"
@@ -647,7 +647,7 @@ def _period_returns_card_html(report):
             a_color = "#26a69a" if alpha_val > 0 else "#ef5350" if alpha_val < 0 else "#94a3b8"
             alpha_cells.append(f"<td style='text-align:center;color:{a_color};font-weight:bold'>{a_icon} {alpha_val:+.2f}%</td>")
         else:
-            alpha_cells.append("<td style='color:#94a3b8;text-align:center'>N/A</td>")
+            alpha_cells.append("<td style='text-align:center'>N/A</td>")
 
     header_row = "<tr style='border-bottom:2px solid #2196f3'><th></th>" + "".join(header_labels) + "</tr>"
     ticker_name = report.get("company_name", report.get("ticker", ""))
@@ -672,7 +672,7 @@ def _summary_table_html(report):
     """Generate the first summary table with current vs previous values and indicators."""
     def cell(val, d=2):
         if val is None:
-            return "<td style='color:#94a3b8'>N/A</td>"
+            return "<td>N/A</td>"
         if isinstance(val, str):
             return f"<td>{val}</td>"
         return f"<td>{val:.{d}f}</td>"
