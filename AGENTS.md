@@ -10,6 +10,7 @@ app/
   analysis-pipeline/    # Prefect flow orchestrating the full pipeline
   analyse-market-data/  # Analyse market data and generate interactive HTML reports
     analyse_ticker.py     # Generate market dashboard HTML reports
+    analyse_all.py        # Generate all-tickers overview report (1Y/6M/1M sorted by 1Y)
   analyse_sector.py     # Generate sector-level HTML reports (sorted by 1Y return)
   calculate-ta/         # TA indicator modules (see README.md for full docs)
     common.py               # Shared: read_yfinance_csv(), main() thread-pool runner
@@ -53,6 +54,12 @@ python app/analyse-market-data/analyse_sector.py Utilities   # specific sector
 python app/analyse-market-data/analyse_sector.py --dry-run    # show analysis only
 
 # Output: data/reports/sector_analysis_{sector}.html per sector
+
+# 4c. All-tickers overview report (sorted by 1Y return descending)
+python app/analyse-market-data/analyse_all.py              # all tickers
+python app/analyse-market-data/analyse_all.py --dry-run    # show data only
+
+# Output: data/reports/all_tickers.html
 
 # 5. Backtest (uses data/ta-data/NG.L.csv)
 python app/backtest/backtest_ng.py

@@ -3,7 +3,6 @@ AV.L,Aviva,Insurance
 BA.L,BAE Systems,Aerospace & Defence
 BARC.L,Barclays,Banking
 BP.L,BP,Energy
-CCH.L,Coca-Cola HBC,Beverages
 CNA.L,Centrica,Utilities
 GSK.L,GSK,Healthcare
 HSBA.L,HSBC Holdings,Banking
@@ -26,3 +25,4 @@ SVT.L,Severn Trent,Utilities
 TSCO.L,Tesco,Retail
 UU.L,United Utilities,Utilities
 VOD.L,Vodafone Group,Telecommunications
+^FTSE,FTSE 100 Index,Index

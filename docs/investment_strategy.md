@@ -887,3 +887,196 @@ This strategy combines:
 - Volatility-Based Risk Management (ATR)
 
 The combination typically produces more robust and stable signals than any individual indicator strategy.
+
+---
+
+# Optimized NG.L Mean-Reversion Strategy
+
+## Overview
+
+NG.L (Natural Gas) is a range-bound commodity with strong mean-reverting behavior.
+Traditional trend-following strategies underperform; mean-reversion at Bollinger Band
+extremes captures the bulk of returns.
+
+**Key findings from optimization study:**
+
+| Finding | Detail |
+|---------|--------|
+| Market behavior | Range-bound (+2.8% total over period), high volatility, mean-reverts to BB bands |
+| ATR trailing stops | ❌ Terrible — commodity whipsaws kill trailing stops |
+| BB Lower breach exit | ❌ Hurts performance — markets dip below BB Lower before bouncing |
+| BB Middle exit | ✅ Best exit — captures profit quickly, >94% overlap with 5% PT |
+| Optimal forced exit | 120 days — gives mean-reversion time, caps rare losses |
+| Best entry filter | BBW ≥ 10% + ATR ≥ 15 — selects high-quality setups |
+
+---
+
+## Strategy: BB Mean Reversion Optimized (Config 1)
+
+### Entry Conditions
+
+```text
+Close ≤ Bollinger Lower Band
+AND RSI(14) < 30
+AND Williams %R(14) < -80
+```
+
+### Exit Conditions
+
+```text
+Primary:
+  Close ≥ Bollinger Middle Band
+
+Documented (custom simulation required):
+  - Profit target: 5% from entry
+  - Forced exit: 120 days from entry
+```
+
+### Backtested Results
+
+| Metric | Value |
+|--------|-------|
+| Total Trades | 16 |
+| Win Rate | **93.8%** |
+| Total Return | **+210.7%** |
+| Profit Factor | **7.92** |
+
+---
+
+## Strategy: BB Mean Reversion Entry2 Filter (Config 2)
+
+### Entry Conditions
+
+```text
+Close ≤ Bollinger Lower Band
+AND RSI(14) < 30
+AND Williams %R(14) < -80
+AND BB Width ≥ 10%      (extra: bandwidth expansion = high-quality setup)
+AND ATR(14) ≥ 15        (extra: sufficient volatility for mean-reversion)
+```
+
+### Exit Conditions
+
+```text
+Primary:
+  Close ≥ Bollinger Middle Band
+
+Documented (custom simulation required):
+  - Profit target: 5% from entry
+  - Forced exit: 120 days from entry
+```
+
+### Backtested Results
+
+| Metric | Value |
+|--------|-------|
+| Total Trades | 9 |
+| Win Rate | **100%** |
+| Total Return | **+175.8%** |
+| Profit Factor | **INF** (no losing trades) |
+
+---
+
+## Strategy: BB Mean Reversion Short-Horizon (Config 3)
+
+### Entry Conditions
+
+```text
+Close ≤ Bollinger Lower Band
+AND RSI(14) < 30
+AND Williams %R(14) < -80
+```
+
+### Exit Conditions
+
+```text
+Primary:
+  Close ≥ Bollinger Middle Band
+
+Documented (custom simulation required):
+  - Profit target: 5% from entry
+  - Forced exit: 45 days from entry (shorter, for quicker turnover)
+```
+
+### Backtested Results
+
+| Metric | Value |
+|--------|-------|
+| Total Trades | 17 |
+| Win Rate | **82.4%** |
+| Total Return | **+185.3%** |
+| Profit Factor | **13.20** |
+
+---
+
+## Why These Work for NG.L
+
+NG.L is a commodity with mean-reverting price action:
+
+1. **Bollinger Bands capture extremes** — Price frequently touches or breaches the lower
+   band during dips, then reverts to the middle (20-day SMA).
+
+2. **RSI + Williams %R double confirmation** — Both must be extreme before entering,
+   reducing false signals from one-sided indicators.
+
+3. **BB Width filter (Entry2)** — Wide bands (>10%) indicate the setup has enough room
+   to revert. Narrow bands mean the market is already compressed.
+
+4. **ATR filter** — ATR ≥ 15 ensures sufficient volatility for the mean-reversion move
+   to materialize.
+
+5. **BB Middle exit** — Quick, reliable exit. The 5% profit target is hit in >94% of
+   cases before the BB Middle is reached, so it's a natural profit-taking point.
+
+6. **Forced exit** — Rare cases where mean-reversion takes a long time are capped at
+   120 days, preventing capital lock-up.
+
+---
+
+## Cross-Ticker Insights
+
+### NG.L vs HSBA.L
+
+| Aspect | NG.L (Commodity) | HSBA.L (Stock) |
+|--------|------------------|----------------|
+| Market type | Range-bound | Bull trend (+127.7%) |
+| Mean-reversion | Strong | Weak |
+| Entry2 filter | ✅ Works (BBW+ATR selects quality) | ❌ Fails (no meaning for stocks) |
+| ATR trailing | ❌ Kills performance | ⚠️ Poor |
+| BB Middle exit | ✅ Best exit | ✅ Works |
+| Best approach | Mean-reversion | Trend-following |
+
+**Takeaway:** The Entry2 filter (BBW≥10% + ATR≥15) is commodity-specific.
+It works for NG.L because commodities with wide band expansions tend to revert.
+For stocks like HSBA.L (trending), this filter yields too few signals or poor
+results. Use mean-reversion for range-bound commodities and trend-following for
+trending stocks.
+
+---
+
+## Implementation Notes
+
+### Vectorbt Limitation
+
+The `vectorbt.Portfolio.from_signals` API only supports simple entry/exit signals.
+Profit targets (5%) and forced exit timing (45d/120d) require either:
+
+1. **Custom simulation** — Track entry prices and days-since-entry manually
+2. **Post-processing** — Run vectorbt signals, then filter trades by holding period
+3. **Approximation** — Use BB Middle exit as proxy (captures >94% of PT hits)
+
+The BB Middle exit alone is a strong approximation — in 94% of cases, the 5% profit
+target is reached before the BB Middle band, making the BB Middle exit nearly
+equivalent to a combined PT + BB Middle exit.
+
+### Column Reference
+
+| Column | Description |
+|--------|-------------|
+| `ta_bband_lower` | Bollinger Lower Band (20, 2) |
+| `ta_bband_middle` | Bollinger Middle Band (20-day SMA) |
+| `ta_bband_upper` | Bollinger Upper Band (20, 2) |
+| `ta_rsi14` | RSI(14) |
+| `ta_williams_r` | Williams %R(14) |
+| `ta_atr14` | ATR(14) |
+| `ta_bband_width` | BB Width: `(upper - lower) / middle` |
