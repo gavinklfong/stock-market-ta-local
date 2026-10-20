@@ -759,8 +759,11 @@ def _summary_table_html(report):
     return f"""
 <div class="summary-table" style="background:#fff;border-radius:12px;padding:20px;margin:0 0 20px;box-shadow:0 1px 4px rgba(0,0,0,0.06);border:1px solid #e5e7eb">
 <h3 style="margin:0 0 16px;font-size:1.05rem;color:#1e293b;display:flex;align-items:center;gap:8px"><span>📋</span> Quick Summary</h3>
+<div class="signal-bar" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;padding:12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">
+<span style="font-weight:600;color:#64748b;font-size:0.85rem;margin-right:4px;">Signals:</span>
+{_signal_badges(st_cur, macd_cur, roc, cmf)}
+</div>
 <table>
-<thead><tr><th style="text-align:left;padding:10px 12px;font-weight:600;color:#64748b;border-bottom:2px solid #e2e8f0;width:35%">Metric</th><th style="text-align:center;padding:10px 12px;font-weight:600;color:#64748b;border-bottom:2px solid #e2e8f0">Current</th><th style="text-align:center;padding:10px 12px;font-weight:600;color:#64748b;border-bottom:2px solid #e2e8f0">Previous</th></tr></thead>
 <tbody>
 {cmp_row("Close", price_cur, _fmt(report.get("prev_close")))}
 {cmp_row("RSI(14)", f"{_fmt(rsi,1)}{rsi_state}", _fmt(report.get("prev_rsi")) + prev_rsi_state)}
@@ -773,6 +776,38 @@ def _summary_table_html(report):
 </tbody>
 </table>
 </div>"""
+
+
+def _signal_badges(st_cur, macd_cur, roc, cmf):
+    """Generate signal badge HTML for current market signals."""
+    badges = []
+    # SuperTrend signal
+    if st_cur == "Uptrend":
+        badges.append('<span class="badge-bull" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Uptrend</span>')
+    elif st_cur == "Downtrend":
+        badges.append('<span class="badge-bear" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Downtrend</span>')
+    else:
+        badges.append('<span class="badge-neutral" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">N/A</span>')
+
+    # MACD signal
+    if macd_cur == "Bullish":
+        badges.append('<span class="badge-bull" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Bullish</span>')
+    elif macd_cur == "Bearish":
+        badges.append('<span class="badge-bear" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Bearish</span>')
+    else:
+        badges.append('<span class="badge-neutral" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">N/A</span>')
+
+    # ROC signal
+    roc_label = "Positive" if roc else "Negative" if roc is False else "N/A"
+    roc_class = "badge-bull" if roc is True else "badge-bear" if roc is False else "badge-neutral"
+    badges.append(f'<span class="{roc_class}" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">{roc_label}</span>')
+
+    # CMF signal
+    cmf_label = "Positive" if cmf else "Negative" if cmf is False else "N/A"
+    cmf_class = "badge-bull" if cmf is True else "badge-bear" if cmf is False else "badge-neutral"
+    badges.append(f'<span class="{cmf_class}" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">{cmf_label}</span>')
+
+    return " ".join(badges)
 
 
 def _regime_bar_html(report):
