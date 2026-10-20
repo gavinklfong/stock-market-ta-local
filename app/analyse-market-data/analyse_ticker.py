@@ -41,6 +41,17 @@ def _fmt(val, d=2):
     return f"{float(val):.{d}f}" if isinstance(val, (float, int)) else str(val)
 
 
+def _metric_color(val, signal):
+    """Return a <span> with the value color-coded: green=buy, red=sell, black=neutral."""
+    if signal is True:
+        color = "#26a69a"
+    elif signal is False:
+        color = "#ef5350"
+    else:
+        color = "#1e293b"
+    return f'<span style="color:{color};font-weight:600">{val}</span>'
+
+
 def _price_change_pct(df, close_col="Close", periods=None):
     """Calculate close price change % over the given periods from the last date.
 
@@ -807,12 +818,15 @@ def _benchmark_card_html(bench):
     def row(emoji, label, val):
         return f"<tr><td class='metric-label'>{label}</td><td class='metric-value'>{val}</td></tr>"
 
-    trend_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in bench["trend"])
-    mom_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in bench["momentum"])
-    vol_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in bench["volume"])
-    vola_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in bench["volatility"])
-    reg_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in bench["regime"])
-    struct_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in bench["structure"])
+    def signal_row(signal, label, val):
+        return f"<tr><td class='metric-label'>{label}</td><td class='metric-value'>{signal}</td></tr>"
+
+    trend_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in bench["trend"])
+    mom_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in bench["momentum"])
+    vol_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in bench["volume"])
+    vola_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in bench["volatility"])
+    reg_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in bench["regime"])
+    struct_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in bench["structure"])
 
     regime_bar_html = _regime_bar_html(bench)
 
@@ -907,14 +921,17 @@ def _card_html(report):
     summary_html = _summary_table_html(report)
 
     def row(emoji, label, val):
-        return f"<tr><td class='metric-label'>{label}</td><td class='metric-value'>{val}</td></tr>"
+        return f"<tr><td class='metric-label'>{emoji} {label}</td><td class='metric-value'>{val}</td></tr>"
 
-    trend_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in report["trend"])
-    mom_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in report["momentum"])
-    vol_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in report["volume"])
-    vola_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in report["volatility"])
-    reg_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in report["regime"])
-    struct_html = "".join(row(_emoji(item[1]), item[0], item[2]) for item in report["structure"])
+    def signal_row(signal, label, val):
+        return f"<tr><td class='metric-label'>{label}</td><td class='metric-value'>{signal}</td></tr>"
+
+    trend_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in report["trend"])
+    mom_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in report["momentum"])
+    vol_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in report["volume"])
+    vola_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in report["volatility"])
+    reg_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in report["regime"])
+    struct_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in report["structure"])
 
     # Regime probability bar
     regime_bar_html = _regime_bar_html(report)
