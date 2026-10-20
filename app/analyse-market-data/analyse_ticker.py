@@ -115,7 +115,7 @@ def _common_analysis(df):
     kelt_breakdown = close < kelt_lower if close and kelt_lower else None
     aroon_bullish = (aroon_up and aroon_down and aroon_up > aroon_down) if aroon_up and aroon_down else None
     trend_items = [
-        ("EMA20 > EMA50 > EMA200", ema_bullish, f"20:{_fmt(ema20)} > 50:{_fmt(ema50)} > 200:{_fmt(ema200)} ({'Bearish' if ema_bearish else 'Bullish' if ema_bullish else 'Neutral'})"),
+        ("EMA20 > EMA50 > EMA200", ema_bullish, f"20:{_fmt(ema20)} > 50:{_fmt(ema50)} > 200:{_fmt(ema200)} ({'Bearish' if ema_bearish else 'Bullish' if ema_bullish else ''})"),
         ("SuperTrend", st_bullish, "Uptrend" if st_bullish == True else "Downtrend" if st_bullish == False else "N/A"),
         ("Price vs EMA20", price_above_ema20, f"Close:{_fmt(close)} vs EMA20:{_fmt(ema20)} ({'Above' if price_above_ema20 else 'Below' if price_above_ema20 is False else 'N/A'})"),
         ("MA20 Slope", ma20_slope is not None, f"{_fmt(ma20_slope,2)}% ({'Increasing' if ma20_slope > 0 else 'Decreasing' if ma20_slope is not None else 'N/A'})"),
@@ -124,7 +124,7 @@ def _common_analysis(df):
         ("Donchian Breakdown", donch_breakdown, "Yes" if donch_breakdown else "No" if donch_breakdown is False else "N/A"),
         ("Keltner Breakout", kelt_breakout, "Yes" if kelt_breakout else "No" if kelt_breakout is False else "N/A"),
         ("Keltner Breakdown", kelt_breakdown, "Yes" if kelt_breakdown else "No" if kelt_breakdown is False else "N/A"),
-        ("Aroon", aroon_bullish, f"Up:{_fmt(aroon_up,1)} Down:{_fmt(aroon_down,1)} ({'Bullish' if aroon_bullish else 'Bearish' if (aroon_up and aroon_down and aroon_up < aroon_down) else 'Neutral'})"),
+        ("Aroon", aroon_bullish, f"Up:{_fmt(aroon_up,1)} Down:{_fmt(aroon_down,1)} ({'Bullish' if aroon_bullish else 'Bearish' if (aroon_up and aroon_down and aroon_up < aroon_down) else ''})"),
     ]
 
     # Momentum
@@ -141,11 +141,11 @@ def _common_analysis(df):
     williams_overbought = williams_r > -20 if williams_r else None
     williams_oversold = williams_r < -80 if williams_r else None
     momentum_items = [
-        ("RSI(14)", None if rsi is None else (rsi_overbought or rsi_oversold), f"{_fmt(rsi,1)}{' (Overbought)' if rsi_overbought else ' (Oversold)' if rsi_oversold else ' (Neutral)'}"),
+        ("RSI(14)", None if rsi is None else (rsi_overbought or rsi_oversold), f"{_fmt(rsi,1)}{' (Overbought)' if rsi_overbought else ' (Oversold)' if rsi_oversold else ''}"),
         ("MACD Histogram", macd_bullish, f"{_fmt(macd_hist)} ({'Positive' if macd_bullish else 'Negative' if macd_bullish is False else 'N/A'})"),
         ("MACD Cross", macd_cross, "Line > Signal" if macd_cross else "Line < Signal"),
         ("ROC(20)", None if roc is None else roc > 0, f"{_fmt(roc,1)}% ({'Positive' if roc > 0 else 'Negative' if roc is not None else 'N/A'})"),
-        ("Williams %R", None if williams_r is None else (williams_overbought or williams_oversold), f"{_fmt(williams_r,1)} {' (Overbought)' if williams_overbought else ' (Oversold)' if williams_oversold else ' (Neutral)' if williams_r is not None else ''}"),
+        ("Williams %R", None if williams_r is None else (williams_overbought or williams_oversold), f"{_fmt(williams_r,1)} {' (Overbought)' if williams_overbought else ' (Oversold)' if williams_oversold else '' if williams_r is not None else ''}"),
     ]
 
     # Volume
@@ -732,8 +732,8 @@ def _summary_table_html(report):
 
     # Badge helper for full rows: label + current badge + previous badge
     def badge_row(label, cur_ok, cur_label, prev_ok, prev_label, color_class):
-        cur_badge = f"<span class='badge badge-neutral'>Neutral</span>" if cur_ok is None else f"<span class='badge badge-bull'>{cur_label}</span>" if cur_ok else f"<span class='badge badge-bear'>{cur_label}</span>"
-        prev_badge = f"<span class='badge badge-neutral'>Neutral</span>" if prev_ok is None else f"<span class='badge badge-bull'>{prev_label}</span>" if prev_ok else f"<span class='badge badge-bear'>{prev_label}</span>"
+        cur_badge = f"<span class='badge badge-bull'>{cur_label}</span>" if cur_ok else f"<span class='badge badge-bear'>{cur_label}</span>" if cur_ok is False else ""
+        prev_badge = f"<span class='badge badge-bull'>{prev_label}</span>" if prev_ok else f"<span class='badge badge-bear'>{prev_label}</span>" if prev_ok is False else ""
         return f"<tr><td class='label-col'>{label}</td><td class='metric-value'>{cur_badge}</td><td class='metric-value'>{prev_badge}</td></tr>"
 
     # SuperTrend previous
@@ -786,28 +786,26 @@ def _signal_badges(st_cur, macd_cur, roc, cmf):
         badges.append('<span class="badge-bull" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Uptrend</span>')
     elif st_cur == "Downtrend":
         badges.append('<span class="badge-bear" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Downtrend</span>')
-    else:
-        badges.append('<span class="badge-neutral" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">N/A</span>')
 
     # MACD signal
     if macd_cur == "Bullish":
         badges.append('<span class="badge-bull" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Bullish</span>')
     elif macd_cur == "Bearish":
         badges.append('<span class="badge-bear" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Bearish</span>')
-    else:
-        badges.append('<span class="badge-neutral" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">N/A</span>')
 
     # ROC signal
-    roc_label = "Positive" if roc else "Negative" if roc is False else "N/A"
-    roc_class = "badge-bull" if roc is True else "badge-bear" if roc is False else "badge-neutral"
-    badges.append(f'<span class="{roc_class}" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">{roc_label}</span>')
+    if roc is True:
+        badges.append('<span class="badge-bull" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Positive</span>')
+    elif roc is False:
+        badges.append('<span class="badge-bear" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Negative</span>')
 
     # CMF signal
-    cmf_label = "Positive" if cmf else "Negative" if cmf is False else "N/A"
-    cmf_class = "badge-bull" if cmf is True else "badge-bear" if cmf is False else "badge-neutral"
-    badges.append(f'<span class="{cmf_class}" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">{cmf_label}</span>')
+    if cmf is True:
+        badges.append('<span class="badge-bull" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Positive</span>')
+    elif cmf is False:
+        badges.append('<span class="badge-bear" style="padding:3px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Negative</span>')
 
-    return " ".join(badges)
+    return " ".join(badges) if badges else '<span style="color:#94a3b8;font-size:0.85rem">No signals available</span>'
 
 
 def _regime_bar_html(report):
@@ -1029,7 +1027,6 @@ body {{
 }}
 .badge-bull {{ background: #dcfce7; color: #166534; }}
 .badge-bear {{ background: #fee2e2; color: #991b1b; }}
-.badge-neutral {{ background: #fef3c7; color: #92400e; }}
 
 /* ── Analysis Grid ────────────────────────────────────────────── */
 .analysis-grid {{
