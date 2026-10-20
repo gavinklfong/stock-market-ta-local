@@ -370,12 +370,14 @@ def build_charts(name, df):
             fig1.add_trace(go.Scatter(x=dates, y=df[col], mode="lines", name=label, line=dict(color=color, width=1)))
     fig1.update_layout(hovermode="x unified", height=480, margin=dict(l=50, r=20, t=30, b=40), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
 
-    # 2. Volume + OBV
+    # 2. Volume + OBV + CMF
     fig2 = go.Figure()
     colors = ["#26a69a" if df["Close"].iloc[i] >= df["Open"].iloc[i] else "#ef5350" for i in range(len(df))]
     fig2.add_trace(go.Bar(x=dates, y=df["Volume"], name="Volume", marker_color=colors, yaxis="y2"))
     if "ta_obv" in df.columns:
         fig2.add_trace(go.Scatter(x=dates, y=df["ta_obv"], mode="lines", name="OBV", line=dict(color="#66bb6a", width=1.5)))
+    if "ta_cmf" in df.columns:
+        fig2.add_trace(go.Scatter(x=dates, y=df["ta_cmf"], mode="lines", name="CMF(20)", line=dict(color="#f59e0b", width=1.5)))
     fig2.update_layout(hovermode="x unified", height=280, margin=dict(l=50, r=20, t=10, b=40), yaxis2=dict(overlaying="y", side="left"), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
 
     # 3. MACD
