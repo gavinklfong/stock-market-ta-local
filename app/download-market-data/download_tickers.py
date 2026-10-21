@@ -47,11 +47,24 @@ def download_full(yf_ticker):
     return yf.download(yf_ticker, period=PERIOD, auto_adjust=False, threads=False).dropna(how="all")
 
 
-def download_catchup(yf_ticker, last_date):
-    """Download data from the day after last_date up to today."""
+def download_catchup(yf_ticker, last_date, end_date=None):
+    """Download data from the day after last_date up to today (or end_date).
+
+    Args:
+        yf_ticker: Yahoo Finance ticker symbol.
+        last_date: The last date already in the local CSV. Download starts the next day.
+        end_date: End date for the download range (default: today).
+
+    Returns:
+        DataFrame with new data, or empty DataFrame if no data in range.
+    """
     start_date = last_date + pd.Timedelta(days=1)
-    # Round up to next business day for Yahoo Finance
-    return yf.download(yf_ticker, start=start_date, auto_adjust=False, threads=False).dropna(how="all")
+    if end_date is None:
+        end_date = pd.Timestamp.today()
+    return yf.download(
+        yf_ticker, start=start_date, end=end_date,
+        auto_adjust=False, threads=False,
+    ).dropna(how="all")
 
 
 def save_data(filepath, ticker_df):
@@ -98,21 +111,41 @@ def download_tickers(input_csv=None, output_dir=None):
             existing = read_existing_data(filepath)
 
             if existing is not None:
-                # Incremental: download catch-up data from the day after the last existing date
                 last_date = existing.index.max()
+                today = pd.Timestamp.today().normalize()
+
+                # If the last date is today, the catch-up range (tomorrow..today) is empty.
+                # Re-download today's data to refresh the price.
+                if last_date.date() == today.date():
+                    print(f"Updating {original_ticker} (last date: {last_date.date()}, "
+                          f"re-downloading today's price)...")
+                    new_data = download_catchup(yf_ticker, last_date - pd.Timedelta(days=1),
+                                               end_date=today)
+
+                    if new_data.empty:
+                        print(f"  No new data for {original_ticker}.")
+                        continue
+
+                    # Overwrite today's entry with the freshly downloaded data
+                    merged = pd.concat([existing, new_data])
+                    merged = merged[~merged.index.duplicated(keep="last")]
+                    merged = merged.sort_index()
+                    save_data(filepath, merged)
+                    print(f"  Updated: {filepath} (replaced today's price)")
+                    continue
+
+                # Standard catch-up: download from the day after last_date through today
                 print(f"Updating {original_ticker} (last date: {last_date.date()}, downloading catch-up)...")
-                new_data = download_catchup(yf_ticker, last_date)
+                new_data = download_catchup(yf_ticker, last_date, end_date=today)
 
                 if new_data.empty:
                     print(f"  No new data for {original_ticker}.")
                     continue
 
-                # Merge: combine existing with new data
+                # Merge: combine existing with new data; overlapping dates kept from new_data
                 merged = pd.concat([existing, new_data])
                 merged = merged[~merged.index.duplicated(keep="last")]
                 merged = merged.sort_index()
-
-                # Update the last date for display
                 last_date = merged.index.max()
 
                 save_data(filepath, merged)

@@ -250,12 +250,12 @@ class TestDownloadCatchup:
 
             result = download_tickers.download_catchup("AAPL", last_date)
 
-            mock_download.assert_called_once_with(
-                "AAPL",
-                start=expected_start,
-                auto_adjust=False,
-                threads=False,
-            )
+            mock_download.assert_called_once()
+            call_kwargs = mock_download.call_args.kwargs
+            assert call_kwargs["start"] == expected_start
+            assert "end" in call_kwargs
+            assert call_kwargs["auto_adjust"] is False
+            assert call_kwargs["threads"] is False
             assert len(result) == 2
 
     def test_returns_empty_when_no_new_data(self):
@@ -280,6 +280,31 @@ class TestDownloadCatchup:
 
             call_args = mock_download.call_args
             assert call_args.kwargs["start"] == expected_start
+
+    def test_end_date_limits_range(self):
+        """Should respect end_date parameter to limit download range."""
+        last_date = datetime(2024, 1, 1)
+        end_date = datetime(2024, 1, 5)
+
+        with patch.object(download_tickers.yf, "download") as mock_download:
+            mock_download.return_value = pd.DataFrame()
+            download_tickers.download_catchup("AAPL", last_date, end_date=end_date)
+
+            call_args = mock_download.call_args
+            assert call_args.kwargs["start"] == last_date + pd.Timedelta(days=1)
+            assert call_args.kwargs["end"] == end_date
+
+    def test_default_end_date_is_today(self):
+        """When end_date is not provided, should default to today."""
+        last_date = datetime(2024, 1, 1)
+
+        with patch.object(download_tickers.yf, "download") as mock_download:
+            mock_download.return_value = pd.DataFrame()
+            download_tickers.download_catchup("AAPL", last_date)
+
+            call_args = mock_download.call_args
+            # Compare date only to avoid microsecond differences
+            assert call_args.kwargs["end"].date() == pd.Timestamp.today().date()
 
 
 # ---------------------------------------------------------------------------
@@ -470,6 +495,210 @@ class TestIncrementalCatchupPath:
         assert float(jan3["Close"].iloc[0]) == pytest.approx(102.5)
         # Total should be 4 unique dates (Jan 1-4), not 5
         assert len(output_df) == 4
+
+    def test_catchup_updates_all_ohlcv_columns(self, tmp_path):
+        """All OHLCV columns should be updated for overlapping dates."""
+        ticker_csv = _make_ticker_csv(str(tmp_path), ["TEST"])
+
+        # Existing data for Jan 1-3
+        existing_df = _make_ohlcv_df(
+            ["2024-01-01", "2024-01-02", "2024-01-03"],
+            open_p=[100, 101, 102],
+            high=[105, 106, 107],
+            low=[99, 100, 101],
+            close=[100, 101, 102],
+            volume=[1000, 1100, 1200]
+        )
+        existing_csv = tmp_path / "TEST.csv"
+        _write_ohlcv_csv(str(existing_csv), existing_df)
+
+        # New data with different values for Jan 3 (should overwrite)
+        new_df = _make_ohlcv_df(
+            ["2024-01-03", "2024-01-04"],
+            open_p=[103, 104],
+            high=[108, 109],
+            low=[102, 103],
+            close=[102.5, 103.5],
+            volume=[2000, 2100]
+        )
+
+        with patch.object(download_tickers.yf, "download") as mock_yf:
+            mock_yf.return_value = new_df
+
+            download_tickers.download_tickers(
+                input_csv=str(ticker_csv),
+                output_dir=str(tmp_path),
+            )
+
+        output_df = pd.read_csv(str(existing_csv))
+        jan3 = output_df[output_df["Date"] == "2024-01-03"].iloc[0]
+        assert float(jan3["Open"]) == pytest.approx(103)
+        assert float(jan3["High"]) == pytest.approx(108)
+        assert float(jan3["Low"]) == pytest.approx(102)
+        assert float(jan3["Close"]) == pytest.approx(102.5)
+        assert int(jan3["Volume"]) == 2000
+
+
+class TestReDownloadToday:
+    """Verify that when the last date in the CSV is today, today's data
+    is re-downloaded and the existing entry is replaced with new data."""
+
+    def test_re_download_when_last_date_is_today(self, tmp_path):
+        """If existing data ends on today, re-download today's price."""
+        from datetime import date as date_type
+
+        ticker_csv = _make_ticker_csv(str(tmp_path), ["TEST"])
+
+        # Existing data ending today — use a hardcoded date far in the past
+        # to avoid flakiness from date comparisons during tests.
+        # We'll mock pd.Timestamp.today() to return our test date.
+        test_date = pd.Timestamp("2024-06-15")
+        yesterday = test_date - pd.Timedelta(days=1)
+
+        existing_df = _make_ohlcv_df(
+            [str(yesterday.date()), str(test_date.date())],
+            open_p=[99.0, 100.0],
+            close=[99.0, 100.0]
+        )
+        existing_csv = tmp_path / "TEST.csv"
+        _write_ohlcv_csv(str(existing_csv), existing_df)
+
+        # New today's data with updated price
+        new_today = _make_ohlcv_df(
+            [str(test_date.date())],
+            open_p=[100.5],
+            close=[101.0]
+        )
+
+        with patch.object(download_tickers.yf, "download") as mock_yf, \
+             patch.object(download_tickers.pd.Timestamp, "today", return_value=test_date):
+            mock_yf.return_value = new_today
+
+            download_tickers.download_tickers(
+                input_csv=str(ticker_csv),
+                output_dir=str(tmp_path),
+            )
+
+        output_df = pd.read_csv(str(existing_csv))
+        # Today's Close should be replaced with the new value
+        today_row = output_df[output_df["Date"] == str(test_date.date())].iloc[0]
+        assert float(today_row["Close"]) == pytest.approx(101.0)
+
+    def test_re_download_preserves_older_entries(self, tmp_path):
+        """Re-downloading today's data should not affect older entries."""
+        test_date = pd.Timestamp("2024-06-15")
+        yesterday = test_date - pd.Timedelta(days=1)
+        day_before = test_date - pd.Timedelta(days=2)
+
+        ticker_csv = _make_ticker_csv(str(tmp_path), ["TEST"])
+
+        existing_df = _make_ohlcv_df(
+            [str(day_before.date()), str(yesterday.date()), str(test_date.date())],
+            close=[98.0, 99.0, 100.0]
+        )
+        existing_csv = tmp_path / "TEST.csv"
+        _write_ohlcv_csv(str(existing_csv), existing_df)
+
+        new_today = _make_ohlcv_df(
+            [str(test_date.date())],
+            close=[101.0]
+        )
+
+        with patch.object(download_tickers.yf, "download") as mock_yf, \
+             patch.object(download_tickers.pd.Timestamp, "today", return_value=test_date):
+            mock_yf.return_value = new_today
+
+            download_tickers.download_tickers(
+                input_csv=str(ticker_csv),
+                output_dir=str(tmp_path),
+            )
+
+        output_df = pd.read_csv(str(existing_csv))
+        # Older entries should be unchanged
+        day_before_row = output_df[output_df["Date"] == str(day_before.date())].iloc[0]
+        assert float(day_before_row["Close"]) == pytest.approx(98.0)
+        yesterday_row = output_df[output_df["Date"] == str(yesterday.date())].iloc[0]
+        assert float(yesterday_row["Close"]) == pytest.approx(99.0)
+        # Today's entry should be updated
+        today_row = output_df[output_df["Date"] == str(test_date.date())].iloc[0]
+        assert float(today_row["Close"]) == pytest.approx(101.0)
+
+    def test_re_download_no_data_skips_save(self, tmp_path):
+        """If re-download returns no data, existing file should be unchanged."""
+        test_date = pd.Timestamp("2024-06-15")
+
+        ticker_csv = _make_ticker_csv(str(tmp_path), ["TEST"])
+
+        existing_df = _make_ohlcv_df(
+            [str(test_date.date())],
+            close=[100.0]
+        )
+        existing_csv = tmp_path / "TEST.csv"
+        _write_ohlcv_csv(str(existing_csv), existing_df)
+        original_modified = os.path.getmtime(str(existing_csv))
+
+        import time
+        time.sleep(0.1)  # Ensure mtime would differ if file is rewritten
+
+        with patch.object(download_tickers.yf, "download") as mock_yf, \
+             patch.object(download_tickers.pd.Timestamp, "today", return_value=test_date):
+            mock_yf.return_value = pd.DataFrame()  # No data returned
+
+            download_tickers.download_tickers(
+                input_csv=str(ticker_csv),
+                output_dir=str(tmp_path),
+            )
+
+        # File should not have been rewritten (mtime should be essentially unchanged)
+        new_modified = os.path.getmtime(str(existing_csv))
+        assert new_modified == pytest.approx(original_modified, abs=0.5)
+        # Data should be unchanged
+        output_df = pd.read_csv(str(existing_csv))
+        assert float(output_df["Close"].iloc[0]) == pytest.approx(100.0)
+
+    def test_re_download_replaces_all_columns(self, tmp_path):
+        """Re-download should replace all OHLCV columns for today's entry."""
+        test_date = pd.Timestamp("2024-06-15")
+        yesterday = test_date - pd.Timedelta(days=1)
+
+        ticker_csv = _make_ticker_csv(str(tmp_path), ["TEST"])
+
+        existing_df = _make_ohlcv_df(
+            [str(yesterday.date()), str(test_date.date())],
+            open_p=[99.0, 100.0],
+            high=[100.0, 101.0],
+            low=[98.0, 99.0],
+            close=[99.0, 100.0],
+            volume=[1000, 1100]
+        )
+        existing_csv = tmp_path / "TEST.csv"
+        _write_ohlcv_csv(str(existing_csv), existing_df)
+
+        new_today = _make_ohlcv_df(
+            [str(test_date.date())],
+            open_p=[100.5],
+            high=[102.0],
+            low=[99.5],
+            close=[101.5],
+            volume=[2000]
+        )
+
+        with patch.object(download_tickers.yf, "download") as mock_yf, \
+             patch.object(download_tickers.pd.Timestamp, "today", return_value=test_date):
+            mock_yf.return_value = new_today
+
+            download_tickers.download_tickers(
+                input_csv=str(ticker_csv),
+                output_dir=str(tmp_path),
+            )
+
+        output_df = pd.read_csv(str(existing_csv))
+        today_row = output_df[output_df["Date"] == str(test_date.date())].iloc[0]
+        assert float(today_row["Open"]) == pytest.approx(100.5)
+        assert float(today_row["High"]) == pytest.approx(102.0)
+        assert float(today_row["Low"]) == pytest.approx(99.5)
+        assert float(today_row["Close"]) == pytest.approx(101.5)
+        assert int(today_row["Volume"]) == 2000
 
 
 # ---------------------------------------------------------------------------
