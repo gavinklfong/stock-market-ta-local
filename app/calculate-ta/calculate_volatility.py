@@ -692,8 +692,34 @@ def compute_volatility_columns(highs, lows, closes, n):
     }
 
 
-def process_csv(input_path, output_path, total_files, current_file, _lock=None):
-    raw_df = read_yfinance_csv(input_path)
+def process_csv(input_or_df, output_path, total_files, current_file, _lock=None):
+    """Process a single ticker's OHLCV data into volatility indicator output.
+
+    Accepts either a pre-parsed DataFrame (from run_calculation.py shared cache)
+    or a file path string (when called standalone via main()).
+
+    Parameters
+    ----------
+    input_or_df : str or pd.DataFrame
+        File path or pre-parsed DataFrame.
+    output_path : str
+        Path to write the volatility indicator CSV.
+    total_files : int
+        Total number of files in the batch (for progress reporting).
+    current_file : int
+        1-based index of this file in the batch.
+    _lock : threading.Lock, optional
+        Unused lock (kept for API compatibility).
+
+    Returns
+    -------
+    int
+        Total number of rows written to the output CSV.
+    """
+    if isinstance(input_or_df, pd.DataFrame):
+        raw_df = input_or_df.copy()
+    else:
+        raw_df = read_yfinance_csv(input_or_df)
     raw_df["Date"] = pd.to_datetime(raw_df["Date"])
     raw_df = raw_df.sort_values("Date").reset_index(drop=True)
     file_total = len(raw_df)

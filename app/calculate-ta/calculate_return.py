@@ -323,7 +323,7 @@ def _load_state(state_path):
         return None
 
 
-def process_csv(input_path, output_path, total_files, current_file, _lock=None):
+def process_csv(input_or_df, output_path, total_files, current_file, _lock=None):
     """Process a single ticker's OHLCV data into return indicator output.
 
     When a previous output file and state file exist, this function performs
@@ -335,10 +335,13 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     output may now have valid values (previously None because horizon data
     was unavailable). These rows are updated in-place.
 
+    Accepts either a pre-parsed DataFrame (from run_calculation.py shared cache)
+    or a file path string (when called standalone via main()).
+
     Parameters
     ----------
-    input_path : str
-        Path to the OHLCV CSV (yfinance format).
+    input_or_df : str or pd.DataFrame
+        File path or pre-parsed DataFrame.
     output_path : str
         Path to write the return indicator CSV.
     total_files : int
@@ -353,7 +356,10 @@ def process_csv(input_path, output_path, total_files, current_file, _lock=None):
     int
         Total number of rows written to the output CSV.
     """
-    raw_df = read_yfinance_csv(input_path)
+    if isinstance(input_or_df, pd.DataFrame):
+        raw_df = input_or_df.copy()
+    else:
+        raw_df = read_yfinance_csv(input_or_df)
     raw_df["Date"] = pd.to_datetime(raw_df["Date"])
     raw_df = raw_df.sort_values("Date").reset_index(drop=True)
     file_total = len(raw_df)

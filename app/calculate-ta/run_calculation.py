@@ -31,6 +31,10 @@ from pathlib import Path
 
 import pandas as pd
 
+# Import read_yfinance_csv early so it's available before modules are patched
+import common as _common_for_read
+_read_yfinance_csv = _common_for_read.read_yfinance_csv
+
 MODULES = {
     "trend":       "calculate_trend.py",
     "momentum":    "calculate_momentum.py",
@@ -115,44 +119,27 @@ def _process_ticker_in_module(
     ticker: str,
     module_name: str,
     module,
-    input_dir: str,
+    df: pd.DataFrame,
     output_dir: str,
-    cache: dict,
     lock: object,
 ) -> tuple[str, int]:
     """Process a single (ticker, module) pair in-process.
 
-    Reads OHLCV from disk (cached per ticker), calls the module's
-    process_csv directly, and returns (ticker, row_count).
+    Accepts a pre-parsed DataFrame (shared cache from run_task) to avoid
+    re-reading the OHLCV CSV for each module.
 
-    Uses a shared cache dict to avoid reading the same OHLCV CSV
-    more than once per ticker.
+    Returns (ticker, row_count).
     """
-    csv_filename = f"{ticker}.csv"
-    input_path = os.path.join(input_dir, csv_filename)
-
-    # Cache OHLCV reading: read once per ticker, reuse across all modules.
-    # Cache value: (input_path, row_count) — process_csv expects these.
-    with lock:
-        if ticker not in cache:
-            # Read and count rows
-            df = pd.read_csv(input_path)
-            row_count = len(df)
-            cache[ticker] = row_count
-        else:
-            row_count = cache[ticker]
-
     output_path = os.path.join(output_dir, f"{ticker}_ta_{module_name}.csv")
 
     # Call the module's process_csv directly (in-process, not subprocess).
-    # All modules have signature:
-    #   process_csv(input_path, output_path, total_files, current_file, _lock=None)
+    # All modules accept either a DataFrame (from cache) or a file path (standalone).
     fn = module.process_csv
     sig = inspect.signature(fn)
     if "lock" in sig.parameters:
-        row_count = fn(input_path, output_path, row_count, 1, _lock=lock)
+        row_count = fn(df, output_path, len(df), 1, _lock=lock)
     else:
-        row_count = fn(input_path, output_path, row_count, 1)
+        row_count = fn(df, output_path, len(df), 1)
 
     return ticker, row_count
 
@@ -169,19 +156,22 @@ def _merge_ticker(
     deleted_files: set,
     file_lock: object,
 ) -> tuple[str, int, int]:
-    """Merge all per-module CSVs for one ticker into {ticker}.csv."""
-    merged = None
+    """Merge all per-module CSVs for one ticker into {ticker}.csv.
+
+    Uses pd.concat(axis=1) for efficient column-wise concatenation.
+    """
+    frames: list[pd.DataFrame] = []
     for fname in sorted(ticker_files):
         fpath = output_dir / fname
         df = pd.read_csv(fpath)
         df["Date"] = pd.to_datetime(df["Date"])
-        if merged is None:
-            merged = df.sort_values("Date").reset_index(drop=True)
-        else:
-            ta_cols = [c for c in df.columns if c.startswith("ta_")]
-            new_cols = df[["Date"] + ta_cols]
-            merged = merged.merge(new_cols, on="Date", how="left")
+        df = df.set_index("Date")
+        ta_cols = [c for c in df.columns if c.startswith("ta_")]
+        frames.append(df[ta_cols])
 
+    # Concat all columns at once instead of sequential merge
+    merged = pd.concat(frames, axis=1)
+    merged = merged.reset_index()
     merged["Date"] = merged["Date"].dt.strftime("%Y-%m-%d")
     merged = merged.sort_values("Date").reset_index(drop=True)
     merged.to_csv(output_dir / f"{ticker}.csv", index=False)
@@ -278,8 +268,8 @@ def main():
     print(f"  Total tasks: {total_tasks} ({len(tickers)} tickers × {len(available)} modules)")
     print()
 
-    # Shared state for OHLCV cache and progress
-    ohlcv_cache: dict[str, int] = {}
+    # Shared state for OHLCV DataFrame cache and progress
+    ohlcv_cache: dict[str, pd.DataFrame] = {}
     cache_lock = threading.Lock()
     file_lock = threading.Lock()
     file_completed = [0] * total_tasks
@@ -288,10 +278,16 @@ def main():
         """Wrapper to track progress and handle errors."""
         mod = loaded_modules[module_name]
         try:
+            # Read CSV once per ticker (cached across modules)
+            with cache_lock:
+                if ticker not in ohlcv_cache:
+                    csv_path = os.path.join(str(input_dir), f"{ticker}.csv")
+                    ohlcv_cache[ticker] = _read_yfinance_csv(csv_path)
+                df = ohlcv_cache[ticker]
+
             _, rows = _process_ticker_in_module(
-                ticker, module_name, mod,
-                str(input_dir), str(output_dir),
-                ohlcv_cache, cache_lock,
+                ticker, module_name, mod, df,
+                str(output_dir), file_lock,
             )
             with file_lock:
                 file_completed[task_idx] = 1
@@ -313,8 +309,10 @@ def main():
     with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
         futures = {}
         task_idx = 0
-        for ticker in tickers:
-            for module_name in available:
+        # Module-first order: each module's tasks are submitted together
+        # so all workers can stay busy as modules complete
+        for module_name in available:
+            for ticker in tickers:
                 futures[executor.submit(run_task, task_idx, ticker, module_name)] = (
                     ticker, module_name
                 )
