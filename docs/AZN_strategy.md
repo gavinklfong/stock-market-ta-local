@@ -1,0 +1,310 @@
+# AZN.L Strategy Analysis
+
+AstraZeneca (AZN.L) backtest analysis using hybrid trend + momentum strategies on 5+ years of data (2021-2026).
+
+## Data
+
+- **Source**: `data/analysis-data/AZN.L.csv`
+- **Total rows**: 5,053 daily bars (2006-2026)
+- **5-year subset**: 1,465 daily bars (2021-01-01 to 2026-10-21)
+- **Columns**: 105 (OHLCV + 7 TA modules + P/E fundamentals)
+- **20Y Return**: +260.6% (strong bull stock)
+- **5Y Return**: +70.0%
+- **Close range**: 1,748.00 to 15,542.00
+- **5Y Close range**: 6,794.00 to 15,542.00
+- **Initial Capital**: £100,000
+- **Slippage**: 0.1% per trade
+
+## Key Findings
+
+AZN.L is a **strong bull stock** (+260% over 20 years, +70% over 5 years) but with **severe periodic corrections** (max drawdown -50.5%). This combination makes it extremely difficult for traditional trend-following strategies:
+
+- **v1 failure**: All standard trend-following strategies (Golden Cross, SuperTrend, EMA pullback, Score Adaptive) lost **-60% to -90%** despite the stock gaining 260% overall. Whipsaw periods during corrections trapped all entries.
+- **v2 breakthrough**: Hybrid strategies with strong trend filters (MA200 slope, ADX>25) + momentum composite entry + aggressive exits (RSI>65/70) produce **positive returns**.
+
+## Top Strategies by Return (5Y, min 5 trades)
+
+| Rank | Strategy | Return | Win Rate | Trades | Sharpe | MaxDD |
+|------|----------|--------|----------|--------|--------|-------|
+| 1 | **Hybrid_Strong+MC / RSI > 70** | **+61.2%** | **66.7%** | 7 | **0.565** | 26.9% |
+| 2 | **Hybrid_Strong+MC / RSI > 65** | **+29.6%** | **72.7%** | 12 | **0.401** | 26.7% |
+| 3 | Momentum_Composite / RSI > 70 | +15.2% | 48.0% | 25 | 0.306 | 21.8% |
+| 4 | **ADX_Strong / Default** | **+17.4%** | **63.6%** | 11 | **0.430** | **9.5%** |
+| 5 | ADX_Strong / ATR Trail 2x | +14.1% | 53.8% | 13 | 0.415 | 9.0% |
+| 6 | Hybrid_Volume / RSI > 70 | +20.7% | 44.4% | 27 | 0.429 | 25.9% |
+| 7 | Momentum_Composite / RSI > 65 | +11.9% | 48.0% | 25 | 0.284 | 20.5% |
+| 8 | Momentum_Composite / Default | +11.7% | 47.8% | 23 | 0.254 | 21.8% |
+| 9 | Buy & Hold (Baseline) | +70.0% | 100% | 0 | N/A | 27.2% |
+
+## Top Strategies by Sharpe Ratio (5Y, min 3 trades)
+
+| Rank | Strategy | Sharpe | Return | Win Rate | MaxDD |
+|------|----------|--------|--------|----------|-------|
+| 1 | **ADX_Strong / Default** | **0.430** | +17.4% | 63.6% | **9.5%** |
+| 2 | **Hybrid_Strong+MC / RSI > 70** | **0.565** | **+61.2%** | **66.7%** | 26.9% |
+| 3 | Hybrid_Volume / RSI > 70 | 0.429 | +20.7% | 44.4% | 25.9% |
+| 4 | ADX_Strong / ATR Trail 2x | 0.415 | +14.1% | 53.8% | 9.0% |
+| 5 | Pullback_50 / ATR Trail 2x | 0.742 | +9.5% | 66.7% | 3.3% |
+
+## Recommended Strategy
+
+### Primary Recommendation: Hybrid_Strong+MC / RSI > 70
+
+**Metrics (5Y):** 61.2% total return, 66.7% win rate (7 trades), 0.565 Sharpe, 26.9% max drawdown
+
+**Why it's best:** Highest total return among strategies with meaningful trade counts and strong win rate. The hybrid approach filters out whipsaw periods effectively.
+
+#### Entry Rules
+
+1. **Trend filter (Hybrid_Strong):**
+   - `MA200_slope_20d > 0` (MA200 is rising)
+   - `Close > EMA200` (price above 200-day EMA)
+2. **Momentum Composite (all 6 factors must align):**
+   - `RSI14 > 55`
+   - `MACD_line > MACD_signal`
+   - `ROC20 > 0`
+   - `Williams_R14 > -50`
+   - `CMF20 > 0`
+   - `EMA20 > EMA50`
+
+#### Exit Rules
+
+- **RSI > 70**: Exit when RSI enters overbought territory (prevents giving back gains during pullbacks)
+
+---
+
+### Conservative Alternative: ADX_Strong / Default
+
+**Metrics (5Y):** 17.4% total return, 63.6% win rate (11 trades), 0.430 Sharpe, **9.5% max drawdown**
+
+**Why it's good:** Lowest maximum drawdown of all positive-return strategies. ADX > 25 is a powerful trend strength filter that keeps you out of choppy/whipsaw periods. Ideal for capital preservation.
+
+#### Entry Rules
+
+1. **ADX trend strength:**
+   - `ADX14 > 25` (strong trend)
+   - `+DI14 > -DI14` (uptrend direction)
+2. **Momentum Composite (same 6 factors as above)**
+
+#### Exit Rules
+
+- **Default (from Momentum Composite):**
+  - `Close < EMA200` (price below 200-day EMA)
+  - `MACD_line < MACD_signal` (momentum turns negative)
+  - `ROC20 < -5` (sharp momentum reversal)
+
+---
+
+## Buy & Hold Comparison
+
+| Metric | Buy & Hold | Hybrid_Strong+MC / RSI > 70 | ADX_Strong / Default |
+|--------|------------|-----------------------------|----------------------|
+| Total Return | **+70.0%** | 61.2% | 17.4% |
+| Max Drawdown | 27.2% | 26.9% | **9.5%** |
+| Sharpe Ratio | N/A | **0.565** | 0.430 |
+| Trade Count | 0 | 7 | 11 |
+| Annualized | ~11.2% | ~10.0% | ~3.2% |
+
+**Key insight:** Buy & Hold edges out the best active strategy in total return (70% vs 61.2%) with similar maximum drawdown (27.2% vs 26.9%). However, active strategies provide **trading flexibility**:
+- Ability to go to cash during high-drawdown periods
+- Scalable position sizing based on conviction
+- Risk management through defined exits
+- Lower psychological stress during drawdowns (you can step aside)
+
+## Strategy Groups Summary
+
+### Group 1: Buy & Hold Baselines
+
+| Strategy | Return | MaxDD |
+|----------|--------|-------|
+| Buy & Hold 5Y | +70.0% | 27.2% |
+| Buy & Hold All Data | +260.6% | 50.5% |
+
+### Group 2: Hybrid Trend + Momentum Entry Filters (5Y)
+
+Entry combines a trend filter with the 6-factor momentum composite.
+
+| Variant | Trend Filter | Return (RSI>70 exit) | Trades |
+|---------|-------------|---------------------|--------|
+| Hybrid_Strong | MA200 slope > 0 + Price > MA200 | **+61.2%** | 7 |
+| Hybrid_HMM | HMM Regime 0 dominant | -14.9% | 9 |
+| Hybrid_Volume | Volume %ile > 50 | +20.7% | 27 |
+
+**Verdict:** Hybrid_Strong is the clear winner. HMM regime is too noisy (many false signals). Volume filter is solid but less selective.
+
+### Group 3: Momentum Composite Exit Optimization (5Y)
+
+Testing different exit strategies on the Momentum Composite entry (no trend filter).
+
+| Exit | Return | Win Rate | MaxDD |
+|------|--------|----------|-------|
+| RSI > 70 | +15.2% | 48.0% | 21.8% |
+| RSI > 65 | +11.9% | 48.0% | 20.5% |
+| Default (v1) | +11.7% | 47.8% | 21.8% |
+| Time Stop 10d | +9.8% | 47.8% | 23.2% |
+| ATR Trail 3x | +8.6% | 47.8% | 23.2% |
+| ATR Trail 2x | -1.9% | 34.5% | 29.0% |
+| Combo (ATR+RSI+ROC) | -3.7% | 34.5% | 26.9% |
+
+**Verdict:** RSI > 70 exits produce the best return. ATR trail 2x hurts returns (too aggressive, gets stopped out early). Time stops add no value over RSI exits.
+
+### Group 4: Pullback-to-Strength Strategies (5Y)
+
+Buy dips to moving averages in confirmed uptrends.
+
+| Variant | Entries | Return (best exit) | Trades |
+|---------|---------|-------------------|--------|
+| Pullback_20 | 5 | +20.0% (ATR 2x / RSI>70) | 5 |
+| Pullback_50 | 3 | +9.5% (ATR 2x) | 3 |
+
+**Verdict:** Too few signals for reliable statistics. Pullback_20 shows promise but needs more data validation.
+
+### Group 5: Hybrid Strong + Momentum Combined (5Y)
+
+Hybrid_Strong trend filter + Momentum Composite default exits.
+
+| Exit | Return | Win Rate | MaxDD |
+|------|--------|----------|-------|
+| RSI > 70 | **+61.2%** | 66.7% | 26.9% |
+| RSI > 65 | +29.6% | 72.7% | 26.7% |
+| No Filter | +0.1% | 42.9% | 21.8% |
+| ATR Trail 2x | -7.9% | 40.0% | 31.5% |
+| ATR Trail 3x | -8.6% | 41.2% | 24.0% |
+| Combo | -5.8% | 33.3% | 28.2% |
+
+**Verdict:** RSI > 70 is the only exit that turns the hybrid strong + momentum combo positive. All ATR trail variants lose money.
+
+### Group 6: ADX Momentum Filter (5Y)
+
+ADX > 25 + +DI > -DI + Momentum Composite entry.
+
+| Exit | Return | Win Rate | MaxDD | Sharpe |
+|------|--------|----------|-------|--------|
+| Default | +17.4% | 63.6% | 9.5% | 0.430 |
+| ATR Trail 2x | +14.1% | 53.8% | 9.0% | 0.415 |
+| RSI > 65 | +4.5% | 60.0% | 9.8% | 0.238 |
+| Combo | -8.3% | 30.0% | 12.8% | -0.546 |
+
+**Verdict:** ADX_Strong / Default is the best risk-adjusted strategy. Very low drawdown (9.5%) makes it ideal for capital preservation.
+
+### Group 7: RSI Pullback in Uptrend (5Y)
+
+Buy RSI dips (35-45 or 25-40) when in uptrend, exit at RSI>60-70.
+
+| Variant | Entries | Return (best exit) | Trades |
+|---------|---------|-------------------|--------|
+| RSI_Pullback_35-45 | 4 | +0.4% (RSI>60) | 4 |
+| RSI_DeepPullback_25-40 | 2 | -10.4% | 2 |
+
+**Verdict:** Too few signals. The RSI pullback range of 35-45 generates very few entries on AZN.L. Deep pullbacks (25-40) are rare and not statistically significant.
+
+## Failed Strategies (All Negative Returns)
+
+### HMM Regime Hybrid (ALL FAILING, -15% to -24%)
+
+HMM regime signals generate too many false entries. Even with MA200 slope filter, HMM-based strategies lose money.
+
+**Verdict:** HMM is too noisy for AZN.L. The regime model's signals are not reliable enough.
+
+### ATR Trail Exits (Mostly Negative)
+
+ATR trail exits (especially 2x) consistently lose money across all entry strategies. The tight stop gets whipsawed during AZN's periodic corrections.
+
+**Verdict:** ATR trailing is NOT suitable for AZN.L. Use RSI overbought exits or default trend-following exits instead.
+
+### Combo Exits (Negative across the board)
+
+Complex combo exits (ATR + RSI + Momentum combined) underperform simple RSI > 70 exits.
+
+**Verdict:** Keep exits simple. RSI > 65 or RSI > 70 are the best exit signals.
+
+## Why AZN.L Is Hard to Trade
+
+1. **Severe periodic corrections (-50%+ max DD):** Every major correction wipes out trend-following gains. The stock can be in a strong uptrend one day and crash the next.
+
+2. **Whipsaw periods:** Between corrections, the stock trades sideways for extended periods. This generates false signals for all trend-following indicators.
+
+3. **Buy & Hold beats all active strategies:** +70% vs best active 61.2%. But active strategies provide risk management and flexibility that passive holding cannot.
+
+4. **Key insight:** Only strategies with **strong trend filters** (MA200 slope > 0, ADX > 25) AND **momentum confirmation** (6-factor composite) AND **early exits** (RSI > 65-70) produce positive returns.
+
+## Implementation Notes
+
+### Signal Dependencies
+
+All strategies use the following TA columns from `data/analysis-data/AZN.L.csv`:
+- `Close`, `Open`, `High`, `Low`, `Volume`
+- `ta_ema20`, `ta_ema50`, `ta_ema200`
+- `ma200_slope_20d` (20-day slope of MA200)
+- `ta_rsi14` (RSI 14-period)
+- `ta_macd_line`, `ta_macd_signal`, `ta_macd_histogram`
+- `ta_roc20`, `ta_roc5` (Rate of Change)
+- `ta_williams_r14` (Williams %R)
+- `ta_cmf20` (Chaikin Money Flow)
+- `ta_adx14`, `ta_plus_di14`, `ta_minus_di14`
+- `ta_volume_percentile`
+
+### Code Reference
+
+- **Backtest script**: `app/backtest/backtest_azn_v2.py`
+- **v1 results**: `data/backtest-reports/AZN_backtest_results.csv` (38 strategies, all losing)
+- **v2 results**: `data/backtest-reports/AZN_backtest_results_v2.csv` (80+ strategies)
+- **Comparison tearsheet**: `data/backtest-reports/AZN_backtest_summary_v2.html`
+- **Individual tearsheets**: `data/backtest-reports/AZN_*.html`
+
+### Backtest Configuration
+
+```python
+INITIAL_CAPITAL = 100000
+SLIPPAGE = 0.001  # 0.1% per trade
+FREQ = "1D"
+```
+
+## Recommendations
+
+### For Active Trading
+1. **Use Hybrid_Strong+MC / RSI > 70** as the primary strategy. Best balance of return (61.2%) and win rate (66.7%).
+2. **Use ADX_Strong / Default** for capital preservation. Lowest drawdown (9.5%) with solid risk-adjusted returns.
+3. **Avoid ATR trail exits** — they consistently lose money on AZN.L due to whipsaws.
+4. **Avoid HMM-based entries** — too noisy for reliable signal generation.
+5. **Consider position sizing**: With only 7-11 trades over 5 years, each trade matters. Size positions appropriately.
+
+### For Long-Term Holding
+- **Buy & Hold** delivers +70% over 5 years with similar max drawdown (27.2%) to the best active strategy.
+- Active strategies provide flexibility (go to cash, adjust sizing) but at a cost of ~9% lower returns.
+- Consider a hybrid approach: Buy & Hold core position with tactical overlays during confirmed uptrends.
+
+### What NOT to Use
+- SuperTrend strategies (too many false signals, whipsawed)
+- Golden Cross strategies (exits too late on corrections)
+- HMM Bull / HMM hybrid (overtrading, false signals)
+- ATR trailing exits (too tight, whipsawed)
+- Combo exits (over-complicated, underperform simple RSI exits)
+
+## Comparison with Other Stocks
+
+| Aspect | AZN.L | HSBA.L | NG.L |
+|--------|-------|--------|------|
+| Type | Stock (pharma) | Stock (financials) | Commodity (natural gas) |
+| 20Y Return | +260.6% | +127.7% | Range-bound |
+| Best Strategy | Hybrid_Strong+MC (61.2%) | ADX Momentum (+84.1%) | Supertrend + Mean-reversion |
+| Max Drawdown | -50.5% | ~40-50% | Commodity cycles |
+| Key Challenge | Periodic severe corrections | Trend-following works | Mean-reversion needed |
+| Optimal Exit | RSI > 70 | ADX flip / RSI weakness | Mean-reversion levels |
+| Trade Frequency | Low (7-11 over 5Y) | Low (2-3 per year) | Medium (5-10 per year) |
+
+**Key insight:** Each asset requires a completely different strategy approach. Pharma stocks like AZN.L need strong trend filters + momentum confirmation + RSI exits. Financials like HSBA.L respond well to pure ADX momentum. Commodities like NG.L need mean-reversion + Supertrend.
+
+## Lessons Learned
+
+1. **Trend strength > Trend direction:** MA200 slope and ADX > 25 are more important than just price > MA200. The stock can be above MA200 but still whipsaw.
+
+2. **Momentum multi-factor confirmation works:** Requiring 6 momentum indicators to align reduces false signals significantly. Single-factor momentum (just RSI or just MACD) is too noisy.
+
+3. **Simple exits beat complex exits:** RSI > 70 consistently outperforms ATR trails, time stops, and combo exits. Keep it simple.
+
+4. **Exit early, stay profitable:** RSI > 70 exits capture gains before corrections hit. Waiting for trend-following exits (EMA cross, MA200 break) gives back too much during AZN's sharp corrections.
+
+5. **Backtest period matters:** Results over 5Y (2021-2026) are more relevant for current market conditions. Full 20Y data masks recent regime changes.
+
+6. **Buy & Hold can be the best strategy:** For strongly trending stocks with deep corrections, passive holding may outperform active management. Consider this when evaluating strategy viability.

@@ -225,11 +225,15 @@ def signal_pullback_to_ema50(df):
         & (df["Close"] > df["ta_ema200"])
         & (df["ma200_slope_20d"] > 0)
     )
+    roc5_positive = (
+        df["ta_roc5"] > 0 if "ta_roc5" in df.columns
+        else pd.Series(True, index=df.index)
+    )
     bounce = (
         (df["Close"] > df["ta_ema50"])
         & (df["ta_macd_histogram"] > 0)
         & (df["ta_volume_percentile"] > 30)
-        & (df["ta_roc5"] > 0) if "ta_roc5" in df.columns or True  # fallback
+        & roc5_positive
     )
     entries = bounce & in_pullback.shift(1)
     exit_ = (df["Close"] < df["ta_ema200"]) | (df["ta_rsi14"] > 70)
@@ -273,6 +277,15 @@ def run_backtest(df, entries, exits=None, name="", initial_capital=INITIAL_CAPIT
     sharpe_ratio = stats.get("Sharpe Ratio", 0)
     calmar_ratio = stats.get("Calmar Ratio", 0)
     avg_drawdown = stats.get("Average Drawdown [%]", 0)
+
+    # Handle NaN values
+    if pd.isna(total_return): total_return = 0
+    if pd.isna(win_rate): win_rate = 0
+    if pd.isna(profit_factor): profit_factor = 0
+    if pd.isna(max_drawdown): max_drawdown = 0
+    if pd.isna(sharpe_ratio): sharpe_ratio = 0
+    if pd.isna(calmar_ratio): calmar_ratio = 0
+    if pd.isna(avg_drawdown): avg_drawdown = 0
 
     n_days = len(df)
     annualized_return = (1 + total_return / 100) ** (252 / n_days) - 1 if n_days > 0 else 0
@@ -633,8 +646,9 @@ def main():
     best_sharpe = [r for r in all_results if r["total_trades"] >= 5 and r["sharpe_ratio"] > -1]
     best_sharpe.sort(key=lambda x: x["sharpe_ratio"], reverse=True)
     if best_sharpe:
-        top5.append(best_sharpe[0])
-    top5 = list(dict.fromkeys(top5))  # Remove duplicates, preserve order
+        seen_names = {r["name"] for r in top5}
+        if best_sharpe[0]["name"] not in seen_names:
+            top5.append(best_sharpe[0])
 
     benchmark_ret = df_5y["Close"].pct_change().dropna()
 
