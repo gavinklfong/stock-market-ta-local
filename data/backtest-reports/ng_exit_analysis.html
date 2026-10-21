@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NG.L Exit Strategy Analysis</title>
+<script src="https://cdn.plot.ly/plotly-2.35.0.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; padding: 20px; }
+.container { max-width: 1400px; margin: 0 auto; }
+.header { background: linear-gradient(135deg, #1a237e, #283593); color: white; padding: 30px; border-radius: 12px; margin-bottom: 20px; }
+.header h1 { font-size: 26px; margin-bottom: 6px; }
+.header .subtitle { font-size: 14px; opacity: 0.85; }
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.kpi { background: white; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); text-align: center; }
+.kpi .label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+.kpi .value { font-size: 22px; font-weight: 700; margin-top: 4px; }
+.card { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; overflow: hidden; }
+.card .card-header { background: #fafafa; padding: 14px 20px; border-bottom: 1px solid #eee; font-weight: 600; font-size: 16px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table th { background: #f5f5f5; padding: 10px 12px; text-align: left; font-weight: 600; border-bottom: 2px solid #ddd; white-space: nowrap; }
+table td { padding: 8px 12px; border-bottom: 1px solid #eee; white-space: nowrap; }
+table tr:hover { background: #fafafa; }
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 800px) { .two-col { grid-template-columns: 1fr; } }
+.footer { text-align: center; padding: 20px; font-size: 12px; color: #999; }
+.highlight { background: #e8f5e9; }
+</style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>NG.L Exit Strategy Analysis</h1>
+        <div class="subtitle">BB Mean Reversion entries (39 signals) - Multiple exit methods compared - Period: 2016-10-17 to 2026-10-21 (2530 trading days)</div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Exit Strategy Comparison (18 configs) - Sorted by Sharpe Ratio</div>
+        <div class="card-body" style="overflow-x:auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Exit Method</th><th>Trades</th><th>Win Rate</th>
+                        <th>Total Return</th><th>Annualized</th><th>Sharpe</th>
+                        <th>Calmar</th><th>Max DD</th><th>Profit Factor</th>
+                        <th>Max Consec Loss</th><th>Avg Hold</th><th>Best/Worst</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+            <td>BB Middle (baseline)</td>
+            <td>17</td>
+            <td style="color:#ff9800;font-weight:600">70.6%</td>
+            <td style="color:#26a69a;font-weight:600">34.4%</td>
+            <td>3.0%</td>
+            <td style="color:#26a69a;font-weight:600">5.85</td>
+            <td>0.06</td>
+            <td style="color:#ef5350;font-weight:600">50.0%</td>
+            <td>2.65</td>
+            <td>2</td>
+            <td>18</td>
+            <td>12.5% / -7.0%</td>
+        </tr>
+<tr>
+            <td>RSI > 50</td>
+            <td>17</td>
+            <td style="color:#ff9800;font-weight:600">70.6%</td>
+            <td style="color:#26a69a;font-weight:600">47.2%</td>
+            <td>3.9%</td>
+            <td style="color:#26a69a;font-weight:600">8.91</td>
+            <td>0.18</td>
+            <td style="color:#ef5350;font-weight:600">21.4%</td>
+            <td>4.54</td>
+            <td>2</td>
+            <td>23</td>
+            <td>12.5% / -4.2%</td>
+        </tr>
+<tr>
+            <td>RSI > 60</td>
+            <td>12</td>
+            <td style="color:#ff9800;font-weight:600">66.7%</td>
+            <td style="color:#26a69a;font-weight:600">20.5%</td>
+            <td>1.9%</td>
+            <td style="color:#26a69a;font-weight:600">4.05</td>
+            <td>0.00</td>
+            <td style="color:#ef5350;font-weight:600">496.3%</td>
+            <td>2.19</td>
+            <td>1</td>
+            <td>83</td>
+            <td>14.8% / -14.6%</td>
+        </tr>
+<tr>
+            <td>RSI > 70</td>
+            <td>10</td>
+            <td style="color:#26a69a;font-weight:600">90.0%</td>
+            <td style="color:#26a69a;font-weight:600">97.0%</td>
+            <td>7.0%</td>
+            <td style="color:#26a69a;font-weight:600">12.70</td>
+            <td>0.03</td>
+            <td style="color:#ef5350;font-weight:600">262.2%</td>
+            <td>6.16</td>
+            <td>1</td>
+            <td>198</td>
+            <td>18.3% / -14.4%</td>
+        </tr>
+<tr>
+            <td>MACD bearish cross</td>
+            <td>27</td>
+            <td style="color:#ef5350;font-weight:600">59.3%</td>
+            <td style="color:#26a69a;font-weight:600">-3.4%</td>
+            <td>-0.3%</td>
+            <td style="color:#26a69a;font-weight:600">-0.97</td>
+            <td>-0.00</td>
+            <td style="color:#ef5350;font-weight:600">345.4%</td>
+            <td>0.87</td>
+            <td>3</td>
+            <td>1</td>
+            <td>3.5% / -4.6%</td>
+        </tr>
+<tr>
+            <td>SuperTrend flip</td>
+            <td>24</td>
+            <td style="color:#ef5350;font-weight:600">54.2%</td>
+            <td style="color:#26a69a;font-weight:600">0.9%</td>
+            <td>0.1%</td>
+            <td style="color:#26a69a;font-weight:600">0.30</td>
+            <td>0.00</td>
+            <td style="color:#ef5350;font-weight:600">329.8%</td>
+            <td>1.08</td>
+            <td>4</td>
+            <td>2</td>
+            <td>4.0% / -5.3%</td>
+        </tr>
+<tr>
+            <td>EMA20 cross</td>
+            <td>27</td>
+            <td style="color:#ef5350;font-weight:600">59.3%</td>
+            <td style="color:#26a69a;font-weight:600">-3.4%</td>
+            <td>-0.3%</td>
+            <td style="color:#26a69a;font-weight:600">-0.97</td>
+            <td>-0.00</td>
+            <td style="color:#ef5350;font-weight:600">345.4%</td>
+            <td>0.87</td>
+            <td>3</td>
+            <td>1</td>
+            <td>3.5% / -4.6%</td>
+        </tr>
+<tr>
+            <td>Structure break (LH/LL)</td>
+            <td>15</td>
+            <td style="color:#ef5350;font-weight:600">46.7%</td>
+            <td style="color:#26a69a;font-weight:600">26.3%</td>
+            <td>2.4%</td>
+            <td style="color:#26a69a;font-weight:600">4.46</td>
+            <td>0.02</td>
+            <td style="color:#ef5350;font-weight:600">136.2%</td>
+            <td>2.06</td>
+            <td>4</td>
+            <td>41</td>
+            <td>12.6% / -8.3%</td>
+        </tr>
+<tr>
+            <td>Time-stop 30d</td>
+            <td>16</td>
+            <td style="color:#ef5350;font-weight:600">56.2%</td>
+            <td style="color:#26a69a;font-weight:600">15.4%</td>
+            <td>1.4%</td>
+            <td style="color:#26a69a;font-weight:600">3.13</td>
+            <td>0.00</td>
+            <td style="color:#26a69a;font-weight:600">0.0%</td>
+            <td>1.59</td>
+            <td>4</td>
+            <td>31</td>
+            <td>7.6% / -6.3%</td>
+        </tr>
+<tr>
+            <td>Time-stop 45d</td>
+            <td>16</td>
+            <td style="color:#ff9800;font-weight:600">68.8%</td>
+            <td style="color:#26a69a;font-weight:600">55.6%</td>
+            <td>4.5%</td>
+            <td style="color:#26a69a;font-weight:600">8.66</td>
+            <td>0.00</td>
+            <td style="color:#26a69a;font-weight:600">0.0%</td>
+            <td>4.41</td>
+            <td>4</td>
+            <td>46</td>
+            <td>12.6% / -5.5%</td>
+        </tr>
+<tr>
+            <td>Time-stop 60d</td>
+            <td>14</td>
+            <td style="color:#ff9800;font-weight:600">64.3%</td>
+            <td style="color:#26a69a;font-weight:600">40.4%</td>
+            <td>3.4%</td>
+            <td style="color:#26a69a;font-weight:600">6.88</td>
+            <td>0.00</td>
+            <td style="color:#26a69a;font-weight:600">0.0%</td>
+            <td>3.16</td>
+            <td>4</td>
+            <td>59</td>
+            <td>11.6% / -6.6%</td>
+        </tr>
+<tr>
+            <td>Time-stop 90d</td>
+            <td>14</td>
+            <td style="color:#ff9800;font-weight:600">64.3%</td>
+            <td style="color:#26a69a;font-weight:600">53.5%</td>
+            <td>4.4%</td>
+            <td style="color:#26a69a;font-weight:600">6.70</td>
+            <td>0.00</td>
+            <td style="color:#26a69a;font-weight:600">0.0%</td>
+            <td>3.22</td>
+            <td>3</td>
+            <td>87</td>
+            <td>21.5% / -6.4%</td>
+        </tr>
+<tr>
+            <td>Time-stop 120d</td>
+            <td>13</td>
+            <td style="color:#ff9800;font-weight:600">76.9%</td>
+            <td style="color:#26a69a;font-weight:600">96.1%</td>
+            <td>6.9%</td>
+            <td style="color:#26a69a;font-weight:600">12.35</td>
+            <td>0.00</td>
+            <td style="color:#26a69a;font-weight:600">0.0%</td>
+            <td>8.84</td>
+            <td>1</td>
+            <td>114</td>
+            <td>19.8% / -6.8%</td>
+        </tr>
+<tr>
+            <td>BB Middle OR RSI > 50</td>
+            <td>17</td>
+            <td style="color:#ff9800;font-weight:600">70.6%</td>
+            <td style="color:#26a69a;font-weight:600">33.9%</td>
+            <td>3.0%</td>
+            <td style="color:#26a69a;font-weight:600">5.98</td>
+            <td>0.07</td>
+            <td style="color:#ef5350;font-weight:600">45.0%</td>
+            <td>2.63</td>
+            <td>2</td>
+            <td>17</td>
+            <td>12.5% / -7.0%</td>
+        </tr>
+<tr>
+            <td>BB Middle OR RSI > 60</td>
+            <td>17</td>
+            <td style="color:#ff9800;font-weight:600">70.6%</td>
+            <td style="color:#26a69a;font-weight:600">34.4%</td>
+            <td>3.0%</td>
+            <td style="color:#26a69a;font-weight:600">5.85</td>
+            <td>0.06</td>
+            <td style="color:#ef5350;font-weight:600">50.0%</td>
+            <td>2.65</td>
+            <td>2</td>
+            <td>18</td>
+            <td>12.5% / -7.0%</td>
+        </tr>
+<tr>
+            <td>BB Middle OR MACD cross</td>
+            <td>27</td>
+            <td style="color:#ef5350;font-weight:600">59.3%</td>
+            <td style="color:#26a69a;font-weight:600">-3.4%</td>
+            <td>-0.3%</td>
+            <td style="color:#26a69a;font-weight:600">-0.97</td>
+            <td>-0.00</td>
+            <td style="color:#ef5350;font-weight:600">345.4%</td>
+            <td>0.87</td>
+            <td>3</td>
+            <td>1</td>
+            <td>3.5% / -4.6%</td>
+        </tr>
+<tr>
+            <td>BB Middle OR SuperTrend</td>
+            <td>24</td>
+            <td style="color:#ef5350;font-weight:600">54.2%</td>
+            <td style="color:#26a69a;font-weight:600">0.9%</td>
+            <td>0.1%</td>
+            <td style="color:#26a69a;font-weight:600">0.30</td>
+            <td>0.00</td>
+            <td style="color:#ef5350;font-weight:600">329.8%</td>
+            <td>1.08</td>
+            <td>4</td>
+            <td>2</td>
+            <td>4.0% / -5.3%</td>
+        </tr>
+<tr>
+            <td>BB Middle OR Structure</td>
+            <td>17</td>
+            <td style="color:#ef5350;font-weight:600">52.9%</td>
+            <td style="color:#26a69a;font-weight:600">17.8%</td>
+            <td>1.6%</td>
+            <td style="color:#26a69a;font-weight:600">3.07</td>
+            <td>0.01</td>
+            <td style="color:#ef5350;font-weight:600">221.2%</td>
+            <td>1.65</td>
+            <td>4</td>
+            <td>14</td>
+            <td>12.5% / -8.3%</td>
+        </tr>
+
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="two-col">
+        <div class="card">
+            <div class="card-header">Sharpe Ratio Comparison</div>
+            <div class="card-body" id="sharpe-chart"></div>
+        </div>
+        <div class="card">
+            <div class="card-header">Max Drawdown Comparison</div>
+            <div class="card-body" id="dd-chart"></div>
+        </div>
+    </div>
+
+    <div class="two-col">
+        <div class="card">
+            <div class="card-header">Total Return Comparison</div>
+            <div class="card-body" id="return-chart"></div>
+        </div>
+        <div class="card">
+            <div class="card-header">Sharpe vs Max Drawdown (bubble size = total return)</div>
+            <div class="card-body" id="scatter-chart"></div>
+        </div>
+    </div>
+
+    <div class="footer">
+        Generated 2026-10-21 18:54 &middot;
+        Data: data/analysis-data/NG.L.csv &middot;
+        Powered by Plotly
+    </div>
+</div>
+
+<script>
+
+Plotly.newPlot("sharpe-chart", [{
+    y: ["BB Middle OR MACD cross", "EMA20 cross", "MACD bearish cross", "BB Middle OR SuperTrend", "SuperTrend flip", "BB Middle OR Structure", "Time-stop 30d", "RSI > 60", "Structure break (LH/LL)", "BB Middle OR RSI > 60", "BB Middle (baseline)", "BB Middle OR RSI > 50", "Time-stop 90d", "Time-stop 60d", "Time-stop 45d", "RSI > 50", "Time-stop 120d", "RSI > 70"],
+    x: [-0.9711811571082694, -0.9711811571082694, -0.9711811571082694, 0.2972469513916012, 0.2972469513916012, 3.070511975590669, 3.133157879824339, 4.045922398865285, 4.461169902136709, 5.851706738746447, 5.851706738746447, 5.978510337096689, 6.700389836256994, 6.877354847105915, 8.657877043037796, 8.90967840991695, 12.352705273269091, 12.701410579958274],
+    type: "bar",
+    orientation: "h",
+    marker: { color: ["#ef5350", "#ef5350", "#ef5350", "#ff9800", "#ff9800", "#ff9800", "#ff9800", "#ff9800", "#ff9800", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a"] },
+    text: sharpe_vals[::-1].map(v => v.toFixed(2)),
+    textposition: "outside"
+}], {
+    margin: { l: 200, r: 40, t: 20, b: 80 },
+    yaxis: { automargin: true },
+    xaxis: { title: "Sharpe Ratio" },
+    paper_bgcolor: "white", plot_bgcolor: "white"
+}, {responsive: true, displayModeBar: false});
+
+Plotly.newPlot("dd-chart", [{
+    y: ["BB Middle OR MACD cross", "EMA20 cross", "MACD bearish cross", "BB Middle OR SuperTrend", "SuperTrend flip", "BB Middle OR Structure", "Time-stop 30d", "RSI > 60", "Structure break (LH/LL)", "BB Middle OR RSI > 60", "BB Middle (baseline)", "BB Middle OR RSI > 50", "Time-stop 90d", "Time-stop 60d", "Time-stop 45d", "RSI > 50", "Time-stop 120d", "RSI > 70"],
+    x: [345.3514606293675, 345.3514606293675, 345.3514606293675, 329.8148107448917, 329.8148107448917, 221.1686258193519, 0.0, 496.2759520026643, 136.22407787105107, 49.995481369790355, 49.995481369790355, 44.950564865217935, 0.0, 0.0, 0.0, 21.41457507151656, 0.0, 262.1856737704435],
+    type: "bar",
+    orientation: "h",
+    marker: { color: ["#ef5350", "#ef5350", "#ef5350", "#ff9800", "#ff9800", "#ff9800", "#ff9800", "#ff9800", "#ff9800", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a"] },
+    text: ["345.4%", "345.4%", "345.4%", "329.8%", "329.8%", "221.2%", "0.0%", "496.3%", "136.2%", "50.0%", "50.0%", "45.0%", "0.0%", "0.0%", "0.0%", "21.4%", "0.0%", "262.2%"],
+    textposition: "outside"
+}], {
+    margin: { l: 200, r: 40, t: 20, b: 80 },
+    yaxis: { automargin: true },
+    xaxis: { title: "Max Drawdown (%)" },
+    paper_bgcolor: "white", plot_bgcolor: "white"
+}, {responsive: true, displayModeBar: false});
+
+Plotly.newPlot("return-chart", [{
+    y: ["BB Middle OR MACD cross", "EMA20 cross", "MACD bearish cross", "BB Middle OR SuperTrend", "SuperTrend flip", "BB Middle OR Structure", "Time-stop 30d", "RSI > 60", "Structure break (LH/LL)", "BB Middle OR RSI > 60", "BB Middle (baseline)", "BB Middle OR RSI > 50", "Time-stop 90d", "Time-stop 60d", "Time-stop 45d", "RSI > 50", "Time-stop 120d", "RSI > 70"],
+    x: [-3.373677381790685, -3.373677381790685, -3.373677381790685, 0.9133791900618471, 0.9133791900618471, 17.774647968979295, 15.367786614485968, 20.543665594327653, 26.340599206251625, 34.385103902600434, 34.385103902600434, 33.93208093783737, 53.52228475865981, 40.43220433116592, 55.616352357372676, 47.22212539980446, 96.14682396624687, 97.04049919214701],
+    type: "bar",
+    orientation: "h",
+    marker: { color: ["#ef5350", "#ef5350", "#ef5350", "#ff9800", "#ff9800", "#ff9800", "#ff9800", "#ff9800", "#ff9800", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a", "#26a69a"] },
+    text: ["-3.4%", "-3.4%", "-3.4%", "0.9%", "0.9%", "17.8%", "15.4%", "20.5%", "26.3%", "34.4%", "34.4%", "33.9%", "53.5%", "40.4%", "55.6%", "47.2%", "96.1%", "97.0%"],
+    textposition: "outside"
+}], {
+    margin: { l: 200, r: 40, t: 20, b: 80 },
+    yaxis: { automargin: true },
+    xaxis: { title: "Total Return (%)" },
+    paper_bgcolor: "white", plot_bgcolor: "white"
+}, {responsive: true, displayModeBar: false});
+
+Plotly.newPlot("scatter-chart", [{
+    x: [5.851706738746447, 8.90967840991695, 4.045922398865285, 12.701410579958274, -0.9711811571082694, 0.2972469513916012, -0.9711811571082694, 4.461169902136709, 3.133157879824339, 8.657877043037796, 6.877354847105915, 6.700389836256994, 12.352705273269091, 5.978510337096689, 5.851706738746447, -0.9711811571082694, 0.2972469513916012, 3.070511975590669],
+    y: [49.995481369790355, 21.41457507151656, 496.2759520026643, 262.1856737704435, 345.3514606293675, 329.8148107448917, 345.3514606293675, 136.22407787105107, 0.0, 0.0, 0.0, 0.0, 0.0, 44.950564865217935, 49.995481369790355, 345.3514606293675, 329.8148107448917, 221.1686258193519],
+    mode: "markers+text",
+    text: ["BB Middle (baseline)", "RSI > 50", "RSI > 60", "RSI > 70", "MACD bearish cross", "SuperTrend flip", "EMA20 cross", "Structure break (LH/LL)", "Time-stop 30d", "Time-stop 45d", "Time-stop 60d", "Time-stop 90d", "Time-stop 120d", "BB Middle OR RSI > 50", "BB Middle OR RSI > 60", "BB Middle OR MACD cross", "BB Middle OR SuperTrend", "BB Middle OR Structure"],
+    textposition: "top center",
+    textfont: { size: 8 },
+    marker: {
+        size: [1.031553117078013, 1.4166637619941338, 0.6163099678298296, 2.9112149757644104, 0.10121032145372055, 0.027401375701855413, 0.10121032145372055, 0.7902179761875487, 0.46103359843457903, 1.6684905707211803, 1.2129661299349777, 1.6056685427597943, 2.8844047189874065, 1.0179624281351212, 1.031553117078013, 0.10121032145372055, 0.027401375701855413, 0.5332394390693789],
+        color: [5.851706738746447, 8.90967840991695, 4.045922398865285, 12.701410579958274, -0.9711811571082694, 0.2972469513916012, -0.9711811571082694, 4.461169902136709, 3.133157879824339, 8.657877043037796, 6.877354847105915, 6.700389836256994, 12.352705273269091, 5.978510337096689, 5.851706738746447, -0.9711811571082694, 0.2972469513916012, 3.070511975590669],
+        colorscale: "RdBu",
+        showscale: true,
+        colorbar: { title: "Sharpe" },
+        line: { width: 1 }
+    },
+    hovertemplate: "<b>%{text}</b><br>Sharpe: %{x:.2f}<br>Max DD: %{y:.1f}%<extra></extra>"
+}], {
+    margin: { l: 60, r: 20, t: 20, b: 40 },
+    xaxis: { title: "Sharpe Ratio" },
+    yaxis: { title: "Max Drawdown (%)" },
+    paper_bgcolor: "white", plot_bgcolor: "white"
+}, {responsive: true, displayModeBar: false});
+</script>
+</body>
+</html>

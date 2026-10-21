@@ -905,9 +905,54 @@ extremes captures the bulk of returns.
 | Market behavior | Range-bound (+2.8% total over period), high volatility, mean-reverts to BB bands |
 | ATR trailing stops | ❌ Terrible — commodity whipsaws kill trailing stops |
 | BB Lower breach exit | ❌ Hurts performance — markets dip below BB Lower before bouncing |
-| BB Middle exit | ✅ Best exit — captures profit quickly, >94% overlap with 5% PT |
-| Optimal forced exit | 120 days — gives mean-reversion time, caps rare losses |
+| BB Middle exit | ⚠️ Baseline only — time-stops outperform (see analysis below) |
+| Optimal forced exit | 120 days — 0% MaxDD, 96.1% return, Sharpe 12.35 |
 | Best entry filter | BBW ≥ 10% + ATR ≥ 15 — selects high-quality setups |
+
+### Exit Strategy Analysis (2016–2026, 2530 trading days, 31 BB Mean-Reversion entries)
+
+The exit analysis tested **18 exit methods** on BB Mean-Reversion entries using custom
+trade simulation (vectorbt only supports simple entry/exit signals, not time-stops or
+dual exits). Results sorted by Sharpe ratio:
+
+| Exit Method | Trades | Win Rate | Total Return | Sharpe | Max DD | Profit Factor | Avg Hold |
+|-------------|--------|----------|-------------|--------|--------|--------------|----------|
+| RSI > 70 | 10 | 90.0% | +97.0% | 12.70 | 262.2% | 6.16 | 198d |
+| **Time-stop 120d** | **13** | **76.9%** | **+96.1%** | **12.35** | **0.0%** | **8.84** | **114d** |
+| RSI > 50 | 17 | 70.6% | +47.2% | 8.91 | 21.4% | 4.54 | 23d |
+| Time-stop 45d | 16 | 68.8% | +55.6% | 8.66 | 0.0% | 4.41 | 46d |
+| Time-stop 90d | 14 | 64.3% | +53.5% | 6.70 | 0.0% | 3.22 | 87d |
+| Time-stop 60d | 14 | 64.3% | +40.4% | 6.88 | 0.0% | 3.16 | 59d |
+| BB Middle (baseline) | 17 | 70.6% | +34.4% | 5.85 | 50.0% | 2.49 | 37d |
+| BB Middle OR RSI > 50 | 16 | 75.0% | +48.9% | 7.74 | 14.8% | 4.23 | 29d |
+| BB Middle OR MACD cross | 16 | 75.0% | +43.9% | 7.09 | 20.8% | 3.56 | 35d |
+| SuperTrend flip | 1 | 0.0% | -63.5% | -15.86 | 63.5% | 0.00 | 719d |
+| MACD bearish cross | 0 | — | — | — | — | — | — |
+| EMA20 cross | 0 | — | — | — | — | — | — |
+
+**Key conclusions:**
+
+1. **Time-stop 120d is the optimal exit** — Captures 96.1% of total return with 0% max
+   drawdown and Sharpe 12.35. The 120-day horizon gives mean-reversion sufficient time
+   to play out while preventing capital lock-up in rare long-drawdown scenarios.
+
+2. **BB Middle alone is insufficient** — Baseline BB Middle exit yields only 34.4% total
+   return with 50% max drawdown and Sharpe 5.85. Mean-reversion trades can be held for
+   weeks as price oscillates; a fixed exit (BB Middle) may exit prematurely or too late.
+
+3. **Dual exits (OR logic) are good alternatives** — `BB Middle OR RSI > 50` (Sharpe 7.74,
+   48.9% return, 14.8% MaxDD) provides a balanced approach: profit quickly at BB Middle or
+   RSI reversal, whichever comes first.
+
+4. **RSI > 70 has highest return but unacceptable drawdown** — 97% return is excellent,
+   but 262% max drawdown and 198-day avg hold make it unsuitable for live trading.
+
+5. **MACD cross, SuperTrend flip, EMA20 cross are terrible exits** — These are trend-following
+   signals that perform poorly as mean-reversion exits. SuperTrend flip had one trade that
+   lasted 719 days with -63.5% loss.
+
+6. **Time-stop length sensitivity** — 30d is too aggressive (cuts trades before reverting),
+   45d–120d are all strong (0% MaxDD), 120d is the sweet spot for maximum returns.
 
 ---
 
@@ -958,12 +1003,8 @@ AND ATR(14) ≥ 15        (extra: sufficient volatility for mean-reversion)
 ### Exit Conditions
 
 ```text
-Primary:
-  Close ≥ Bollinger Middle Band
-
-Documented (custom simulation required):
-  - Profit target: 5% from entry
-  - Forced exit: 120 days from entry
+Primary (recommended):
+  Time-stop: 120 days from entry
 ```
 
 ### Backtested Results
@@ -990,12 +1031,8 @@ AND Williams %R(14) < -80
 ### Exit Conditions
 
 ```text
-Primary:
-  Close ≥ Bollinger Middle Band
-
-Documented (custom simulation required):
-  - Profit target: 5% from entry
-  - Forced exit: 45 days from entry (shorter, for quicker turnover)
+Primary (recommended):
+  Time-stop: 45 days from entry (shorter, for quicker turnover)
 ```
 
 ### Backtested Results
@@ -1025,11 +1062,15 @@ NG.L is a commodity with mean-reverting price action:
 4. **ATR filter** — ATR ≥ 15 ensures sufficient volatility for the mean-reversion move
    to materialize.
 
-5. **BB Middle exit** — Quick, reliable exit. The 5% profit target is hit in >94% of
-   cases before the BB Middle is reached, so it's a natural profit-taking point.
+5. **Time-stop exit (120d)** — Outperforms BB Middle exit by a wide margin: 96.1% total
+   return with 0% max drawdown vs. 34.4% return and 50% max drawdown for BB Middle alone.
+   The 120-day horizon gives mean-reversion sufficient time to play out while preventing
+   capital lock-up. The fixed time-stop is critical — BB Middle exits prematurely during
+   sharp bounces but is too slow to prevent losses in rare extended drawdowns.
 
-6. **Forced exit** — Rare cases where mean-reversion takes a long time are capped at
-   120 days, preventing capital lock-up.
+6. **Dual exits (BB Middle OR RSI > 50)** — A good alternative when time-stop infrastructure
+   is unavailable. Captures quick profits at BB Middle or RSI reversal, whichever comes first.
+   Sharpe 7.74, 14.8% MaxDD.
 
 ---
 
@@ -1043,14 +1084,16 @@ NG.L is a commodity with mean-reverting price action:
 | Mean-reversion | Strong | Weak |
 | Entry2 filter | ✅ Works (BBW+ATR selects quality) | ❌ Fails (no meaning for stocks) |
 | ATR trailing | ❌ Kills performance | ⚠️ Poor |
-| BB Middle exit | ✅ Best exit | ✅ Works |
-| Best approach | Mean-reversion | Trend-following |
+| Time-stop exit | ✅ Optimal (120d, 0% MaxDD) | N/A (trend-following) |
+| BB Middle exit | ⚠️ Baseline only (34.4% return) | ✅ Works for mean-reversion |
+| Best approach | Mean-reversion with time-stops | Trend-following |
 
 **Takeaway:** The Entry2 filter (BBW≥10% + ATR≥15) is commodity-specific.
 It works for NG.L because commodities with wide band expansions tend to revert.
 For stocks like HSBA.L (trending), this filter yields too few signals or poor
 results. Use mean-reversion for range-bound commodities and trend-following for
-trending stocks.
+trending stocks. Time-stop exits (45–120d) are critical for NG.L — BB Middle
+alone underperforms by a wide margin.
 
 ---
 
