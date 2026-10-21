@@ -10,8 +10,8 @@ A modular, parallel pipeline that downloads OHLCV market data, computes technica
 
 ```bash
 # Download data
-python app/download-market-data/download_tickers.py
-python app/download-market-data/download_stock_info.py
+python app/download-market-data/download_tickers.py      # OHLCV
+python app/download-market-data/download_stock_info.py   # P/E, dividends, fundamentals
 
 # TA indicators (all 7 modules run in PARALLEL)
 python app/calculate-ta/run_calculation.py
@@ -48,7 +48,9 @@ python run_test.py calculate-ta                 # TA module tests only
 - All 7 TA modules are independent — each reads raw OHLCV from `data/market-data/`
 - Parallel execution via `ThreadPoolExecutor(max_workers=7)`
 - Output: per-module `{ticker}_ta_{type}.csv`, merged into `{ticker}.csv`
-- Full pipeline: Prefect flow downloads OHLCV + P/E → runs TA → merges into `data/analysis-data/{ticker}.csv`
+- Full pipeline: Prefect flow downloads OHLCV + P/E/Dividends → runs TA → merges into `data/analysis-data/{ticker}.csv`
+- P/E and dividend data: `data/pe-data/{ticker}_PE.csv` (daily time-series: `ta_eps_ttm`, `ta_pe`, `ta_div_ttm`, `ta_div_yield`)
+- Fundamental metrics from stock.info are no longer written to CSV (static data, no longer regenerated)
 
 ### TA Module Index
 
@@ -61,6 +63,7 @@ python run_test.py calculate-ta                 # TA module tests only
 | `regime` | GARCH(1,1) vol forecast, 3-state HMM regime |
 | `structure` | Swing highs/lows, HH/HL/LH/LL, BOS, CHoCH, S/R levels |
 | `return` | Forward returns 5d/10d/20d; Past performance 1m/3m/6m/1y; Rolling alpha20/beta20; Relative strength vs ^FTSE |
+| **Fundamentals** | P/E (daily), TTM EPS, Dividend yield (daily), PB, EV/Revenue, EV/EBITDA, earnings/revenue growth, margins, payout ratio, market cap, balance sheet |
 
 ---
 
@@ -850,6 +853,7 @@ For an algo trading agent, it is useful to group indicators by purpose. A robust
 | Volatility | ATR, Bollinger Bands | Aggressiveness |
 | Market Structure | HH/HL, BOS, CHoCH, S/R | Price action |
 | Regime | GARCH, HMM | Market environment |
+| Fundamentals | P/E, Dividend Yield, PB, EV/EBITDA, Margins | Valuation |
 
 ---
 
@@ -1053,5 +1057,173 @@ Detects bullish or bearish divergence between price and RSI.
 | ADX/DI | Trend direction & strength | DI+ > DI- with rising ADX | DI- > DI+ with rising ADX |
 | EMA Cross | Golden/Death Cross | Short EMA crosses above long | Short EMA crosses below long |
 | RSI Divergence | Early reversal signal | Price lower low, RSI higher low | Price higher high, RSI lower high |
+
+---
+
+## 11. Fundamental Metrics: P/E Ratio & Dividend Yield
+
+Fundamental metrics provide a **valuation lens** — answering whether a stock is cheap or expensive relative to its earnings and dividends.
+
+```text
+Trend/Momentum/Volume → "Should I trade this stock?"
+Fundamentals          → "Is this stock fairly valued?"
+```
+
+These metrics are sourced from `data/pe-data/{ticker}_PE.csv` (daily time-series) and `stock.info` (static fundamentals), then merged into the final analysis file `data/analysis-data/{ticker}.csv`.
+
+### 11.1 Daily Time-Series Metrics
+
+| Column | Description | Source |
+|--------|-------------|--------|
+| `ta_eps_ttm` | Trailing Twelve-Month EPS | Quarterly income statement (4-quarter rolling sum), earnings dates, or annual (forward-filled) |
+| `ta_pe` | Price-to-Earnings Ratio | `Close / ta_eps_ttm` |
+| `ta_div_ttm` | Trailing Twelve-Month Dividend | Sum of dividends paid over the past 12 months |
+| `ta_div_yield` | Dividend Yield (%) | `(ta_div_ttm / Close) × 100` |
+
+**Data characteristics:**
+
+- EPS is fetched from multiple sources in priority order:
+  1. **Quarterly income statement** — 4-quarter rolling sum for true TTM (preferred)
+  2. **Earnings dates calendar** — reported EPS from earnings releases
+  3. **Annual income statement** — latest annual EPS, forward-filled (fallback)
+- Dividends are fetched from historical price data (yfinance `history()`).
+- For stocks with no dividend history, `ta_div_ttm` and `ta_div_yield` are NaN.
+- The P/E column (`ta_pe`) is dropped for rows where no valid EPS exists.
+
+### 11.2 Valuation Multiples (Static, from stock.info)
+
+| Column | Description | Source |
+|--------|-------------|--------|
+| `ta_pe_ttm_yf` | Trailing P/E (TTM) | yfinance `trailingPE` — may differ from `ta_pe` (different EPS calculation method) |
+| `ta_pe_forward` | Forward P/E | yfinance `forwardPE` — based on analyst estimates for next 12 months |
+| `ta_pb` | Price-to-Book Ratio | yfinance `priceToBook` or `pb_ratio` |
+| `ta_ev_revenue` | Enterprise Value / Revenue | yfinance `enterpriseToRevenue` or `ev_to_revenue` |
+| `ta_ev_ebitda` | Enterprise Value / EBITDA | yfinance `enterpriseToEbitda` or `ev_to_ebitda` |
+
+**Valuation interpretation:**
+
+```text
+P/E Ratio — How many years of earnings does the price represent?
+
+Low P/E (< 10):   Potentially undervalued (or turnaround story)
+Medium P/E (10-20): Fairly valued (market average range)
+High P/E (> 20):  Growth premium (or overvalued)
+
+P/E < Forward P/E: Earnings expected to grow (bullish)
+P/E > Forward P/E: Earnings expected to decline (bearish)
+
+P/B < 1: Stock trades below book value (deep value signal)
+```
+
+### 11.3 Growth & Margin Metrics (Static, from stock.info)
+
+| Column | Description | Source |
+|--------|-------------|--------|
+| `ta_earnings_growth` | Earnings growth (%) | yfinance `earningsGrowth` × 100 |
+| `ta_revenue_growth` | Revenue growth (%) | yfinance `revenueGrowth` × 100 |
+| `ta_profit_margin` | Profit margin (%) | yfinance `profitMargins` × 100 |
+| `ta_operating_margin` | Operating margin (%) | yfinance `operatingMargins` × 100 |
+
+**Growth interpretation:**
+
+```text
+High earnings growth + Low P/E     → Undervalued growth stock (rare, opportunity)
+High earnings growth + High P/E    → Growth stock (justify premium with sustained growth)
+Low earnings growth + Low P/E      → Value / Mature company (dividend play)
+Low earnings growth + High P/E     → Overvalued / Caution
+```
+
+### 11.4 Dividend Metrics (Static, from stock.info)
+
+| Column | Description | Source |
+|--------|-------------|--------|
+| `ta_div_rate` | Annual dividend rate per share | yfinance `dividendRate` |
+| `ta_div_yield_yf` | Dividend yield (%) | yfinance `dividendYield` |
+| `ta_div_yield_avg5y` | 5-year average dividend yield (%) | yfinance `fiveYearAvgDividendYield` |
+| `ta_payout_ratio` | Payout ratio (%) | yfinance `payoutRatio` — portion of earnings paid as dividends |
+| `ta_next_ex_div_date` | Next ex-dividend date | yfinance `exDividendDate` (Unix timestamp → datetime) |
+| `ta_div_per_share` | Dividends per share | yfinance `dividendsPerShare` |
+
+**Dividend interpretation:**
+
+```text
+Dividend Yield:
+
+Low yield (< 2%):  Growth stock — reinvesting profits, not paying dividends
+Medium yield (2-4%): Moderate income — balanced growth and income
+High yield (4-6%):  Strong income — mature, cash-generative business
+Very high yield (> 6%): Potential dividend trap — check payout ratio and earnings trend
+
+Payout Ratio:
+
+< 40%:  Sustainable — room for dividend growth
+40-60%: Moderate — healthy payout
+60-80%: High — limited room for growth, vulnerable to earnings downturn
+> 80%:  Unsustainable — dividend cut risk unless earnings are stable/growing
+```
+
+### 11.5 Balance Sheet Metrics (Static, from stock.info)
+
+| Column | Description | Source |
+|--------|-------------|--------|
+| `ta_mkt_cap` | Market capitalization | yfinance `marketCap` |
+| `ta_shares_outstanding` | Shares outstanding | yfinance `sharesOutstanding` |
+| `ta_book_value_ps` | Book value per share | yfinance `bookValue` or `bookValuePerShare` |
+| `ta_total_debt` | Total debt | yfinance `totalDebt` |
+| `ta_total_cash` | Total cash | yfinance `totalCash` |
+| `ta_debt_equity` | Debt-to-equity ratio | yfinance `debtToEquity` |
+| `ta_current_ratio` | Current ratio (liquidity) | yfinance `currentRatio` |
+| `ta_revenue_ttm` | Revenue (TTM) | yfinance `totalRevenue` |
+| `ta_ebitda_ttm` | EBITDA (TTM) | yfinance `ebitda` |
+| `ta_net_income_ttm` | Net income (TTM) | yfinance `netIncomeToCommon` |
+
+### 11.6 Combining Fundamentals with Technical Analysis
+
+Fundamentals alone cannot time entries. Technicals alone cannot assess value. The best approach combines both:
+
+```text
+VALUE + MOMENTUM (GARP — Growth At Reasonable Price)
+------------------------------------------------------
+P/E < industry average          → Fair valuation
+Earnings growth > 10%           → Growth catalyst
+Price above EMA20 & EMA50       → Uptrend confirmed
+RSI between 50-70               → Room to run, not overbought
+MACD > Signal                   → Momentum positive
+Volume > 20-day average         → Institutional participation
+→ STRONG BUY
+
+VALUE + REVERSAL
+------------------------------------------------------
+P/E < 10                        → Deep value
+Price below lower Bollinger Band → Oversold
+RSI < 30                        → Extreme oversold
+OBV flat/rising despite price drop → Accumulation
+→ POTENTIAL REVERSAL BUY
+
+DIVIDEND + STABILITY
+------------------------------------------------------
+Dividend yield > 3%             → Income-generating
+Payout ratio < 60%              → Sustainable
+Earnings stable or growing      → Dividend safe
+Price above EMA200              → Long-term uptrend
+→ DIVIDEND HOLD / BUY ON DIPS
+```
+
+### 11.7 Key Takeaway
+
+| Metric | Purpose | Interpretation |
+|--------|---------|----------------|
+| `ta_pe` (daily) | Current valuation | Low = undervalued, High = growth premium |
+| `ta_pe_ttm_yf` | YF TTM P/E | Cross-reference with `ta_pe` (different EPS method) |
+| `ta_pe_forward` | Expected P/E | P/E < Forward = earnings growth expected |
+| `ta_pb` | Price-to-book | < 1 = trades below asset value |
+| `ta_div_yield` (daily) | Current dividend yield | > 3% = income stock, > 6% = check sustainability |
+| `ta_div_yield_yf` | YF dividend yield | Cross-reference with `ta_div_yield` |
+| `ta_payout_ratio` | Dividend sustainability | < 60% = sustainable, > 80% = risk |
+| `ta_eps_ttm` (daily) | Trailing earnings per share | Basis for `ta_pe` calculation |
+| `ta_earnings_growth` | Earnings trajectory | > 10% = growth, declining = warning |
+| `ta_revenue_growth` | Top-line growth | Confirms business expansion |
+| `ta_debt_equity` | Financial leverage | < 50% = conservative, > 100% = leveraged |
+| `ta_next_ex_div_date` | Income timing | Plan for dividend income calendar |
 
 ---

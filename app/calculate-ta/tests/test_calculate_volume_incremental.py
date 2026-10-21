@@ -272,7 +272,7 @@ class TestProcessCsvIncremental:
             rows = process_csv(input_path, output_path, 1, 1)
             assert rows == 100
 
-            state_path = output_path + "_state.json"
+            state_path = output_path.replace(".csv", "_state.json")
             assert os.path.exists(state_path)
             state = _load_state(state_path)
             assert state["_version"] == 1
@@ -352,10 +352,9 @@ class TestProcessCsvIncremental:
         with tempfile.TemporaryDirectory() as tmpdir:
             input_path = os.path.join(tmpdir, "input.csv")
             output_path = os.path.join(tmpdir, "output.csv")
-            state_path = output_path + "_state.json"
+            state_path = output_path.replace(".csv", "_state.json")
 
             df.to_csv(input_path, index=False)
-
             # Create a state file with wrong version
             _save_state({"_version": 99, "prev_row_count": 50}, state_path)
 

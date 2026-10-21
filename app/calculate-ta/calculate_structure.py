@@ -526,6 +526,7 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
     int
         Total number of rows written to the output CSV.
     """
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     if isinstance(input_or_df, pd.DataFrame):
         raw_df = input_or_df.copy()
     else:
@@ -534,9 +535,11 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
     raw_df = raw_df.sort_values("Date").reset_index(drop=True)
     file_total = len(raw_df)
 
-    # State file lives alongside the output CSV
+    # State file lives in state/ subdirectory alongside the output CSV
     base, ext = os.path.splitext(output_path)
-    state_path = base + "_state.json"
+    state_dir = os.path.join(os.path.dirname(output_path), "state")
+    os.makedirs(state_dir, exist_ok=True)
+    state_path = os.path.join(state_dir, os.path.basename(base) + "_state.json")
 
     # Determine if we have previous output
     prev_output_exists = os.path.exists(output_path)
@@ -552,15 +555,38 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
 
         if file_total <= prev_row_count:
             # No new rows — but recompute in case input changed
-            # (safety net for corrupted previous state)
-            pass  # fall through to full computation below
+            # Detect today's date: if the last row's date matches today,
+            # force full recomputation so today's indicators are always
+            # up to date even without new rows.
+            today = pd.Timestamp(pd.Timestamp.now().date())
+            last_date = raw_df["Date"].iloc[-1] if file_total > 0 else None
+            overwrite_today = (
+                last_date is not None
+                and (last_date.date() == today.date() if hasattr(last_date, "date") else str(last_date) == str(today.date()))
+                and prev_output_exists
+                and file_total > 0
+            )
+            if not overwrite_today:
+                pass  # fall through to full computation below
         else:
             # There are new rows — try incremental computation
             new_row_count = file_total - prev_row_count
 
             # Load state; if missing, fall back to full computation
             state = _load_state(state_path)
-            if state is not None and state.get("_version") == 1:
+
+            # Detect today's date: if the last row's date matches today and
+            # there's existing output, force full recomputation.
+            today = pd.Timestamp(pd.Timestamp.now().date())
+            last_date = raw_df["Date"].iloc[-1] if file_total > 0 else None
+            overwrite_today = (
+                last_date is not None
+                and (last_date.date() == today.date() if hasattr(last_date, "date") else str(last_date) == str(today.date()))
+                and prev_output_exists
+                and file_total > 0
+            )
+
+            if not overwrite_today and state is not None and state.get("_version") == 1:
                 try:
                     # --- Incremental path ---
                     closes = raw_df["Close"].tolist()

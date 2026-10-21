@@ -9,9 +9,10 @@ app/
     download_stock_info.py    # P/E ratios → data/pe-data/*.csv
   analysis-pipeline/    # Prefect flow orchestrating the full pipeline
   analyse-market-data/  # Analyse market data and generate interactive HTML reports
-    analyse_ticker.py     # Generate market dashboard HTML reports
+    analyse_ticker.py     # Analyse a single ticker and generate HTML report
+    run_analysis.py       # Generate HTML reports for all tickers in ticker_list.csv
     analyse_all.py        # Generate all-tickers overview report (1Y/6M/1M sorted by 1Y)
-  analyse_sector.py     # Generate sector-level HTML reports (sorted by 1Y return)
+  analyse_sector.py     # Analyse a single sector and generate HTML report
   calculate-ta/         # TA indicator modules (see README.md for full docs)
     common.py               # Shared: read_yfinance_csv(), main() thread-pool runner
     run_calculation.py      # Orchestrator — runs modules in parallel, then merges
@@ -41,21 +42,26 @@ python app/calculate-ta/run_calculation.py --dry-run     # preview only
 python -m app.analysis_pipeline.run_pipeline
 python -m app.analysis_pipeline.run_pipeline trend momentum
 
-# 4. Analyse market data and generate HTML report (one file per ticker)
-python app/analyse-market-data/analyse_ticker.py              # all tickers
-python app/analyse-market-data/analyse_ticker.py AAPL MSFT    # specific tickers
-python app/analyse-market-data/analyse_ticker.py --dry-run    # show analysis only
+# 4. Analyse market data and generate HTML reports
 
-# Output: data/reports/{ticker}_analysis.html per ticker
+# 4a. Single ticker report
+python app/analyse-market-data/analyse_ticker.py              # single ticker (required arg)
+python app/analyse-market-data/analyse_ticker.py NG.L         # single ticker
+python app/analyse-market-data/analyse_ticker.py --dry-run NG.L   # show analysis only
 
-# 4b. Analyse sector data and generate HTML report (one file per sector)
-python app/analyse-market-data/analyse_sector.py              # all sectors
+# 4b. All tickers + sector reports + all-tickers overview (default) or tickers only
+python app/analyse-market-data/run_analysis.py              # tickers + sectors + all-tickers overview
+python app/analyse-market-data/run_analysis.py --tickers NG.L BP.L  # specific tickers + their sectors + filtered overview
+python app/analyse-market-data/run_analysis.py --no-sector    # tickers + all-tickers overview, skip sectors
+python app/analyse-market-data/run_analysis.py --dry-run    # show analysis only, no HTML
+
+# Output: data/reports/{ticker}_analysis.html per ticker, data/reports/sector_analysis_{sector}.html per sector, data/reports/all_tickers.html
+
+# 4c. Single sector report
 python app/analyse-market-data/analyse_sector.py Utilities   # specific sector
-python app/analyse-market-data/analyse_sector.py --dry-run    # show analysis only
+python app/analyse-market-data/analyse_sector.py --dry-run Utilities   # show analysis only
 
-# Output: data/reports/sector_analysis_{sector}.html per sector
-
-# 4c. All-tickers overview report (sorted by 1Y return descending)
+# 4d. All-tickers overview report standalone (sorted by 1Y return descending)
 python app/analyse-market-data/analyse_all.py              # all tickers
 python app/analyse-market-data/analyse_all.py --dry-run    # show data only
 

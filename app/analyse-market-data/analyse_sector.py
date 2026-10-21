@@ -215,11 +215,71 @@ tr:hover {{ background: #e3f2fd; }}
 # ---------------------------------------------------------------------------
 
 
+def analyse_sector(sector_name, ticker_info, available_tickers):
+    """Analyse a single sector and return sorted ticker data.
+
+    Args:
+        sector_name: Name of the sector to analyse.
+        ticker_info: Dict mapping ticker -> (company, sector).
+        available_tickers: Set of ticker names with available data.
+
+    Returns:
+        List of (ticker, company, close, latest_date, periods) sorted by 1Y return desc,
+        or None if the sector is not found or has no available tickers.
+    """
+    # Filter available tickers to this sector (excluding Index)
+    sector_tickers = []
+    for ticker in available_tickers:
+        if ticker in ticker_info:
+            company, sector = ticker_info[ticker]
+            if sector == sector_name and sector != "Index":
+                sector_tickers.append((ticker, company))
+    sector_tickers.sort(key=lambda x: x[0])
+
+    if not sector_tickers:
+        return None
+
+    # Collect period returns
+    tickers_data = []
+    for ticker, company in sector_tickers:
+        try:
+            df = load_ticker(ticker)
+            periods = _price_change_pct(df)
+            close = float(df["Close"].iloc[-1])
+            latest_date = str(df["Date"].iloc[-1])[:10]
+            tickers_data.append((ticker, company, close, latest_date, periods))
+            print(f"  {ticker}: 1Y={periods.get('1Y')}")
+        except Exception as e:
+            print(f"  {ticker}: Error - {e}")
+
+    # Sort by 1Y return descending (None values go last)
+    tickers_data.sort(key=lambda x: x[4].get("1Y") if x[4].get("1Y") is not None else -999, reverse=True)
+    return tickers_data
+
+
+def generate_sector_report(sector_name, tickers_data, output_dir):
+    """Generate HTML report for a single sector and write to file.
+
+    Args:
+        sector_name: Sector name (e.g. "Utilities").
+        tickers_data: List of (ticker, company, close, latest_date, periods).
+        output_dir: Path to output directory.
+
+    Returns:
+        Path to the generated HTML file.
+    """
+    html = generate_sector_html(sector_name, tickers_data)
+    filename = f"sector_analysis_{sector_name.replace(' ', '_')}.html"
+    output_path = Path(output_dir) / filename
+    output_path.write_text(html, encoding="utf-8")
+    return output_path
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Analyse sector data and generate HTML reports")
-    parser.add_argument("sectors", nargs="*", help="Sectors to analyse (default: all)")
+    parser = argparse.ArgumentParser(description="Analyse a single sector and generate HTML report")
+    parser.add_argument("sector", help="Sector name to analyse (e.g. Utilities)")
     parser.add_argument("--dry-run", action="store_true", help="Show analysis only, don't generate HTML")
-    parser.add_argument("--output", default=None, help="Output directory for HTML reports")
+    parser.add_argument("--output", default=None, help="Output directory for HTML report")
     args = parser.parse_args()
 
     # Load ticker info and discover available data
@@ -229,56 +289,23 @@ def main():
         print(f"No CSV files found in {ANALYSIS_DIR}")
         return
 
-    # Group by sector
-    sectors = group_by_sector(ticker_info, available)
-    if not sectors:
-        print("No sectors found (excluding Index)")
+    # Analyse the requested sector
+    tickers_data = analyse_sector(args.sector, ticker_info, available)
+    if tickers_data is None:
+        print(f"Sector '{args.sector}' not found or has no available tickers")
         return
 
-    # Filter to requested sectors if specified
-    if args.sectors:
-        sectors = {k: v for k, v in sectors.items() if k in args.sectors}
-        missing = set(args.sectors) - set(sectors.keys())
-        if missing:
-            print(f"Warning: sectors not found: {missing}")
-        if not sectors:
-            print("No matching sectors")
-            return
-
-    # Collect period returns per sector
-    sector_reports = {}
-    for sector_name in sorted(sectors.keys()):
-        tickers = sectors[sector_name]
-        print(f"Processing sector: {sector_name} ({len(tickers)} tickers)")
-        tickers_data = []
-        for ticker, company in tickers:
-            try:
-                df = load_ticker(ticker)
-                periods = _price_change_pct(df)
-                close = float(df["Close"].iloc[-1])
-                latest_date = str(df["Date"].iloc[-1])[:10]
-                tickers_data.append((ticker, company, close, latest_date, periods))
-                print(f"  {ticker}: 1Y={periods.get('1Y')}")
-            except Exception as e:
-                print(f"  {ticker}: Error - {e}")
-        # Sort by 1Y return descending (None values go last)
-        tickers_data.sort(key=lambda x: x[4].get("1Y") if x[4].get("1Y") is not None else -999, reverse=True)
-        sector_reports[sector_name] = tickers_data
+    print(f"Sector: {args.sector} ({len(tickers_data)} tickers)")
 
     if args.dry_run:
         print("\nDry run complete. Analysis shown above.")
         return
 
-    # Generate HTML reports
+    # Generate HTML report
     output_dir = Path(args.output) if args.output else DEFAULT_OUTPUT_DIR
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    for rank, (sector_name, tickers_data) in enumerate(sorted(sector_reports.items()), 1):
-        html = generate_sector_html(sector_name, tickers_data, rank)
-        filename = f"sector_analysis_{sector_name.replace(' ', '_')}.html"
-        output_path = output_dir / filename
-        output_path.write_text(html, encoding="utf-8")
-        print(f"Report written to {output_path}")
+    output_path = generate_sector_report(args.sector, tickers_data, output_dir)
+    print(f"Report written to {output_path}")
 
 
 if __name__ == "__main__":

@@ -1226,6 +1226,7 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
     int
         Total number of rows written to the output CSV.
     """
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
     if isinstance(input_or_df, pd.DataFrame):
         raw_df = input_or_df.copy()
     else:
@@ -1238,12 +1239,33 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
     highs = raw_df["High"].tolist()
     lows = raw_df["Low"].tolist()
 
-    # Determine state file path
-    state_path = output_path.rsplit(".", 1)[0] + "_state.json"
+    # Determine state file path (saved in state/ subdirectory)
+    base = output_path.rsplit(".", 1)[0]
+    state_dir = os.path.join(os.path.dirname(output_path), "state")
+    os.makedirs(state_dir, exist_ok=True)
+    state_path = os.path.join(state_dir, os.path.basename(base) + "_state.json")
 
     # Check for existing state
     state = _load_state(state_path)
-    incremental = state is not None and state.get("_version") == 1 and file_total > state.get("prev_row_count", 0)
+
+    # Detect today's date: if the last row's date matches today and there's
+    # existing output, force full recomputation so today's indicators are
+    # always up to date even without new rows.
+    today = pd.Timestamp(pd.Timestamp.now().date())
+    last_date = raw_df["Date"].iloc[-1] if file_total > 0 else None
+    overwrite_today = (
+        last_date is not None
+        and (last_date.date() == today.date() if hasattr(last_date, "date") else str(last_date) == str(today.date()))
+        and os.path.exists(output_path)
+        and file_total > 0
+    )
+
+    incremental = (
+        not overwrite_today
+        and state is not None
+        and state.get("_version") == 1
+        and file_total > state.get("prev_row_count", 0)
+    )
 
     if incremental:
         prev_row_count = state["prev_row_count"]

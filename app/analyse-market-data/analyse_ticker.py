@@ -1143,9 +1143,69 @@ body {{
 
 # --- Main ---
 
+def analyse_ticker_report(ticker_name, benchmark_periods=None, benchmark_analysis=None):
+    """Analyse a single ticker and return a complete report dict.
+
+    This is the core function used by both CLI (single ticker) and
+    batch runners (e.g. run_analysis.py).
+    """
+    if not ANALYSIS_DIR.joinpath(f"{ticker_name}.csv").exists():
+        print(f"  Error: {ticker_name}.csv not found in {ANALYSIS_DIR}")
+        return None
+
+    ticker_info = _load_ticker_info()
+    df = load_ticker(ticker_name)
+    r = analyse_ticker(df)
+    r["ticker"] = ticker_name
+    r["company_name"] = ticker_info.get(ticker_name, ticker_name)
+    r["benchmark_periods"] = benchmark_periods
+
+    # Store benchmark Close series (aligned to ticker's date range) for comparison chart
+    if ticker_name == BENCHMARK_TICKER and benchmark_analysis is not None:
+        r["benchmark_analysis"] = None
+        r["benchmark_close"] = benchmark_analysis["df"]["Close"].values
+    elif benchmark_analysis is not None:
+        r["benchmark_analysis"] = benchmark_analysis
+        bench_dates = benchmark_analysis["df"].set_index("Date")["Close"]
+        ticker_dates = df.set_index("Date")
+        aligned = bench_dates.reindex(ticker_dates.index)
+        r["benchmark_close"] = aligned.values
+    else:
+        r["benchmark_close"] = []
+
+    # Print quick summary
+    print(f"  Close={_fmt(r['close'])}, RSI={_fmt(r['rsi'],1)}, MACD_hist={_fmt(r['macd_hist'])}")
+    if r["changes"]:
+        print(f"  Changes: {', '.join(r['changes'])}")
+
+    return r
+
+
+def generate_ticker_html_report(ticker_name, benchmark_periods=None, benchmark_analysis=None, output_dir=None, dry_run=False):
+    """Analyse a single ticker and write its HTML report.
+
+    Convenience wrapper that calls analyse_ticker_report and generate_ticker_html.
+    """
+    r = analyse_ticker_report(ticker_name, benchmark_periods, benchmark_analysis)
+    if r is None:
+        return False
+
+    if dry_run:
+        print(f"  Dry run: analysis for {ticker_name} shown above.")
+        return True
+
+    out = Path(output_dir) if output_dir else DEFAULT_OUTPUT_DIR
+    out.mkdir(parents=True, exist_ok=True)
+    output_path = out / f"{r['ticker']}_analysis.html"
+    html = generate_ticker_html(r)
+    output_path.write_text(html, encoding="utf-8")
+    print(f"Report written to {output_path}")
+    return True
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Analyse market data and generate per-ticker HTML reports")
-    parser.add_argument("tickers", nargs="*", help="Tickers to analyse (default: all)")
+    parser = argparse.ArgumentParser(description="Analyse a single ticker and generate an HTML report")
+    parser.add_argument("ticker", help="Ticker to analyse (e.g. NG.L)")
     parser.add_argument("--dry-run", action="store_true", help="Show analysis only, don't generate HTML")
     parser.add_argument("--output", default=None, help="Output directory for HTML report")
     args = parser.parse_args()
@@ -1163,44 +1223,9 @@ def main():
         print(f"  Benchmark 1Y: {benchmark_periods.get('1Y')}")
         print(f"  Benchmark Close={_fmt(benchmark_analysis['close'])}, RSI={_fmt(benchmark_analysis['rsi'],1)}, MACD_hist={_fmt(benchmark_analysis['macd_hist'])}")
 
-    ticker_info = _load_ticker_info()
-    tickers = discover_tickers(args.tickers)
-    reports = []
-    for t in tickers:
-        print(f"Analysing {t}...")
-        df = load_ticker(t)
-        r = analyse_ticker(df)
-        r["ticker"] = t
-        r["company_name"] = ticker_info.get(t, t)
-        r["benchmark_periods"] = benchmark_periods
-        # Store benchmark Close series (aligned to ticker's date range) for comparison chart
-        if t == BENCHMARK_TICKER:
-            r["benchmark_analysis"] = None
-            r["benchmark_close"] = bench_df["Close"].values
-        else:
-            r["benchmark_analysis"] = benchmark_analysis
-            # Align benchmark close to ticker's dates
-            bench_dates = bench_df.set_index("Date")["Close"]
-            ticker_dates = df.set_index("Date")
-            aligned = bench_dates.reindex(ticker_dates.index)
-            r["benchmark_close"] = aligned.values
-        reports.append(r)
-        # Print quick summary
-        print(f"  Close={_fmt(r['close'])}, RSI={_fmt(r['rsi'],1)}, MACD_hist={_fmt(r['macd_hist'])}")
-        if r["changes"]:
-            print(f"  Changes: {', '.join(r['changes'])}")
-
-    if args.dry_run:
-        print("\nDry run complete. Analysis shown above.")
-        return
-
-    output_dir = Path(args.output) if args.output else DEFAULT_OUTPUT_DIR
-    output_dir.mkdir(parents=True, exist_ok=True)
-    for r in reports:
-        output_path = output_dir / f"{r['ticker']}_analysis.html"
-        html = generate_ticker_html(r)
-        output_path.write_text(html, encoding="utf-8")
-        print(f"Report written to {output_path}")
+    success = generate_ticker_html_report(args.ticker, benchmark_periods, benchmark_analysis, args.output, args.dry_run)
+    if not success:
+        parser.error(f"Failed to generate report for {args.ticker}")
 
 
 if __name__ == "__main__":

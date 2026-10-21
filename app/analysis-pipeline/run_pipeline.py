@@ -6,9 +6,10 @@ Orchestrate the full stock-data pipeline with Prefect:
   2. Download P/E ratio data           (download-market-data/download_stock_info.py)
   3. Run TA indicator calculations     (calculate-ta/run_calculation.py)
   4. Merge market + TA data into analysis (inline)
+  5. Generate HTML analysis reports    (analyse-market-data/run_analysis.py)
 
 Steps 1 & 2 run in parallel (independent downloads).
-Steps 3 & 4 run sequentially after both downloads complete.
+Steps 3, 4 & 5 run sequentially after both downloads complete.
 
 Usage:
     # Run the flow locally (no server required):
@@ -36,6 +37,7 @@ APP_DIR = PROJECT_ROOT / "app"
 DOWNLOAD_TICKERS = APP_DIR / "download-market-data" / "download_tickers.py"
 DOWNLOAD_STOCK_INFO = APP_DIR / "download-market-data" / "download_stock_info.py"
 TA_RUN_CALCULATION = APP_DIR / "calculate-ta" / "run_calculation.py"
+ANALYSIS_RUN = APP_DIR / "analyse-market-data" / "run_analysis.py"
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +162,24 @@ def merge_analysis_data() -> None:
     print(f"[MERGE] Output directory: {analysis_dir}\n")
 
 
+@task(name="generate-analysis-reports")
+def generate_analysis_reports() -> None:
+    """Run the HTML report generation pipeline."""
+    import subprocess
+
+    print(f"\n{'='*60}")
+    print("  ▶ Generate analysis HTML reports")
+    print(f"{'='*60}")
+    result = subprocess.run(
+        [sys.executable, str(ANALYSIS_RUN)],
+        cwd=str(PROJECT_ROOT),
+        check=True,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
+    print(f"  ✓ Analysis reports completed (exit code {result.returncode})")
+
+
 # ---------------------------------------------------------------------------
 # Prefect flow
 # ---------------------------------------------------------------------------
@@ -168,8 +188,8 @@ def merge_analysis_data() -> None:
     name="stock-data-pipeline",
     description=(
         "Downloads market data (OHLCV + P/E) in parallel, "
-        "runs TA indicator calculations, then merges market + TA data "
-        "into per-ticker analysis CSVs."
+        "runs TA indicator calculations, merges market + TA data "
+        "into per-ticker analysis CSVs, then generates HTML reports."
     ),
     task_runner=ThreadPoolTaskRunner,
 )
@@ -196,6 +216,9 @@ def run_pipeline(ta_args: Sequence[str] = ()) -> None:
 
     # -- Step 4: merge market + TA data into analysis ---------------------
     merge_analysis_data()
+
+    # -- Step 5: generate HTML reports ------------------------------------
+    generate_analysis_reports()
 
     print(f"\n{'='*60}")
     print("  ✓  Full pipeline completed successfully.")
