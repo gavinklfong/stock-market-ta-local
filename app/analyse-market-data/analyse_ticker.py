@@ -353,11 +353,11 @@ def load_ticker(name):
 # --- Chart Building ---
 
 def build_charts(name, df):
-    """Build 4 Plotly figures per ticker, showing the past 1 year of data."""
+    """Build 6 Plotly figures per ticker, showing the past 3 years of data."""
     df = df.sort_values("Date").reset_index(drop=True)
-    # Filter to the past 1 year for charts
-    one_year_ago = df["Date"].max() - pd.DateOffset(years=1)
-    df = df[df["Date"] >= one_year_ago].reset_index(drop=True)
+    # Filter to the past 3 years for charts
+    three_years_ago = df["Date"].max() - pd.DateOffset(years=3)
+    df = df[df["Date"] >= three_years_ago].reset_index(drop=True)
     dates = df["Date"].dt.strftime("%Y-%m-%d").tolist()
 
     # 1. OHLC + EMA
@@ -405,8 +405,8 @@ def build_charts(name, df):
 def build_volatility_chart(df):
     """Build a volatility analysis chart: ATR + Historical Volatility + Bollinger Width."""
     df = df.sort_values("Date").reset_index(drop=True)
-    one_year_ago = df["Date"].max() - pd.DateOffset(years=1)
-    df = df[df["Date"] >= one_year_ago].reset_index(drop=True)
+    three_years_ago = df["Date"].max() - pd.DateOffset(years=3)
+    df = df[df["Date"] >= three_years_ago].reset_index(drop=True)
     dates = df["Date"].dt.strftime("%Y-%m-%d").tolist()
 
     fig = go.Figure()
@@ -445,11 +445,84 @@ def build_volatility_chart(df):
     return fig
 
 
+def build_pe_chart(df):
+    """Build a P/E ratio chart: P/E over time with valuation zones."""
+    df = df.sort_values("Date").reset_index(drop=True)
+    three_years_ago = df["Date"].max() - pd.DateOffset(years=3)
+    df = df[df["Date"] >= three_years_ago].reset_index(drop=True)
+    dates = df["Date"].dt.strftime("%Y-%m-%d").tolist()
+
+    fig = go.Figure()
+
+    # P/E ratio line
+    if "ta_pe" in df.columns:
+        fig.add_trace(go.Scatter(
+            x=dates, y=df["ta_pe"], mode="lines", name="P/E Ratio",
+            line=dict(color="#1976d2", width=2), yaxis="y"
+        ))
+
+    # Earnings per share (TTM) — right axis
+    if "ta_eps_ttm" in df.columns:
+        fig.add_trace(go.Scatter(
+            x=dates, y=df["ta_eps_ttm"], mode="lines", name="EPS (TTM)",
+            line=dict(color="#e53935", width=1.5, dash="dash"), yaxis="y2"
+        ))
+
+    # Valuation reference lines on P/E axis
+    fig.add_hline(y=25, line_dash="dot", line_color="#ef5350", opacity=0.4)
+    fig.add_hline(y=15, line_dash="dot", line_color="#26a69a", opacity=0.4)
+
+    # Shaded valuation zones
+    # Overvalued zone (P/E > 25)
+    fig.add_hrect(y0=25, y1=df["ta_pe"].max() if "ta_pe" in df.columns and df["ta_pe"].notna().any() else 30,
+                  line_width=0, fillcolor="rgba(239,83,80,0.05)", opacity=0.5)
+    # Fair value zone (15-25)
+    fig.add_hrect(y0=15, y1=25, line_width=0, fillcolor="rgba(255,193,7,0.05)", opacity=0.5)
+    # Undervalued zone (P/E < 15)
+    pe_min = df["ta_pe"].min() if "ta_pe" in df.columns and df["ta_pe"].notna().any() else 0
+    fig.add_hrect(y0=pe_min, y1=15, line_width=0, fillcolor="rgba(38,166,154,0.05)", opacity=0.5)
+
+    # Current value annotation
+    if "ta_pe" in df.columns and df["ta_pe"].notna().any():
+        current_pe = df["ta_pe"].iloc[-1]
+        pe_label = "Overvalued" if current_pe > 25 else "Fair" if current_pe > 15 else "Undervalued"
+        pe_color = "#ef5350" if current_pe > 25 else "#ffc107" if current_pe > 15 else "#26a69a"
+        fig.add_annotation(
+            x=dates[-1], y=current_pe, xref="x", yref="y",
+            text=f"P/E: {current_pe:.1f}",
+            showarrow=False, font=dict(color=pe_color, size=12, family="monospace"),
+            bgcolor="rgba(255,255,255,0.92)", bordercolor=pe_color, borderwidth=1.5,
+            xanchor="left", yanchor="bottom", yshift=8
+        )
+        fig.add_annotation(
+            x=dates[-1], y=current_pe - 1.5 if current_pe > 15 else current_pe + 1.5, xref="x", yref="y",
+            text=pe_label,
+            showarrow=False, font=dict(color=pe_color, size=10),
+            bgcolor="rgba(255,255,255,0.85)", bordercolor=pe_color, borderwidth=1,
+            xanchor="left", yshift=12 if current_pe > 15 else -12
+        )
+
+    fig.update_layout(
+        hovermode="x unified",
+        height=320,
+        margin=dict(l=50, r=20, t=30, b=40),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
+        yaxis=dict(title_text="P/E Ratio", side="left", gridcolor="#f1f5f9", range=[
+            min(0, pe_min - 1) if "ta_pe" in df.columns and df["ta_pe"].notna().any() else 0,
+            max(30, (df["ta_pe"].max() if "ta_pe" in df.columns and df["ta_pe"].notna().any() else 30) + 2)
+        ]),
+        yaxis2=dict(title_text="EPS", side="right", overlaying="y", gridcolor="rgba(0,0,0,0)"),
+    )
+    return fig
+
+
 def build_structure_chart(df):
     """Build a market structure chart: swing highs/lows, S/R levels, structure events on price."""
     df = df.sort_values("Date").reset_index(drop=True)
-    one_year_ago = df["Date"].max() - pd.DateOffset(years=1)
-    df = df[df["Date"] >= one_year_ago].reset_index(drop=True)
+    three_years_ago = df["Date"].max() - pd.DateOffset(years=3)
+    df = df[df["Date"] >= three_years_ago].reset_index(drop=True)
     dates = df["Date"].dt.strftime("%Y-%m-%d").tolist()
 
     fig = go.Figure()
@@ -539,10 +612,10 @@ def build_structure_chart(df):
 
 
 def build_comparison_chart(name, df, bench_close):
-    """Build a chart comparing cumulative % price change of the stock vs FTSE 100 over the past 1 year."""
+    """Build a chart comparing cumulative % price change of the stock vs FTSE 100 over the past 3 years."""
     df = df.sort_values("Date").reset_index(drop=True)
-    one_year_ago = df["Date"].max() - pd.DateOffset(years=1)
-    df = df[df["Date"] >= one_year_ago].reset_index(drop=True)
+    three_years_ago = df["Date"].max() - pd.DateOffset(years=3)
+    df = df[df["Date"] >= three_years_ago].reset_index(drop=True)
     dates = df["Date"].dt.strftime("%Y-%m-%d").tolist()
 
     # Calculate cumulative % change from the first date in the window
@@ -727,6 +800,77 @@ def _summary_table_html(report):
     regime_cur = regime
     regime_prev_label = regime_labels.get(int(report.get("prev_regime", -1)), "N/A")
 
+    # PE / Fundamental metrics
+    ta_pe = report.get("ta_pe")
+    ta_eps = report.get("ta_eps_ttm")
+    ta_div_yield = report.get("ta_div_yield")
+    if ta_pe is not None:
+        if ta_pe < 10:
+            pe_label = f"{_fmt(ta_pe,1)} (Deep Value)"
+        elif ta_pe < 15:
+            pe_label = f"{_fmt(ta_pe,1)} (Undervalued)"
+        elif ta_pe < 20:
+            pe_label = f"{_fmt(ta_pe,1)} (Fair)"
+        elif ta_pe < 30:
+            pe_label = f"{_fmt(ta_pe,1)} (Premium)"
+        else:
+            pe_label = f"{_fmt(ta_pe,1)} (Overvalued)"
+    else:
+        pe_label = "N/A"
+
+    # ATR % context
+    ta_atr_pct = report.get("ta_atr_pct")
+    if ta_atr_pct is not None:
+        atr_label = f"{_fmt(ta_atr_pct,2)}% ({'High' if ta_atr_pct > 2 else 'Normal' if ta_atr_pct > 1 else 'Low'})"
+    else:
+        atr_label = "N/A"
+
+    # BB %B context
+    ta_pctb = report.get("ta_bband_pctb")
+    if ta_pctb is not None:
+        bb_label = f"{_fmt(ta_pctb,3)} ({'Near Upper' if ta_pctb > 0.9 else 'Near Lower' if ta_pctb < 0.1 else 'Middle'})"
+    else:
+        bb_label = "N/A"
+
+    # Stochastic context
+    ta_stoch_k = report.get("ta_stoch_k")
+    ta_stoch_d = report.get("ta_stoch_d")
+    if ta_stoch_k is not None and ta_stoch_d is not None:
+        stoch_state = ""
+        if ta_stoch_k > 80:
+            stoch_state = " (Overbought)"
+        elif ta_stoch_k < 20:
+            stoch_state = " (Oversold)"
+        stoch_label = f"%K:{_fmt(ta_stoch_k,1)} / %D:{_fmt(ta_stoch_d,1)}{stoch_state}"
+    else:
+        stoch_label = "N/A"
+
+    # RSI Percentile
+    ta_rsi_pct = report.get("ta_rsi_percentile")
+    if ta_rsi_pct is not None:
+        rsi_pct_label = f"{_fmt(ta_rsi_pct,0)}% ({'Elevated' if ta_rsi_pct > 75 else 'Depressed' if ta_rsi_pct < 25 else 'Normal'})"
+    else:
+        rsi_pct_label = "N/A"
+
+    # ADX context
+    ta_adx = report.get("ta_adx14")
+    if ta_adx is not None:
+        adx_label = f"{_fmt(ta_adx,1)} ({'Strong' if ta_adx > 25 else 'Weak' if ta_adx < 20 else 'Moderate'} trend)"
+    else:
+        adx_label = "N/A"
+
+    # CCI context
+    ta_cci = report.get("ta_cci")
+    if ta_cci is not None:
+        cci_state = ""
+        if ta_cci > 100:
+            cci_state = " (Overbought)"
+        elif ta_cci < -100:
+            cci_state = " (Oversold)"
+        cci_label = f"{_fmt(ta_cci,1)}{cci_state}"
+    else:
+        cci_label = "N/A"
+
     def cmp_row(label, cur_val, prev_val):
         return f"<tr><td class='label-col'>{label}</td>{cell(cur_val, 2 if not isinstance(cur_val, str) else 0)}{cell(prev_val, 2 if not isinstance(prev_val, str) else 0)}</tr>"
 
@@ -773,6 +917,15 @@ def _summary_table_html(report):
 {badge_row("CMF(20)", cmf, "Positive" if cmf else "Negative", cmf_prev_pos, cmf_prev, "cmf")}
 <tr><td class="label-col">Regime</td><td class="metric-value">{regime_cur}</td><td class="metric-value">{regime_prev_label}</td></tr>
 {badge_row("ROC(20)", roc, "Positive" if roc else "Negative", roc_prev_pos, roc_prev, "roc")}
+<tr><td class="label-col">P/E Ratio</td><td class="metric-value">{pe_label}</td><td class="metric-value"></td></tr>
+<tr><td class="label-col">EPS (TTM)</td><td class="metric-value">{f"{_fmt(ta_eps, 4)}" if ta_eps else "N/A"}</td><td class="metric-value"></td></tr>
+<tr><td class="label-col">Div Yield</td><td class="metric-value">{f"{_fmt(ta_div_yield, 2)}%" if ta_div_yield else "N/A"}</td><td class="metric-value"></td></tr>
+<tr><td class="label-col">ATR(14) %</td><td class="metric-value">{atr_label}</td><td class="metric-value"></td></tr>
+<tr><td class="label-col">BB %B</td><td class="metric-value">{bb_label}</td><td class="metric-value"></td></tr>
+<tr><td class="label-col">Stoch %K/%D</td><td class="metric-value">{stoch_label}</td><td class="metric-value"></td></tr>
+<tr><td class="label-col">RSI Percentile</td><td class="metric-value">{rsi_pct_label}</td><td class="metric-value"></td></tr>
+<tr><td class="label-col">ADX(14)</td><td class="metric-value">{adx_label}</td><td class="metric-value"></td></tr>
+<tr><td class="label-col">CCI(20)</td><td class="metric-value">{cci_label}</td><td class="metric-value"></td></tr>
 </tbody>
 </table>
 </div>"""
@@ -916,17 +1069,19 @@ def generate_ticker_html(report):
     # Build additional charts
     vol_fig = build_volatility_chart(report["df"])
     struct_fig = build_structure_chart(report["df"])
+    pe_fig = build_pe_chart(report["df"])
 
-    # Order: OHLC, Comparison, Volume+OBV, MACD, RSI+BB, Volatility, Structure
-    all_figs = [figs[0], comp_fig] + figs[1:] + [vol_fig, struct_fig]
+    # Order: OHLC, Comparison, Volume+OBV, MACD, RSI+BB, Volatility, Structure, P/E
+    all_figs = [figs[0], comp_fig] + figs[1:] + [vol_fig, struct_fig, pe_fig]
     chart_titles = [
         "Price (OHLC + EMA)",
-        "1Y Price Change Comparison",
+        "3Y Price Change Comparison",
         "Volume + OBV",
         "MACD",
         "RSI + Bollinger Bands",
         "Volatility (ATR + Historical Volatility)",
         "Market Structure (Swing Points, S/R, Donchian)",
+        "P/E Ratio & EPS (TTM)",
     ]
     charts = ""
     for i, fig in enumerate(all_figs):
@@ -1172,6 +1327,23 @@ def analyse_ticker_report(ticker_name, benchmark_periods=None, benchmark_analysi
         r["benchmark_close"] = aligned.values
     else:
         r["benchmark_close"] = []
+
+    # Extract PE / fundamental data from the DataFrame
+    L = df.iloc[-1]
+    r["ta_pe"] = _v(L, "ta_pe")
+    r["ta_eps_ttm"] = _v(L, "ta_eps_ttm")
+    r["ta_div_yield"] = _v(L, "ta_div_yield")
+    r["ta_div_ttm"] = _v(L, "ta_div_ttm")
+
+    # Extract additional key metrics for the Quick Summary
+    r["ta_atr_pct"] = _v(L, "ta_normalized_atr14")
+    r["ta_bband_pctb"] = _v(L, "ta_bband_pctb")
+    r["ta_stoch_k"] = _v(L, "ta_stoch_k")
+    r["ta_stoch_d"] = _v(L, "ta_stoch_d")
+    r["ta_rsi_percentile"] = _v(L, "ta_rsi_percentile")
+    r["ta_adx14"] = _v(L, "ta_adx14")
+    r["ta_cci"] = _v(L, "ta_cci")
+    r["ta_hvol20"] = _v(L, "ta_hvol20")
 
     # Print quick summary
     print(f"  Close={_fmt(r['close'])}, RSI={_fmt(r['rsi'],1)}, MACD_hist={_fmt(r['macd_hist'])}")

@@ -58,7 +58,7 @@ python run_test.py calculate-ta                 # TA module tests only
 |--------|---------------|
 | `trend` | EMA20/50/200, SuperTrend, SMA10/20/50, MA slopes, price/MA20 ratio, price/EMA distance, Aroon, ADX/DI, Donchian, Keltner |
 | `momentum` | RSI(14), MACD (line/signal/histogram), ROC(20), Williams %R(14), CCI(20), TSI(25,13), RSI Z-Score, RSI Percentile |
-| `volume` | OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14), EMV(14), Volume Oscillator, Volume Z-Score, Volume Percentile |
+| `volume` | OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14), EMV(14), Volume Oscillator, Volume Z-Score, Volume Percentile, OBV Slope(14), OBV Slope(7) |
 | `volatility` | ATR(14), Bollinger Bands(20,2), Band Width, %B, Historical Volatility, Parkinson Volatility, ATR Stop, ATR Position Size, Reward Risk Ratio, ATR Percentile |
 | `regime` | GARCH(1,1) vol forecast, 3-state HMM regime |
 | `structure` | Swing highs/lows, HH/HL/LH/LL, BOS, CHoCH, S/R levels |
@@ -446,6 +446,44 @@ If Close < Previous Close: OBV = Previous OBV - Volume
 **Bearish OBV:** Price falls and OBV falls.
 **Divergence:** OBV rising while price falling = accumulation.
 
+### 5.1.1 OBV Slope
+
+#### `ta_obv_slope_14` (14-day OBV slope) and `ta_obv_slope_7` (7-day OBV slope)
+
+Computes the slope of OBV over a rolling lookback window using least-squares linear regression. Unlike the raw OBV value, the slope measures the **rate of change** of volume flow — whether volume accumulation is accelerating or decelerating.
+
+```text
+Positive slope  → OBV rising (volume accumulation)
+Negative slope  → OBV falling (volume distribution)
+Steep slope     → Strong volume momentum
+Flattening slope → Volume momentum weakening
+```
+
+**Interpretation:**
+
+```text
+Strong Buy Signal:
+  Price rising AND OBV slope > 0 (accelerating)
+
+Weakening Trend (Sell Warning):
+  Price rising BUT OBV slope declining toward zero
+  → Volume support fading despite price gains
+
+Strong Sell Signal:
+  Price falling AND OBV slope < 0 (accelerating)
+
+Accumulation (Bullish):
+  Price falling BUT OBV slope > 0
+  → Smart money accumulating despite price weakness
+```
+
+**7-day vs 14-day comparison:**
+
+```text
+ta_obv_slope_7 > ta_obv_slope_14 → Short-term volume accelerating faster
+ta_obv_slope_7 < ta_obv_slope_14 → Short-term volume decelerating (divergence warning)
+```
+
 ### 5.2 CMF (Chaikin Money Flow)
 
 Measures money flow over a set period.
@@ -514,6 +552,7 @@ Volume > 20-day average
 | CMF(20) | Money flow | CMF > 0 | CMF < 0 |
 | VWAP | Intraday average price | Price above VWAP | Price below VWAP |
 | MFI(14) | Volume-weighted RSI | MFI < 20 then crosses above | MFI > 80 then crosses below |
+| OBV Slope(14/7) | Volume flow acceleration | OBV slope > 0 and rising | OBV slope < 0 and falling |
 
 ---
 

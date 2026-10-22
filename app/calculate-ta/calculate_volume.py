@@ -955,6 +955,51 @@ def compute_volume_percentile(volumes, window=20):
     return result
 
 
+def compute_obv_slope(obv_values, period):
+    """Compute the slope of OBV over a rolling lookback period using least-squares regression.
+
+    Parameters
+    ----------
+    obv_values : list[float]
+        OBV values aligned with input data.
+    period : int
+        Lookback window for slope calculation.
+
+    Returns
+    -------
+    list[float | None]
+        Slope values aligned with input; None before warmup.
+    """
+    n = len(obv_values)
+    result = [None] * n
+
+    if n < period:
+        return result
+
+    for i in range(period - 1, n):
+        # Use the most recent `period` OBV values
+        window = [float(obv_values[j]) for j in range(i - period + 1, i + 1)]
+
+        # Check for NaN / invalid values in the window
+        if any(v is None or math.isnan(v) for v in window):
+            result[i] = None
+            continue
+
+        # Least-squares linear regression: slope = (n*Σxy - Σx*Σy) / (n*Σx² - (Σx)²)
+        x_mean = (period - 1) / 2.0
+        y_mean = sum(window) / period
+
+        num = sum((j - x_mean) * (window[j] - y_mean) for j in range(period))
+        den = sum((j - x_mean) ** 2 for j in range(period))
+
+        if den == 0:
+            result[i] = 0.0
+        else:
+            result[i] = num / den
+
+    return result
+
+
 def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     """Compute all volume indicator columns for a single ticker's data."""
     ta_obv = compute_obv(closes, volumes)
@@ -969,6 +1014,10 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
     ta_volume_zscore = compute_volume_zscore(volumes) if n >= 20 else [None] * n
     ta_volume_percentile = compute_volume_percentile(volumes) if n >= 20 else [None] * n
 
+    # OBV slope indicators
+    ta_obv_slope_14 = compute_obv_slope(ta_obv, 14) if n >= 14 else [None] * n
+    ta_obv_slope_7 = compute_obv_slope(ta_obv, 7) if n >= 7 else [None] * n
+
     return {
         "ta_obv": ta_obv,
         "ta_cmf": ta_cmf,
@@ -981,6 +1030,8 @@ def compute_volume_columns(highs, lows, closes, volumes, n, opens=None):
         "ta_volume_osc": ta_volume_osc,
         "ta_volume_zscore": ta_volume_zscore,
         "ta_volume_percentile": ta_volume_percentile,
+        "ta_obv_slope_14": ta_obv_slope_14,
+        "ta_obv_slope_7": ta_obv_slope_7,
     }
 
 
@@ -1068,6 +1119,10 @@ def compute_volume_columns_incremental(highs, lows, closes, volumes, n, opens=No
             volumes, 20, boundary_start
         ) if n >= 20 else [None] * n
 
+        # ---- OBV slope (depends on ta_obv which is already incremental) ----
+        ta_obv_slope_14 = compute_obv_slope(ta_obv, 14) if n >= 14 else [None] * n
+        ta_obv_slope_7 = compute_obv_slope(ta_obv, 7) if n >= 7 else [None] * n
+
     else:
         # Full recomputation
         ta_obv = compute_obv(closes, volumes)
@@ -1082,6 +1137,10 @@ def compute_volume_columns_incremental(highs, lows, closes, volumes, n, opens=No
         ta_volume_zscore = compute_volume_zscore(volumes) if n >= 20 else [None] * n
         ta_volume_percentile = compute_volume_percentile(volumes) if n >= 20 else [None] * n
 
+        # OBV slope indicators
+        ta_obv_slope_14 = compute_obv_slope(ta_obv, 14) if n >= 14 else [None] * n
+        ta_obv_slope_7 = compute_obv_slope(ta_obv, 7) if n >= 7 else [None] * n
+
     return {
         "ta_obv": ta_obv,
         "ta_cmf": ta_cmf,
@@ -1094,6 +1153,8 @@ def compute_volume_columns_incremental(highs, lows, closes, volumes, n, opens=No
         "ta_volume_osc": ta_volume_osc,
         "ta_volume_zscore": ta_volume_zscore,
         "ta_volume_percentile": ta_volume_percentile,
+        "ta_obv_slope_14": ta_obv_slope_14,
+        "ta_obv_slope_7": ta_obv_slope_7,
     }
 
 
@@ -1204,6 +1265,6 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
 
 main(
     module_name="calculate_volume",
-    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14), EMV(14), Volume Oscillator(14,28), Volume Z-Score(20), Volume Percentile(20)",
+    description="volume indicators: OBV, CMF(20), VWAP(20), OFI, log volume, ADL, MFI(14), EMV(14), Volume Oscillator(14,28), Volume Z-Score(20), Volume Percentile(20), OBV Slope(14), OBV Slope(7)",
     process_csv_fn=process_csv,
 )

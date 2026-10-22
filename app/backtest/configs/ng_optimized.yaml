@@ -1,0 +1,45 @@
+# NG.L mean-reversion optimized config
+# Uses only the best-performing strategies for this commodity
+#
+# Usage:  python app/backtest/run_backtest.py NG.L -c app/backtest/configs/ng_optimized.yaml
+
+strategies:
+  # NG.L Optimized strategies (Config 1 & 2)
+  - module: bb_meanrev_optimized
+    label: "BB MeanRev Opt. (Config 1)"
+  - module: bb_meanrev_entry2
+    label: "BB MeanRev Entry2 (Config 2)"
+  # Strong mean-reversion strategies
+  - module: bb_meanrev
+    label: "BB Mean Reversion (Baseline)"
+  - module: bb_meanrev_upper
+    label: "BB MeanRev (Upper Exit)"
+  - module: bb_meanrev_atr
+    label: "BB MeanRev (ATR Trail)"
+  - module: vol_filtered_meanrev
+    label: "Vol-Filtered MeanRev"
+  - module: dual_exit_meanrev
+    label: "Dual-Exit MeanRev"
+  - module: macd_divergence_rev
+    label: "MACD Divergence Rev"
+  - module: short_meanrev
+    label: "Short-Term MeanRev"
+  - module: rsi_macd_rev
+    label: "RSI+MACD Reversal"
+
+custom_indicators:
+  - ta_bband_lower
+  - ta_bband_middle
+  - ta_bband_upper
+  - ta_rsi14
+  - ta_williams_r
+  - ta_cci
+  - ta_atr14
+  - ta_macd_line
+  - ta_macd_signal
+  - ta_macd_histogram
+  - ta_cmf
+  - ta_ofi
+
+custom_dir: ../custom
+trailing_pct: 0.05

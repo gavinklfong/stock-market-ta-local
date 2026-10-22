@@ -1,0 +1,47 @@
+# Trend-following config for stock tickers (HSBA.L, AZN.L, SSE.L, etc.)
+# Uses individual + combination trend strategies
+#
+# Usage:  python app/backtest/run_backtest.py HSBA.L -c app/backtest/configs/trend_stock.yaml
+
+strategies:
+  # Core trend strategies
+  - module: golden_cross
+    label: "Golden Cross Trend"
+  - module: ema_pullback
+    label: "EMA Pullback"
+  - module: supertrend_plus
+    label: "SuperTrend+"
+  - module: ema_pullback_vol
+    label: "EMA Pullback + Volume"
+  - module: institutional
+    label: "Institutional Accum"
+  - module: vwap
+    label: "VWAP Trend"
+  # Combination trend strategies
+  - module: trend_momentum
+    label: "Trend+Momentum Combo"
+  - module: vol_structure
+    label: "Vol+Structure Combo"
+  - module: score80
+    label: "Score 80+"
+  - module: multiscore60
+    label: "MultiScore 60+"
+  # Structure-based
+  - module: marketstruct
+    label: "Market Structure"
+  - module: bos_breakout
+    label: "BOS Breakout"
+  - module: choch
+    label: "CHoCH Reversal"
+  - module: vol_breakout_rev
+    label: "Vol Breakout Rev"
+  # Regime-aware
+  - module: hmm_regime
+    label: "HMM Regime"
+  - module: regime_adaptive
+    label: "Regime-Adaptive"
+  - module: highprob_multi
+    label: "High-Prob Multi-Factor"
+
+custom_dir: ../custom
+trailing_pct: 0.05
