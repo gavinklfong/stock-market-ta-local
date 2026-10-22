@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 # ---------------------------------------------------------------------------
@@ -77,7 +78,57 @@ def generate_report(
     table_df = pd.DataFrame(ranked)
     # Drop the raw Portfolio object (kept in results for chart tabs only)
     table_df.drop(columns=["Portfolio"], inplace=True, errors="ignore")
-    table_html = table_df.to_html(index=False, classes="table", float_format="%.2f")
+
+    # Build a styled table: positive=green, negative=red text,
+    # row background=light green for positive total return.
+    # Using apply(axis=1) because pandas 3.x Styler.map only passes the
+    # scalar value (no row index). apply(axis=1) receives the full row
+    # so we can check Total Return while styling each cell.
+    if len(table_df) > 0 and table_df.select_dtypes("number").shape[1] > 0:
+        num_cols = list(table_df.select_dtypes("number").columns)
+
+        def _row_style(row):
+            """Return a Series of inline styles — one per cell.
+
+            Each cell gets green/red text colour and, for rows with
+            positive Total Return, a light-green background.
+            """
+            tr = row.get("Total Return (%)")
+            is_pos_row = isinstance(tr, (int, float, np.integer)) and tr > 0
+            styles = []
+            for col in row.index:
+                if col not in num_cols:
+                    styles.append("")
+                    continue
+                val = row[col]
+                if not isinstance(val, (int, float, np.integer)):
+                    styles.append("")
+                    continue
+                # Text colour: green for positive, red for negative
+                if val > 0:
+                    txt = "color: #22c55e; font-weight: bold"
+                elif val < 0:
+                    txt = "color: #ef4444; font-weight: bold"
+                else:
+                    txt = ""
+                # Row background — ALL cells in positive-return rows
+                bg = "background-color: #d1fae5; " if is_pos_row else ""
+                styles.append(bg + txt if txt else bg)
+            return pd.Series(styles, index=row.index)
+
+        styler = table_df.style.format(
+            formatter={c: ("{:.2f}".format) for c in num_cols},
+        ).apply(
+            _row_style,
+            axis=1,
+        )
+        table_html = styler.set_table_attributes(
+            'class="dataframe table"',
+        ).to_html(
+            escape=False,
+        )
+    else:
+        table_html = table_df.to_html(index=False, classes="table", float_format="%.2f")
 
     # ======================================================================
     # Tab 2: Equity Curves
@@ -199,6 +250,15 @@ def generate_report(
     # ======================================================================
     best = ranked[0] if ranked else None
     best_html = "<p>No results to display.</p>"
+
+    def _fmt_metric(val) -> str:
+        """Format a metric value with color: green if positive, red if negative."""
+        if val is None or pd.isna(val):
+            return str(val)
+        v = float(val)
+        cls = "c-pos" if v > 0 else "c-neg" if v < 0 else ""
+        return f'<span class="{cls}">{v:.2f}</span>' if cls else f"<span>{v:.2f}</span>"
+
     if best:
         best_name = best.get("Strategy", "Unknown")
         best_pf = portfolio_map.get(best_name)
@@ -252,6 +312,8 @@ def generate_report(
     .table td:first-child {{ text-align: left; }}
     .card {{ background: #fff; padding: 16px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 12px; }}
     .card > div.plotly-graph-div {{ overflow: visible !important; }}
+    .c-pos {{ color: #22c55e !important; font-weight: bold; }}
+    .c-neg {{ color: #ef4444 !important; font-weight: bold; }}
 </style>
 </head>
 <body>
@@ -282,11 +344,11 @@ def generate_report(
 <div id="detail" class="tab-content">
     <div class="card">
         <h3>Best Strategy: {best_name if best else 'N/A'}</h3>
-        <p><strong>Total Return:</strong> {best.get('Total Return (%)', 'N/A')}% &nbsp;
-           <strong>Sharpe:</strong> {best.get('Sharpe Ratio', 'N/A')} &nbsp;
-           <strong>PF:</strong> {best.get('Profit Factor', 'N/A')} &nbsp;
-           <strong>Max DD:</strong> {best.get('Max Drawdown (%)', 'N/A')}% &nbsp;
-           <strong>Win Rate:</strong> {best.get('Win Rate (%)', 'N/A')}%</p>
+        <p><strong>Total Return:</strong> {_fmt_metric(best.get('Total Return (%)'))}% &nbsp;
+           <strong>Sharpe:</strong> {_fmt_metric(best.get('Sharpe Ratio'))} &nbsp;
+           <strong>PF:</strong> {_fmt_metric(best.get('Profit Factor'))} &nbsp;
+           <strong>Max DD:</strong> {_fmt_metric(best.get('Max Drawdown (%)'))}% &nbsp;
+           <strong>Win Rate:</strong> {_fmt_metric(best.get('Win Rate (%)'))}%</p>
         {best_html}
     </div>
 </div>
