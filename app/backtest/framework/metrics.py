@@ -2,11 +2,35 @@
 
 from __future__ import annotations
 
+import math
+
+import numpy as np
 import pandas as pd
 
 # Standard constants (mirrors existing scripts)
 RISK_FREE = 0.05
 TRADE_FREQ = 252
+
+
+def _safe_float(val, default=0.0) -> float:
+    """Convert to float, replacing inf/NaN with default."""
+    if val is None or pd.isna(val):
+        return default
+    f = float(val)
+    if math.isinf(f) or math.isnan(f):
+        return default
+    return f
+
+
+def _timedelta_days(val) -> float:
+    """Extract integer days from a pandas Timedelta."""
+    if val is None or pd.isna(val):
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    if hasattr(val, "days"):
+        return float(val.days)
+    return 0.0
 
 
 def calculate_metrics(pf) -> dict:
@@ -16,37 +40,41 @@ def calculate_metrics(pf) -> dict:
     """
     stats = pf.stats()
 
-    def _get(key: str, default=0.0):
-        val = stats.get(key, default)
-        if pd.isna(val):
-            return default
-        return float(val)
+    # --- Percentage fields ---
+    total_return_pct = _safe_float(stats.get("Total Return [%]", 0.0))
+    max_dd_pct = _safe_float(stats.get("Max Drawdown [%]", 0.0))
+    avg_dd_pct = _safe_float(stats.get("Average Drawdown [%]", 0.0))
+    win_rate_pct = _safe_float(stats.get("Win Rate [%]", 0.0))
 
-    # Convert percentage fields to consistent units
-    total_return_pct = _get("Total Return [%]", 0.0)
-    max_dd_pct = _get("Max Drawdown [%]", 0.0)
-    avg_dd_pct = _get("Average Drawdown [%]", 0.0)
-    win_rate_pct = _get("Win Rate [%]", 0.0)
+    # --- Ratios (may be inf) ---
+    sharpe = _safe_float(stats.get("Sharpe Ratio", 0.0))
+    calmar = _safe_float(stats.get("Calmar Ratio", 0.0))
+    profit_factor = _safe_float(stats.get("Profit Factor", 0.0))
 
-    # Calculate Sharpe and Calmar if available (annualized)
-    sharpe = _get("Sharpe Ratio", 0.0)
-    calmar = _get("Calmar Ratio", 0.0)
+    # --- Trade counts ---
+    total_trades = int(_safe_float(stats.get("Total Trades", 0)))
 
-    # Additional useful metrics
-    total_trades = int(_get("Total Trades", 0))
-    profit_factor = _get("Profit Factor", 0.0)
+    # Calculate wins/losses from trades P&L
+    trades = pf.trades
+    pnl = trades.pnl
+    pnl_vals = pnl.values if hasattr(pnl, "values") else np.asarray(pnl)
+    total_wins = int((pnl_vals > 0).sum())
+    total_losses = int((pnl_vals < 0).sum())
+
+    # --- Trade size metrics ---
+    largest_win = _safe_float(stats.get("Best Trade [%]", 0.0))
+    largest_loss = _safe_float(stats.get("Worst Trade [%]", 0.0))
+    avg_win = _safe_float(stats.get("Avg Winning Trade [%]", 0.0))
+    avg_loss = _safe_float(stats.get("Avg Losing Trade [%]", 0.0))
+
+    # --- Duration metrics (vectorbt returns Timedelta objects) ---
+    avg_trade_duration = _safe_float(stats.get("Average Trade Duration [days]", 0.0))
+    avg_win_duration = _timedelta_days(stats.get("Avg Winning Trade Duration"))
+    avg_loss_duration = _timedelta_days(stats.get("Avg Losing Trade Duration"))
+    avg_drawdown_duration = _timedelta_days(stats.get("Average Drawdown Duration"))
+    max_drawdown_duration = _timedelta_days(stats.get("Max Drawdown Duration"))
+
     final_value = float(pf.final_value())
-    total_wins = int(_get("Total Wins", 0))
-    total_losses = int(_get("Total Losses", 0))
-    largest_win = float(_get("Largest Win [%]", 0.0))
-    largest_loss = float(_get("Largest Loss [%]", 0.0))
-    avg_win = float(_get("Average Win [%]", 0.0))
-    avg_loss = float(_get("Average Loss [%]", 0.0))
-    avg_trade_duration = _get("Average Trade Duration [days]", 0.0)
-    avg_win_duration = _get("Average Win Duration [days]", 0.0)
-    avg_loss_duration = _get("Average Loss Duration [days]", 0.0)
-    avg_drawdown_duration = _get("Average Drawdown Duration [days]", 0.0)
-    max_drawdown_duration = _get("Max Drawdown Duration [days]", 0.0)
 
     return {
         "Total Return (%)": round(total_return_pct, 2),

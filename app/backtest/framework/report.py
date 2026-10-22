@@ -75,6 +75,8 @@ def generate_report(
     # Tab 1: Summary Table
     # ======================================================================
     table_df = pd.DataFrame(ranked)
+    # Drop the raw Portfolio object (kept in results for chart tabs only)
+    table_df.drop(columns=["Portfolio"], inplace=True, errors="ignore")
     table_html = table_df.to_html(index=False, classes="table", float_format="%.2f")
 
     # ======================================================================
@@ -112,6 +114,7 @@ def generate_report(
                 name=f"{label} DD",
                 line=dict(width=1, color=color),
                 opacity=0.6,
+                showlegend=False,
             ),
             row=2, col=1,
         )
@@ -129,16 +132,26 @@ def generate_report(
     )
 
     fig_eq.update_layout(
-        title=report_title,
-        height=900,
+        title=dict(text=report_title, x=0.5, xanchor="center"),
+        width=1200,
+        height=800,
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        legend=dict(
+            orientation="v",
+            xanchor="left",
+            x=1.02,
+            yanchor="top",
+            y=1,
+            font=dict(size=10),
+            itemclick="toggleothers",
+            itemdoubleclick="toggle",
+        ),
         hovermode="x unified",
     )
     eq_html = fig_eq.to_html(full_html=False, include_plotlyjs="cdn")
 
     # ======================================================================
-    # Tab 3: Radar / Bar chart of key metrics
+    # Tab 3: Bar chart of key metrics (single chart)
     # ======================================================================
     metric_cols = [
         "Total Return (%)", "Sharpe Ratio", "Profit Factor",
@@ -146,12 +159,7 @@ def generate_report(
     ]
     available_cols = [c for c in metric_cols if c in table_df.columns]
 
-    fig_bar = make_subplots(
-        rows=2, cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.1,
-        subplot_titles=["Strategy Comparison", "Max Drawdown"],
-    )
+    fig_bar = go.Figure()
 
     for i, r in enumerate(top):
         color = COLORS[i % len(COLORS)]
@@ -163,27 +171,26 @@ def generate_report(
                 y=values,
                 name=label,
                 marker_color=color,
-                showlegend=(i == 0),
+                showlegend=(i < 3),
             ),
-            row=1, col=1,
-        )
-        # DD is negative, flip for display
-        fig_bar.add_trace(
-            go.Bar(
-                x=["Max DD (%)"],
-                y=[r.get("Max Drawdown (%)", 0)],
-                name=f"{label} DD",
-                marker_color=color,
-                showlegend=(i == 1),
-            ),
-            row=2, col=1,
         )
 
     fig_bar.update_layout(
         title="Key Metrics Comparison",
-        height=700,
+        width=1200,
+        barmode="group",
+        height=600,
         showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        legend=dict(
+            orientation="v",
+            xanchor="left",
+            x=1.02,
+            yanchor="top",
+            y=1,
+            font=dict(size=10),
+        ),
+        xaxis_title="Metric",
+        yaxis_title="Value",
     )
     bar_html = fig_bar.to_html(full_html=False, include_plotlyjs="cdn")
 
@@ -244,6 +251,7 @@ def generate_report(
     .table th {{ background: #f0f0f0; text-align: center; }}
     .table td:first-child {{ text-align: left; }}
     .card {{ background: #fff; padding: 16px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 12px; }}
+    .card > div.plotly-graph-div {{ overflow: visible !important; }}
 </style>
 </head>
 <body>

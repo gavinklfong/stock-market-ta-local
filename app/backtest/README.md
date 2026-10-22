@@ -1,0 +1,411 @@
+# Backtest Framework
+
+A reusable, ticker-agnostic backtesting framework built on [vectorbt](https://vectorbt.dev/) for simulating trading strategies against historical OHLCV + TA data.
+
+## Overview
+
+The framework evaluates trading strategies, extracts performance metrics, and generates interactive HTML reports with:
+
+- **Ranked strategy table** sorted by any metric
+- **Equity curves** with buy & hold benchmark comparison
+- **Key metrics bar chart** (return, Sharpe, profit factor, win rate, max drawdown, total trades)
+- **Best strategy detail** with trade P&L distribution histogram
+
+## Architecture
+
+```
+app/backtest/
+├── run_backtest.py              # CLI entry point — single ticker
+├── backtest_all.py              # Batch runner — all tickers from ticker_list.csv
+├── framework/                   # Core reusable modules
+│   ├── __init__.py              # Public API exports
+│   ├── engine.py                # BacktestEngine — vectorbt portfolio simulation
+│   ├── metrics.py               # Metric extraction from Portfolio objects
+│   ├── signal.py                # SignalBase — optional OOP wrapper
+│   ├── extensions.py            # Custom strategy loader + registry
+│   └── report.py                # Plotly HTML report generator
+├── strategies/
+│   └── builtins.py              # 32 built-in strategies + group registry
+├── configs/
+│   ├── default.yaml             # All 32 strategies
+│   ├── ng_optimized.yaml        # NG.L optimized (10 mean-reversion strategies)
+│   └── trend_stock.yaml         # Trend-following for stock tickers
+└── custom/
+    ├── template_strategy.py     # Starter template
+    └── ng_custom.py             # Example custom strategies
+```
+
+### Data Flow
+
+```
+data/analysis-data/{ticker}.csv  (OHLCV + TA columns prefixed ta_)
+        │
+        ▼
+┌─────────────────────┐
+│   BacktestEngine    │  Reads CSV, filters by cutoff date
+│   .run_batch()      │  Applies each strategy → vectorbt Portfolio
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│  calculate_metrics  │  Extracts return, Sharpe, drawdown, win rate, etc.
+└─────────┬───────────┘
+          │
+          ▼
+┌─────────────────────┐
+│  generate_report    │  Produces multi-tab HTML report with Plotly charts
+└─────────────────────┘
+```
+
+## Framework Components
+
+### BacktestEngine
+
+The core engine that runs strategies via vectorbt:
+
+```python
+from framework.engine import BacktestEngine
+
+engine = BacktestEngine(
+    data_path="data/analysis-data/NG.L.csv",
+    cutoff_date=pd.Timestamp("2016-10-15"),  # ~10 years of data
+    initial_capital=100_000,
+    commission=0.001,                        # 0.1% round-trip
+    slippage=0.001,                          # 0.1%
+    trailing_pct=0.05,                       # Optional trailing stop
+)
+
+results = engine.run_batch(strategies)  # dict[name: signal_fn]
+```
+
+**Key parameters:**
+
+| Parameter | Default | Description |
+|---|---|---|
+| `data_path` | — | Path to `{ticker}.csv` in `data/analysis-data/` |
+| `cutoff_date` | `2016-10-15` | Only use data on/after this date (pass `None` for full history) |
+| `initial_capital` | `100,000` | Starting cash in GBP |
+| `commission` | `0.001` | Round-trip commission rate |
+| `slippage` | `0.001` | Slippage rate per trade |
+| `trailing_pct` | `None` | If set, uses `TrailingStopPortfolio` with this percentage |
+
+### Metrics
+
+Extracts 6 key metrics from each portfolio:
+
+| Metric | Description |
+|---|---|
+| `Total Return (%)` | Cumulative return over the period |
+| `Annualized Return (%)` | Compounded annual return |
+| `Sharpe Ratio` | Risk-adjusted return (risk-free rate: 5%) |
+| `Max Drawdown (%)` | Largest peak-to-trough decline |
+| `Win Rate (%)` | Percentage of profitable trades |
+| `Profit Factor` | Gross profit / gross loss |
+
+Plus secondary metrics: total trades, avg trade length, trade P&L stats.
+
+### SignalBase (OOP)
+
+An optional abstract base class for strategies that prefer object-oriented design:
+
+```python
+from framework.signal import SignalBase
+
+class MyStrategy(SignalBase):
+    name = "my_strategy"
+    display_name = "My Custom Strategy"
+    category = "custom"
+
+    def signal(self, df):
+        rsi = df["ta_rsi14"]
+        entries = (rsi > 30) & (rsi.shift(1) <= 30)
+        exits = (rsi < 50) & (rsi.shift(1) >= 50)
+        return entries.astype(int), exits.astype(int)
+```
+
+### Extensions (Custom Strategy Loader)
+
+Discovers and loads custom strategy Python files from a directory:
+
+```python
+from framework.extensions import register_custom, load_custom_strategies
+
+# Loading all .py files from a directory
+custom_strategies = load_custom_strategies("app/backtest/custom/")
+```
+
+### Report Generator
+
+Produces a multi-tab HTML report:
+
+```python
+from framework.report import generate_report
+
+report_path = generate_report(
+    results=results,
+    df=pd.read_csv("data/analysis-data/NG.L.csv"),
+    ticker="NG.L",
+    output_dir="data/reports/backtest",
+    top_n=15,          # strategies shown on charts
+    sort_by="Total Return (%)",
+)
+# → data/reports/backtest/NG.L_backtest_report.html
+```
+
+## Running Backtests
+
+### Single Ticker
+
+```bash
+# Default config (all 32 strategies)
+python app/backtest/run_backtest.py NG.L
+
+# Specific config
+python app/backtest/run_backtest.py NG.L -c app/backtest/configs/ng_optimized.yaml
+
+# With custom strategies
+python app/backtest/run_backtest.py NG.L --custom-dir app/backtest/custom
+
+# Override trailing stop
+python app/backtest/run_backtest.py NG.L --trailing-pct 0.05
+
+# Custom cutoff date
+python app/backtest/run_backtest.py NG.L --cutoff 2018-01-01
+
+# Preview only (no actual backtest)
+python app/backtest/run_backtest.py --dry-run NG.L
+
+# Skip HTML report
+python app/backtest/run_backtest.py NG.L --no-report
+```
+
+### Batch (All Tickers)
+
+```bash
+# All tickers, all strategies
+python app/backtest/backtest_all.py
+
+# Specific tickers only
+python app/backtest/backtest_all.py --tickers NG.L BP.L
+
+# Specific strategy groups
+python app/backtest/backtest_all.py --groups Individual Improved
+
+# With trailing stop
+python app/backtest/backtest_all.py --trailing-pct 0.03
+
+# Custom output paths
+python app/backtest/backtest_all.py \
+    --data-dir data/analysis-data \
+    --output-dir data/reports/backtest \
+    --results-file data/reports/custom_results.csv
+
+# CSV only (no HTML reports)
+python app/backtest/backtest_all.py --csv-only
+```
+
+## YAML Configuration
+
+Customize which strategies to run with a YAML config file:
+
+```yaml
+# strategies: list of module names to run
+strategies:
+  - module: golden_cross
+    label: "Golden Cross (Custom Label)"   # optional display name
+  - module: bb_meanrev
+  - module: trend_momentum
+
+# custom_dir: relative path to directory containing .py strategy files
+custom_dir: ../custom
+
+# trailing_pct: trailing stop percentage (overrides CLI)
+trailing_pct: 0.05
+```
+
+### Built-in Configs
+
+| Config | Strategies | Use Case |
+|---|---|---|
+| `configs/default.yaml` | All 32 | Full evaluation |
+| `configs/ng_optimized.yaml` | 10 mean-reversion | NG.L crude oil |
+| `configs/trend_stock.yaml` | 17 trend-following | UK stock tickers |
+
+## Custom Strategies
+
+### Quick Start
+
+1. **Copy the template** and rename it:
+   ```bash
+   cp app/backtest/custom/template_strategy.py app/backtest/custom/my_strategy.py
+   ```
+
+2. **Implement your strategy function** using the `@register_custom` decorator:
+   ```python
+   from framework.extensions import register_custom
+
+   @register_custom("my_strategy")
+   def my_strategy(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+       # Your logic here
+       entries = df["ta_rsi14"] < 30          # Buy when oversold
+       exits = df["ta_rsi14"] > 70            # Sell when overbought
+       return entries.astype(int), exits.astype(int)
+   ```
+
+3. **Reference it in your YAML config**:
+   ```yaml
+   strategies:
+     - module: my_strategy
+       label: "My Oversold/Overbought"
+
+   custom_dir: ../custom
+   ```
+
+4. **Run the backtest**:
+   ```bash
+   python app/backtest/run_backtest.py NG.L -c my_config.yaml
+   ```
+
+### Strategy Function Signature
+
+Every strategy must be a function with this exact signature:
+
+```python
+def my_strategy(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    ...
+    return entries, exits
+```
+
+- **`df`**: A pandas DataFrame containing OHLCV + TA columns from `data/analysis-data/{ticker}.csv`
+- **Returns**: A tuple of two pandas Series of type `int`:
+  - `entries`: `1` where you want to enter a long position, `0` otherwise
+  - `exits`: `-1` where you want to exit, `0` otherwise
+
+### Accessing TA Columns
+
+All TA indicators use the `ta_` prefix. Common columns:
+
+| Column | Indicator | Source Module |
+|---|---|---|
+| `ta_rsi14` | RSI (14) | momentum |
+| `ta_macd_line` / `ta_macd_signal` / `ta_macd_hist` | MACD | momentum |
+| `ta_ema20` / `ta_ema50` / `ta_ema200` | Exponential moving averages | trend |
+| `ta_supertrend_direction` | SuperTrend signal (1=up, -1=down) | trend |
+| `ta_bband_lower` / `ta_bband_middle` / `ta_bband_upper` | Bollinger Bands | volatility |
+| `ta_atr14` | Average True Range (14) | volatility |
+| `ta_obv` | On-Balance Volume | volume |
+| `ta_cci20` | Commodity Channel Index (20) | momentum |
+| `ta_roc20` | Rate of Change (20) | momentum |
+| `ta_adx14` / `ta_di_plus` / `ta_di_minus` | ADX & Directional Indicators | trend |
+| `ta_hmm_regime` | HMM regime (0/1/2) | regime |
+
+See `app/calculate-ta/README.md` for the full column list.
+
+### Example: RSI Bounce
+
+```python
+from framework.extensions import register_custom
+
+@register_custom("rsi_bounce")
+def rsi_bounce(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """Buy when RSI crosses above 30 (emerging from oversold).
+       Sell when RSI crosses below 50 (momentum fading).
+    """
+    rsi = df["ta_rsi14"]
+
+    # RSI crossed above 30 today (was at or below 30 yesterday)
+    entry = (rsi > 30) & (rsi.shift(1) <= 30)
+
+    # RSI crossed below 50 today (was at or above 50 yesterday)
+    exit_ = (rsi < 50) & (rsi.shift(1) >= 50)
+
+    return entry.astype(int), exit_.astype(int)
+```
+
+### Example: Multi-Indicator Strategy
+
+```python
+@register_custom("multi_indicator_long")
+def multi_indicator_long(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """Trend + momentum confirmation entry."""
+    # Trend: price above EMA50
+    trend_up = df["ta_close"] > df["ta_ema50"]
+
+    # Momentum: RSI rising but not overbought
+    rsi_rising = (df["ta_rsi14"] > df["ta_rsi14"].shift(1)) & (df["ta_rsi14"] < 70)
+
+    # Volume confirmation
+    vol_ok = df["ta_volume"] > df["ta_volume"].rolling(20).mean() * 1.2
+
+    entry = trend_up & rsi_rising & vol_ok
+    exit_ = df["ta_rsi14"] > 80  # Sell on extreme overbought
+
+    return entry.astype(int), exit_.astype(int)
+```
+
+### File Organization
+
+- Custom strategies live in any directory specified by `custom_dir` in the YAML config or `--custom-dir` CLI flag
+- Each `.py` file is imported once and its `@register_custom`-decorated functions are collected
+- File names and function names are independent — only the decorator name matters for lookups
+- Multiple files can register strategies with the same name; the last-loaded one wins
+
+## Built-in Strategy Groups
+
+The 32 built-in strategies are organized into groups:
+
+| Group | Description | Count |
+|---|---|---|
+| **Individual** | Single-indicator or single-concept strategies | 15 |
+| **Combinations** | Multi-factor combos combining trend, momentum, volume, structure | 3 |
+| **Improved** | Refined versions of individual strategies with better filters | 11 |
+| **NG.L Optimized** | Best-performing strategies tuned for NG.L crude oil | 3 |
+
+### Group contents
+
+**Individual strategies:**
+`golden_cross`, `ema_pullback`, `supertrend_plus`, `donchian`, `bb_breakout`, `bb_meanrev`, `rsi_macd_rev`, `institutional`, `vwap`, `ofi`, `marketstruct`, `bos_breakout`, `choch`, `vol_expansion`, `hmm_regime`
+
+**Combinations:**
+`trend_momentum`, `vol_structure`, `score80`
+
+**Improved:**
+`bb_meanrev_upper`, `bb_meanrev_atr`, `vol_filtered_meanrev`, `regime_adaptive`, `short_meanrev`, `vol_breakout_rev`, `ema_pullback_vol`, `multiscore60`, `dual_exit_meanrev`, `macd_diverge`, `highprob_multi`
+
+**NG.L Optimized:**
+`bb_meanrev_optimized`, `bb_meanrev_entry2`, `rsi_macd_rev`
+
+Run a specific group via CLI:
+```bash
+python app/backtest/backtest_all.py --groups Individual Improved
+```
+
+## Report Output
+
+Reports are saved to `data/reports/backtest/{ticker}_backtest_report.html`.
+
+### Report Tabs
+
+1. **Summary** — All strategies ranked by the chosen metric (default: Total Return %), with a sortable table of all metrics.
+
+2. **Equity Curves** — 1200×800px chart showing cumulative returns for the top strategies alongside a buy & hold benchmark (black dotted line). Drawdowns shown in a separate pane below.
+
+3. **Metrics** — 1200×600px grouped bar chart comparing the top strategies across 6 key metrics: Total Return, Sharpe Ratio, Profit Factor, Win Rate, Max Drawdown, Total Trades.
+
+4. **Best Strategy** — Summary stats of the top-ranked strategy plus a histogram of its trade P&L distribution.
+
+### Report Customization
+
+The report generator accepts these parameters:
+
+```python
+generate_report(
+    results=results,       # list of metric dicts from engine.run_batch()
+    df=df,                 # full OHLCV+TA DataFrame (for benchmark)
+    ticker="NG.L",         # ticker symbol for titles
+    output_dir="data/reports/backtest",
+    top_n=15,              # strategies shown on charts
+    sort_by="Total Return (%)",
+    title="Custom Report Title",
+)
+```
