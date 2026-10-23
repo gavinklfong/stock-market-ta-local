@@ -497,12 +497,15 @@ def main():
 
     # Generate HTML report
     html = build_html(results, df, entries)
-    out = REPORT_DIR / "ng_exit_analysis.html"
+    ticker = "NG.L"
+    ticker_dir = REPORT_DIR / ticker
+    ticker_dir.mkdir(parents=True, exist_ok=True)
+    out = ticker_dir / "exit_analysis.html"
     out.write_text(html, encoding="utf-8")
     print(f"\nReport saved to: {out}")
 
     # Save raw results as JSON for reference
-    json_path = REPORT_DIR / "ng_exit_analysis_results.json"
+    json_path = ticker_dir / "exit_analysis_results.json"
     with open(json_path, "w") as f:
         json.dump(results_sorted, f, indent=2, default=str)
     print(f"Raw data saved to: {json_path}")

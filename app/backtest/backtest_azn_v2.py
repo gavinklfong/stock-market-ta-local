@@ -57,6 +57,8 @@ sys.path.insert(0, str(Path(__file__).parent / ".." / "calculate-ta"))
 DATA_PATH = Path(__file__).parent.parent.parent / "data" / "analysis-data" / "AZN.L.csv"
 OUTPUT_DIR = Path(__file__).parent.parent.parent / "data" / "backtest-reports"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+TICKER_DIR = OUTPUT_DIR / "AZN.L"
+TICKER_DIR.mkdir(parents=True, exist_ok=True)
 INITIAL_CAPITAL = 100000
 SLIPPAGE = 0.001  # 0.1% slippage per trade
 
@@ -692,7 +694,7 @@ def main():
             common_idx = strategy_ret.index.intersection(benchmark_ret.index)
 
             if len(common_idx) > 100:
-                out_path = OUTPUT_DIR / f"AZN_{name.replace('/', '_').replace('+', '_').replace(' ', '_')}.html"
+                out_path = TICKER_DIR / f"{name.replace('/', '_').replace('+', '_').replace(' ', '_')}.html"
                 qs.reports.html(
                     strategy_ret.loc[common_idx],
                     benchmark=benchmark_ret.loc[common_idx],
@@ -747,7 +749,7 @@ def main():
         if returns_data:
             returns_df = pd.DataFrame(returns_data)
             returns_df = returns_df.loc[benchmark_ret.index.intersection(returns_df.index)]
-            out_path = OUTPUT_DIR / "AZN_backtest_summary_v2.html"
+            out_path = TICKER_DIR / "backtest_summary_v2.html"
             qs.reports.html(
                 returns_df,
                 benchmark=benchmark_ret.loc[returns_df.index.intersection(benchmark_ret.index)],
@@ -763,7 +765,7 @@ def main():
     # Save raw results CSV
     print(f"\n  Saving results CSV...")
     import csv
-    results_path = OUTPUT_DIR / "AZN_backtest_results_v2.csv"
+    results_path = TICKER_DIR / "backtest_results_v2.csv"
     fieldnames = list(all_results[0].keys())
     with open(results_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)

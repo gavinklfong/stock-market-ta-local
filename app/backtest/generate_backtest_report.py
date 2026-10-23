@@ -483,7 +483,10 @@ def main():
 
     html = build_html(ticker, company, trades, m_bh, m_strat, figs, df)
 
-    out = REPORT_DIR / f"vukg_score3_rsi75.html"
+    ticker = "VUKG.L"
+    ticker_dir = REPORT_DIR / ticker
+    ticker_dir.mkdir(parents=True, exist_ok=True)
+    out = ticker_dir / f"score3_rsi75.html"
     out.write_text(html, encoding="utf-8")
     print(f"Report saved to: {out}")
     print(f"\nSummary:")

@@ -54,6 +54,8 @@ sys.path.insert(0, str(Path(__file__).parent / ".." / "calculate-ta"))
 DATA_PATH = Path(__file__).parent.parent.parent / "data" / "analysis-data" / "SSE.L.csv"
 OUTPUT_DIR = Path(__file__).parent.parent.parent / "data" / "backtest-reports"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+TICKER_DIR = OUTPUT_DIR / "SSE.L"
+TICKER_DIR.mkdir(parents=True, exist_ok=True)
 INITIAL_CAPITAL = 100000
 SLIPPAGE = 0.001  # 0.1% slippage per trade
 
@@ -561,7 +563,7 @@ def generate_reports(results, df_5y):
     results_df = results_df.sort_values("Return_5Y_%", ascending=False)
 
     # Save summary CSV
-    summary_path = OUTPUT_DIR / "SSE_backtest_summary.csv"
+    summary_path = TICKER_DIR / "backtest_summary.csv"
     results_df.to_csv(summary_path, index=False)
     print(f"\nSummary saved to: {summary_path}")
 
@@ -647,7 +649,7 @@ def generate_reports(results, df_5y):
         )
 
         # Generate tearsheet
-        report_path = OUTPUT_DIR / f"SSE_{strat_name.replace('+', '').replace(' ', '_')}_tearsheet.html"
+        report_path = TICKER_DIR / f"{strat_name.replace('+', '').replace(' ', '_')}_tearsheet.html"
         try:
             # Get returns as Series
             returns = portfolio.returns()
@@ -663,7 +665,7 @@ def generate_reports(results, df_5y):
             print(f"    Error generating tearsheet: {e}")
 
         # Also save equity curve as CSV
-        equity_path = OUTPUT_DIR / f"SSE_{strat_name.replace('+', '').replace(' ', '_')}_equity.csv"
+        equity_path = TICKER_DIR / f"{strat_name.replace('+', '').replace(' ', '_')}_equity.csv"
         portfolio.cumulative_returns().to_csv(equity_path)
         print(f"    Equity curve saved: {equity_path}")
 

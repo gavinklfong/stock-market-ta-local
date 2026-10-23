@@ -65,6 +65,8 @@ sys.path.insert(0, str(Path(__file__).parent / ".." / "calculate-ta"))
 DATA_PATH = Path(__file__).parent.parent.parent / "data" / "analysis-data" / "VUKG.L.csv"
 OUTPUT_DIR = Path(__file__).parent.parent.parent / "data" / "backtest-reports"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+TICKER_DIR = OUTPUT_DIR / "VUKG.L"
+TICKER_DIR.mkdir(parents=True, exist_ok=True)
 
 INITIAL_CAPITAL = 100000
 SLIPPAGE = 0.001  # 0.1% slippage per trade
@@ -694,7 +696,7 @@ def main():
             benchmark_ret = df["Close"].pct_change().dropna()
             common_idx = strategy_ret.index.intersection(benchmark_ret.index)
 
-            out_path = OUTPUT_DIR / f"VUKG_{name.replace(' ', '_').replace('/', '_')}.html"
+            out_path = TICKER_DIR / f"{name.replace(' ', '_').replace('/', '_')}.html"
             qs.reports.html(
                 strategy_ret.loc[common_idx],
                 benchmark=benchmark_ret.loc[common_idx],
@@ -729,7 +731,7 @@ def main():
             # Clean column names for quantstats compatibility
             returns_df.columns = [c.replace(">", "GT").replace("<", "LT").replace("/", "_") for c in returns_df.columns]
 
-            out_path = OUTPUT_DIR / "VUKG_backtest_summary.html"
+            out_path = TICKER_DIR / "backtest_summary.html"
             qs.reports.html(
                 returns_df,
                 benchmark=benchmark_aligned,
@@ -744,7 +746,7 @@ def main():
 
     # Save raw results CSV
     import csv
-    results_path = OUTPUT_DIR / "VUKG_backtest_results.csv"
+    results_path = TICKER_DIR / "backtest_results.csv"
     with open(results_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=all_results[0].keys())
         writer.writeheader()

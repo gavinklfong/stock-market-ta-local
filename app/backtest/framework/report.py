@@ -364,7 +364,9 @@ function showTab(id, btn) {{
 </body>
 </html>"""
 
-    out_path = out_dir / f"{ticker}_backtest_report.html"
+    ticker_dir = out_dir / ticker
+    ticker_dir.mkdir(parents=True, exist_ok=True)
+    out_path = ticker_dir / "backtest_report.html"
     out_path.write_text(html, encoding="utf-8")
     return out_path
 
