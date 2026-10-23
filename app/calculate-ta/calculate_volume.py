@@ -1210,8 +1210,11 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
         and file_total > 0
     )
 
+    force_full = os.environ.get("TA_FORCE_FULL_RECALCULATION", "0") == "1"
+
     use_incremental = (
         not overwrite_today
+        and not force_full
         and state is not None
         and state.get("_version") == 1
         and file_total > state.get("prev_row_count", 0)

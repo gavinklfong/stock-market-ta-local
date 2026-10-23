@@ -9,6 +9,7 @@ Exports:
     read_yfinance_csv — read yfinance CSVs with multi-row header support
 """
 
+import argparse
 import math
 import os
 import sys
@@ -174,6 +175,35 @@ def main(
         input_dir: Override market-data directory path.
         output_dir: Override ta-data directory path.
     """
+    # Only parse CLI args when run standalone (not from run_calculation.py in-process).
+    # When imported (e.g. by pytest), sys.argv contains pytest's arguments which
+    # would conflict with our parser. Skip arg parsing if pytest is detected or
+    # no known flags are present.
+    _known_flags = {"--force", "--help", "-h", "--dry-run", "--ticker",
+                    "trend", "momentum", "volume", "volatility", "regime",
+                    "structure", "return"}
+    _is_pytest = "pytest" in sys.argv[0] if sys.argv else False
+    _has_known_args = bool({a for a in sys.argv if a in _known_flags or a.startswith(("--force=", "--help="))})
+    _is_standalone = not _is_pytest and _has_known_args
+
+    if _is_standalone:
+        force = os.environ.get("TA_FORCE_FULL_RECALCULATION", "0") == "1"
+        parser = argparse.ArgumentParser(
+            description=f"{module_name}: {description}",
+            add_help=False,
+        )
+        parser.add_argument("--force", action="store_true",
+                            help="Force full recalculation (disable incremental computation).")
+        parser.add_argument("--help", "-h", action="store_true", help="Show help and exit.")
+        parsed_args = parser.parse_args()
+        if parsed_args.force:
+            os.environ["TA_FORCE_FULL_RECALCULATION"] = "1"
+            force = True
+        if parsed_args.help:
+            parser.print_help()
+            sys.exit(0)
+    else:
+        force = os.environ.get("TA_FORCE_FULL_RECALCULATION", "0") == "1"
     script_dir = os.path.dirname(os.path.abspath(__file__))
     base_dir = os.path.dirname(os.path.dirname(script_dir))
 

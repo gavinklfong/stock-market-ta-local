@@ -21,6 +21,10 @@ Usage:
     # Process a specific ticker only:
     python -m app.analysis_pipeline.run_pipeline --ticker NG.L
     python -m app.analysis_pipeline.run_pipeline --ticker NG.L trend momentum
+
+    # Force full recalculation (disable incremental TA computation):
+    python -m app.analysis_pipeline.run_pipeline --force
+    python -m app.analysis_pipeline.run_pipeline --force trend momentum
 """
 
 from __future__ import annotations
@@ -270,9 +274,19 @@ def main() -> None:
         "--ticker",
         help="Process only this ticker (download, TA, merge, report).",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force full recalculation for TA modules (disable incremental computation).",
+    )
     args = parser.parse_args()
 
-    run_pipeline(ta_args=args.ta_args, ticker=args.ticker)
+    # Build the list of arguments passed through to run_calculation.py
+    ta_args = list(args.ta_args)
+    if args.force:
+        ta_args.append("--force")
+
+    run_pipeline(ta_args=ta_args, ticker=args.ticker)
 
 
 if __name__ == "__main__":

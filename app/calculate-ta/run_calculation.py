@@ -197,7 +197,12 @@ def _merge_ticker(
 # ---------------------------------------------------------------------------
 
 
-def main():
+def _parse_args(argv=None):
+    """Parse command-line arguments.
+
+    This is a separate, testable function so that integration tests can
+    invoke it directly (as is done in *test_force_full_recalculation.py*).
+    """
     parser = argparse.ArgumentParser(
         description="Run all TA indicator modules in parallel.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -220,6 +225,11 @@ def main():
         help="Print what would be run without executing.",
     )
     parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force full recalculation for all modules (disable incremental computation).",
+    )
+    parser.add_argument(
         "--ticker",
         action="append",
         metavar="TICKER",
@@ -228,7 +238,16 @@ def main():
             "Repeat for multiple tickers (e.g. --ticker NG.L --ticker BP.L)."
         ),
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    return args
+
+
+def main():
+    args = _parse_args()
+
+    # Signal modules to skip incremental computation
+    if args.force:
+        os.environ["TA_FORCE_FULL_RECALCULATION"] = "1"
 
     script_dir = Path(__file__).resolve().parent
     output_dir = script_dir.parent.parent / "data" / "ta-data"
@@ -361,14 +380,18 @@ def main():
     if not failed:
         print(f"\n[PHASE 2] Merging per-module outputs")
 
-        # Gather per-module files grouped by ticker
+        # Gather per-module files grouped by ticker, filtering to only
+        # the tickers that were actually processed in Phase 1 (respects
+        # --ticker).  Without this filter stale per-module CSVs from a
+        # previous full run would all be merged.
         ticker_files_map: dict[str, list[str]] = {}
         for f in output_dir.glob("*_ta_*.csv"):
             parts = f.name.rsplit("_ta_", 1)
             if len(parts) != 2:
                 continue
-            ticker = parts[0]
-            ticker_files_map.setdefault(ticker, []).append(f.name)
+            ticker_name = parts[0]
+            if ticker_name in tickers:
+                ticker_files_map.setdefault(ticker_name, []).append(f.name)
 
         if not ticker_files_map:
             print("[MERGE] No per-module output files found, skipping merge.")

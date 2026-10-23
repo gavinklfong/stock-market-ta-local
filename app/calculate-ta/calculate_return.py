@@ -416,7 +416,10 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
                 and file_total > 0
             )
 
-            if not overwrite_today and state is not None and state.get("_version") == 1:
+            # Check force flag
+            force_full = os.environ.get("TA_FORCE_FULL_RECALCULATION", "0") == "1"
+
+            if not overwrite_today and not force_full and state is not None and state.get("_version") == 1:
                 try:
                     # --- Incremental path ---
                     closes = raw_df["Close"].tolist()
