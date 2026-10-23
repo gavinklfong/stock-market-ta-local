@@ -580,4 +580,90 @@ def bulk_download() -> None:
 
 
 if __name__ == "__main__":
-    bulk_download()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Download P/E and dividend data for tickers.")
+    parser.add_argument("--ticker", nargs="*", help="Ticker(s) to process (default: all from ticker_list.csv)")
+    args = parser.parse_args()
+
+    if not os.path.exists(input_csv):
+        raise FileNotFoundError(
+            f"Could not find '{input_csv}'. Make sure it exists in the same directory."
+        )
+
+    df = pd.read_csv(input_csv)
+    if "Ticker" not in df.columns:
+        raise KeyError("The input CSV must contain a 'Ticker' column.")
+
+    raw_tickers = df["Ticker"].dropna().astype(str).str.strip().tolist()
+    ticker_map = {t: t if t.endswith(".L") else t.replace(".", "-") for t in raw_tickers}
+
+    # Filter to requested ticker(s) if specified
+    if args.ticker:
+        ticker_map = {t: v for t, v in ticker_map.items() if t in args.ticker}
+        missing = set(args.ticker) - set(ticker_map.keys())
+        if missing:
+            print(f"Warning: ticker(s) not found in ticker_list.csv: {', '.join(sorted(missing))}")
+
+    tickers = list(ticker_map.values())
+
+    print(f"Processing {len(tickers)} ticker(s)...")
+    print(f"Downloading P/E and dividend data...\n")
+
+    for original_ticker, yf_ticker in ticker_map.items():
+        safe_filename = original_ticker.replace("/", "_")
+        daily_filepath = os.path.join(output_dir, f"{safe_filename}_PE.csv")
+        fund_filepath = os.path.join(output_dir, f"{safe_filename}_fundamentals.csv")
+
+        existing_df = None
+        if os.path.exists(daily_filepath):
+            try:
+                existing_df = pd.read_csv(daily_filepath)
+                existing_df = existing_df.dropna(subset=["Date"])
+                if not existing_df.empty and "Date" in existing_df.columns:
+                    last_date = pd.to_datetime(existing_df["Date"]).max()
+                    print(f"  Existing data up to {last_date.date()}")
+                    period = _compute_incremental_period(last_date)
+                else:
+                    existing_df = None
+                    period = PERIOD
+            except Exception:
+                existing_df = None
+                period = PERIOD
+        else:
+            period = PERIOD
+
+        print(f"Processing [{yf_ticker}] -> {safe_filename} ...")
+        try:
+            result, fundamentals = calculate_pe_for_ticker(
+                yf_ticker, period=period, existing_df=existing_df,
+            )
+            if result.empty:
+                print(f"  No new data for {yf_ticker}.")
+                print()
+                continue
+
+            if existing_df is not None and not existing_df.empty:
+                combined = pd.concat([existing_df, result])
+                combined = combined.sort_values("Date").reset_index(drop=True)
+                combined.to_csv(daily_filepath, index=False)
+                print(f"  Appended {len(result)} new rows ({len(combined)} total)")
+                print(f"  Latest P/E: {combined['ta_pe'].iloc[-1]:.2f}", end="")
+                if "ta_div_yield" in combined.columns and pd.notna(combined["ta_div_yield"].iloc[-1]):
+                    print(f"  | Div Yield: {combined['ta_div_yield'].iloc[-1]:.2f}%")
+                else:
+                    print()
+            else:
+                result = result.sort_values("Date").reset_index(drop=True)
+                result.to_csv(daily_filepath, index=False)
+                print(f"  Saved {len(result)} daily rows to {daily_filepath}")
+                print(f"  Latest P/E: {result['ta_pe'].iloc[-1]:.2f}", end="")
+                if "ta_div_yield" in result.columns and pd.notna(result["ta_div_yield"].iloc[-1]):
+                    print(f"  | Div Yield: {result['ta_div_yield'].iloc[-1]:.2f}%")
+                else:
+                    print()
+
+        except Exception as e:
+            print(f"  Error processing {yf_ticker}: {e}\n")
+
+    print(f"\nAll done. Output directory: {output_dir}")

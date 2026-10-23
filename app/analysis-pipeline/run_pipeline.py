@@ -17,6 +17,10 @@ Usage:
 
     # CLI (passes args through to TA step):
     python -m app.analysis_pipeline.run_pipeline trend momentum
+
+    # Process a specific ticker only:
+    python -m app.analysis_pipeline.run_pipeline --ticker NG.L
+    python -m app.analysis_pipeline.run_pipeline --ticker NG.L trend momentum
 """
 
 from __future__ import annotations
@@ -45,14 +49,17 @@ ANALYSIS_RUN = APP_DIR / "analyse-market-data" / "run_analysis.py"
 # ---------------------------------------------------------------------------
 
 @task(name="download-ohlcv")
-def download_ohlcv() -> None:
+def download_ohlcv(ticker: str | None = None) -> None:
     """Run the OHLCV market-data download script."""
     import subprocess
     print(f"\n{'='*60}")
     print("  ▶ Download OHLCV market data")
     print(f"{'='*60}")
+    cmd = [sys.executable, str(DOWNLOAD_TICKERS)]
+    if ticker:
+        cmd.extend(["--ticker", ticker])
     result = subprocess.run(
-        [sys.executable, str(DOWNLOAD_TICKERS)],
+        cmd,
         cwd=str(PROJECT_ROOT),
         check=True,
         stdout=sys.stdout,
@@ -62,14 +69,17 @@ def download_ohlcv() -> None:
 
 
 @task(name="download-stock-info")
-def download_stock_info() -> None:
+def download_stock_info(ticker: str | None = None) -> None:
     """Run the P/E ratio download script."""
     import subprocess
     print(f"\n{'='*60}")
     print("  ▶ Download P/E ratio data")
     print(f"{'='*60}")
+    cmd = [sys.executable, str(DOWNLOAD_STOCK_INFO)]
+    if ticker:
+        cmd.extend(["--ticker", ticker])
     result = subprocess.run(
-        [sys.executable, str(DOWNLOAD_STOCK_INFO)],
+        cmd,
         cwd=str(PROJECT_ROOT),
         check=True,
         stdout=sys.stdout,
@@ -79,10 +89,12 @@ def download_stock_info() -> None:
 
 
 @task(name="run-ta-calculations")
-def run_ta_calculations(ta_args: Sequence[str] = ()) -> None:
+def run_ta_calculations(ta_args: Sequence[str] = (), ticker: str | None = None) -> None:
     """Run the TA indicator calculation script."""
     import subprocess
     ta_cmd = [sys.executable, str(TA_RUN_CALCULATION)]
+    if ticker:
+        ta_cmd.extend(["--ticker", ticker])
     if ta_args:
         ta_cmd.extend(ta_args)
 
@@ -100,7 +112,7 @@ def run_ta_calculations(ta_args: Sequence[str] = ()) -> None:
 
 
 @task(name="merge-analysis-data")
-def merge_analysis_data() -> None:
+def merge_analysis_data(ticker: str | None = None) -> None:
     """Merge market data, TA data, and P/E data into a single analysis CSV per ticker."""
     import sys
 
@@ -120,6 +132,13 @@ def merge_analysis_data() -> None:
     market_files = {f.stem for f in market_dir.glob("*.csv")}
     ta_files = {f.stem for f in ta_dir.glob("*.csv")}
     tickers = sorted(market_files & ta_files)
+
+    # Filter to requested ticker if specified
+    if ticker:
+        if ticker not in tickers:
+            print(f"\n[MERGE] Ticker '{ticker}' not found in market-data/ta-data, skipping.")
+            return
+        tickers = [ticker]
 
     if not tickers:
         print("\n[MERGE] No matching market/TA files found, skipping.")
@@ -163,15 +182,18 @@ def merge_analysis_data() -> None:
 
 
 @task(name="generate-analysis-reports")
-def generate_analysis_reports() -> None:
+def generate_analysis_reports(ticker: str | None = None) -> None:
     """Run the HTML report generation pipeline."""
     import subprocess
 
     print(f"\n{'='*60}")
     print("  ▶ Generate analysis HTML reports")
     print(f"{'='*60}")
+    cmd = [sys.executable, str(ANALYSIS_RUN)]
+    if ticker:
+        cmd.extend(["--tickers", ticker])
     result = subprocess.run(
-        [sys.executable, str(ANALYSIS_RUN)],
+        cmd,
         cwd=str(PROJECT_ROOT),
         check=True,
         stdout=sys.stdout,
@@ -193,7 +215,7 @@ def generate_analysis_reports() -> None:
     ),
     task_runner=ThreadPoolTaskRunner,
 )
-def run_pipeline(ta_args: Sequence[str] = ()) -> None:
+def run_pipeline(ta_args: Sequence[str] = (), ticker: str | None = None) -> None:
     """Execute the full data pipeline.
 
     Parameters
@@ -201,24 +223,27 @@ def run_pipeline(ta_args: Sequence[str] = ()) -> None:
     ta_args :
         Extra CLI arguments passed through to ``run_calculation.py``
         (e.g. ``["trend", "momentum"]`` for a subset).
+    ticker :
+        If provided, only download, calculate, merge, and report for
+        this single ticker. Otherwise all tickers are processed.
     """
     from prefect.futures import wait as prefect_wait
 
     # -- Steps 1 & 2: download in parallel (ThreadPoolTaskRunner) ----------
-    ohlcv_task = download_ohlcv.submit()
-    info_task = download_stock_info.submit()
+    ohlcv_task = download_ohlcv.submit(ticker=ticker)
+    info_task = download_stock_info.submit(ticker=ticker)
 
     # Wait for both downloads to complete (raises on failure)
     prefect_wait([ohlcv_task, info_task])
 
     # -- Step 3: TA calculations (depends on downloads) -------------------
-    run_ta_calculations(ta_args=ta_args)
+    run_ta_calculations(ta_args=ta_args, ticker=ticker)
 
     # -- Step 4: merge market + TA data into analysis ---------------------
-    merge_analysis_data()
+    merge_analysis_data(ticker=ticker)
 
     # -- Step 5: generate HTML reports ------------------------------------
-    generate_analysis_reports()
+    generate_analysis_reports(ticker=ticker)
 
     print(f"\n{'='*60}")
     print("  ✓  Full pipeline completed successfully.")
@@ -241,9 +266,13 @@ def main() -> None:
         help="TA module names to run (default: all). "
              "e.g. trend momentum volume",
     )
+    parser.add_argument(
+        "--ticker",
+        help="Process only this ticker (download, TA, merge, report).",
+    )
     args = parser.parse_args()
 
-    run_pipeline(ta_args=args.ta_args)
+    run_pipeline(ta_args=args.ta_args, ticker=args.ticker)
 
 
 if __name__ == "__main__":

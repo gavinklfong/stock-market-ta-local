@@ -178,4 +178,78 @@ def download_tickers(input_csv=None, output_dir=None):
 
 
 if __name__ == "__main__":
-    download_tickers()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Download or update OHLCV market data for tickers.")
+    parser.add_argument("--ticker", nargs="*", help="Ticker(s) to process (default: all from ticker_list.csv)")
+    args = parser.parse_args()
+
+    if args.ticker:
+        ticker_map = {t: t for t in args.ticker}
+        # Reformat to Yahoo style for the ones that need it
+        yahoo_map = {t: t if t.endswith(".L") else t.replace(".", "-") for t in args.ticker}
+    else:
+        ticker_map = load_ticker_map()
+        yahoo_map = ticker_map
+
+    print(f"Processing {len(ticker_map)} ticker(s)...")
+    for original_ticker, yf_ticker in yahoo_map.items():
+        try:
+            safe_filename = original_ticker.replace("/", "_")
+            filepath = os.path.join(DEFAULT_OUTPUT_DIR, f"{safe_filename}.csv")
+
+            existing = read_existing_data(filepath)
+
+            if existing is not None:
+                last_date = existing.index.max()
+                today = pd.Timestamp.today().normalize()
+
+                if last_date.date() == today.date():
+                    print(f"Updating {original_ticker} (last date: {last_date.date()}, "
+                          f"re-downloading today's price)...")
+                    new_data = download_catchup(yf_ticker, last_date - pd.Timedelta(days=1),
+                                               end_date=today)
+
+                    if new_data.empty:
+                        print(f"  No new data for {original_ticker}.")
+                        continue
+
+                    merged = pd.concat([existing, new_data])
+                    merged = merged[~merged.index.duplicated(keep="last")]
+                    merged = merged.sort_index()
+                    save_data(filepath, merged)
+                    print(f"  Updated: {filepath} (replaced today's price)")
+                    continue
+
+                print(f"Updating {original_ticker} (last date: {last_date.date()}, downloading catch-up)...")
+                new_data = download_catchup(yf_ticker, last_date, end_date=today)
+
+                if new_data.empty:
+                    print(f"  No new data for {original_ticker}.")
+                    continue
+
+                merged = pd.concat([existing, new_data])
+                merged = merged[~merged.index.duplicated(keep="last")]
+                merged = merged.sort_index()
+                last_date = merged.index.max()
+
+                save_data(filepath, merged)
+                print(f"  Updated: {filepath} (last date: {last_date.date()}, "
+                      f"added {len(new_data)} rows)")
+            else:
+                print(f"Downloading full history for {original_ticker} ({PERIOD})...")
+                ticker_df = download_full(yf_ticker)
+
+                if ticker_df.empty:
+                    print(f"  Skipped {original_ticker}: No data returned.")
+                    continue
+
+                save_data(filepath, ticker_df)
+                last_date = ticker_df.index.max()
+                print(f"  Saved: {filepath} ({len(ticker_df)} rows, "
+                      f"last date: {last_date.date()})")
+
+        except Exception as e:
+            print(f"Error processing {original_ticker}: {e}")
+
+    print("\nProcess completed successfully!")

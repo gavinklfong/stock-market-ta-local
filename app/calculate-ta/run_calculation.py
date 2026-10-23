@@ -18,6 +18,8 @@ data/ta-data/{ticker}.csv.
 Usage:
     python run_calculation.py                          # run all, in parallel
     python run_calculation.py trend momentum           # run specific modules
+    python run_calculation.py --ticker NG.L            # specific ticker
+    python run_calculation.py --ticker NG.L --ticker BP.L  # multiple tickers
     python run_calculation.py --help                   # show usage
 """
 
@@ -217,6 +219,15 @@ def main():
         action="store_true",
         help="Print what would be run without executing.",
     )
+    parser.add_argument(
+        "--ticker",
+        action="append",
+        metavar="TICKER",
+        help=(
+            "Ticker(s) to process. By default all tickers in market-data/ are used. "
+            "Repeat for multiple tickers (e.g. --ticker NG.L --ticker BP.L)."
+        ),
+    )
     args = parser.parse_args()
 
     script_dir = Path(__file__).resolve().parent
@@ -228,10 +239,34 @@ def main():
     else:
         order = list(ALL_ORDER)
 
+    # Discover tickers from market-data dir
+    input_dir = script_dir.parent.parent / "data" / "market-data"
+    csv_files = sorted(
+        f for f in os.listdir(input_dir) if f.endswith(".csv")
+    ) if input_dir.exists() else []
+    all_tickers = [f[:-4] for f in csv_files]  # strip .csv
+
+    if not all_tickers:
+        print("[ERROR] No ticker CSVs found in market-data directory", file=sys.stderr)
+        sys.exit(1)
+
+    # Filter to requested ticker(s) if specified
+    if args.ticker:
+        tickers = [t for t in args.ticker if t in all_tickers]
+        missing = set(args.ticker) - set(all_tickers)
+        if missing:
+            print(
+                f"[WARN] Ticker(s) not found in market-data/: {', '.join(sorted(missing))}",
+                file=sys.stderr,
+            )
+    else:
+        tickers = all_tickers
+
     print(f"\nTA Pipeline Runner")
     print(f"{'='*60}")
     print(f"  Scripts directory : {script_dir}")
     print(f"  Output directory  : {output_dir}")
+    print(f"  Tickers to process: {', '.join(tickers)}")
     print(f"  Modules to run    : {', '.join(order)} (parallel)")
     print(f"{'='*60}")
 
@@ -251,19 +286,6 @@ def main():
         print(f"  Skipped unavailable modules: {', '.join(skipped)}")
     print(f"  Loaded {len(available)} module(s)")
 
-    # Discover tickers from output dir (already processed modules)
-    # We need to know which tickers exist. Read from input dir instead.
-    input_dir = script_dir.parent.parent / "data" / "market-data"
-    csv_files = sorted(
-        f for f in os.listdir(input_dir) if f.endswith(".csv")
-    ) if input_dir.exists() else []
-    tickers = [f[:-4] for f in csv_files]  # strip .csv
-
-    if not tickers:
-        print("[ERROR] No ticker CSVs found in market-data directory", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"  Tickers to process: {len(tickers)}")
     total_tasks = len(tickers) * len(available)
     print(f"  Total tasks: {total_tasks} ({len(tickers)} tickers × {len(available)} modules)")
     print()
