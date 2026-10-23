@@ -2,7 +2,7 @@
 
 ## Objective
 
-Assess the current market situation for `{ticker}` based on the latest available data and recommend a buy / sell / hold signal. Evaluate across 7 dimensions: trend, momentum, return, structure, volatility, volume, and regime. Cross-reference findings with the most recent backtested strategy results from `data/strategy/{ticker}/`. Output the evaluation report to `report/evaluation/{ticker}/{latest_market_data_date}_evaluation.md`.
+Assess the current market situation for `{ticker}` based on the latest available data and recommend a buy / sell / hold signal. Evaluate across 7 dimensions: trend, momentum, return, structure, volatility, volume, and regime. Cross-reference findings with the most recent backtested strategy results from `data/strategy/{ticker}/`. Output the evaluation report to `data/reports/evaluation/{ticker}/{latest_market_data_date}_evaluation.md`.
 
 ## Parameters
 
@@ -10,7 +10,7 @@ Assess the current market situation for `{ticker}` based on the latest available
 - Data source: `data/analysis-data/{ticker}.csv`
 - Strategy reference: `data/strategy/{ticker}/` — the most recent `.md` file in this directory (must exist before running this skill)
 - TA knowledge base: `docs/all_technical_analysis.md`
-- Output: `report/evaluation/{ticker}/{latest_date}_evaluation.md` (where `{latest_date}` is the last date in the CSV, formatted as `YYYY-MM-DD`)
+- Output: `data/reports/evaluation/{ticker}/{latest_date}_evaluation.md` (where `{latest_date}` is the last date in the CSV, formatted as `YYYY-MM-DD`)
 
 ## Prerequisites Check
 
@@ -216,7 +216,7 @@ Aggregate all 7 dimension scores:
 
 ### Step 10: Generate Report
 
-Write the evaluation report to `report/evaluation/{ticker}/{latest_date}_evaluation.md` using the following template, broken into chunks.
+Write the evaluation report to `data/reports/evaluation/{ticker}/{latest_date}_evaluation.md` using the following template, broken into chunks.
 
 ## Output Report Template
 
