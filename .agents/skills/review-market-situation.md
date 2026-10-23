@@ -56,7 +56,7 @@ All TA columns use the `ta_` prefix. Key columns for each evaluation dimension:
 4. Record: current price, date range, total rows, column count
 5. Check for any NaN values in key columns
 
-### Step 2: Evaluate Trend (Score: Bearish / Neutral / Bullish)
+### Step 2: Evaluate Trend (Score: 1–5)
 
 Read the latest values and compute signals:
 
@@ -73,11 +73,11 @@ Read the latest values and compute signals:
 - Check if current conditions match the recommended strategy's entry criteria
 - If the best strategy is trend-following, is the trend aligned?
 
-**Output:** Trend score (1-5), key indicator values, alignment with best strategy.
+**Output:** Trend score (1–5), key indicator values, alignment with best strategy.
 
-### Step 3: Evaluate Momentum (Score: Bearish / Neutral / Bullish)
+### Step 3: Evaluate Momentum (Score: 1–5)
 
-1. **RSI(14)**: `<30` oversold, `30-50` weak, `50-70` normal, `>70` overbought. Also check `ta_rsi_zscore_14_20` and `ta_rsi_percentile_14_20` for statistical context.
+1. **RSI(14)**: `<30` oversold, `30–50` weak, `50–70` normal, `>70` overbought. Also check `ta_rsi_zscore_14_20` and `ta_rsi_percentile_14_20` for statistical context.
 2. **MACD**: `ta_macd_line > ta_macd_signal` = bullish. Check histogram direction (`ta_macd_histogram` rising/falling). Note any bullish/bearish crosses.
 3. **ROC(20)**: `ta_roc20 > 0` = positive momentum
 4. **Williams %R**: `ta_williams_r > -20` overbought, `< -80` oversold
@@ -90,9 +90,9 @@ Read the latest values and compute signals:
 - Is the current momentum consistent with the strategy's entry conditions?
 - Reference the latest strategy file in `data/strategy/{ticker}/`.
 
-**Output:** Momentum score (1-5), key indicator values, overbought/oversold assessment, alignment with best strategy.
+**Output:** Momentum score (1–5), key indicator values, overbought/oversold assessment, alignment with best strategy.
 
-### Step 4: Evaluate Return (Score: Bearish / Neutral / Bullish)
+### Step 4: Evaluate Return (Score: 1–5)
 
 1. **Recent performance**: `ta_ret_1m`, `ta_ret_3m`, `ta_ret_6m`, `ta_ret_1y`
    - Strong positive = momentum continues, watch for exhaustion
@@ -111,9 +111,9 @@ Read the latest values and compute signals:
 - Is the ticker historically more of a mean-reversion or momentum asset?
 - Reference the latest strategy file in `data/strategy/{ticker}/`.
 
-**Output:** Return score (1-5), performance summary, alpha/beta context, alignment with best strategy.
+**Output:** Return score (1–5), performance summary, alpha/beta context, alignment with best strategy.
 
-### Step 5: Evaluate Structure (Score: Bearish / Neutral / Bullish)
+### Step 5: Evaluate Structure (Score: 1–5)
 
 1. **Swing points**: Check `ta_swing_high` and `ta_swing_low` for recent swings
 2. **HH/HL vs LH/LL**:
@@ -130,9 +130,9 @@ Read the latest values and compute signals:
 - Are structural conditions currently aligned with entry rules?
 - Reference the latest strategy file in `data/strategy/{ticker}/`.
 
-**Output:** Structure score (1-5), swing analysis, S/R levels, alignment with best strategy.
+**Output:** Structure score (1–5), swing analysis, S/R levels, alignment with best strategy.
 
-### Step 6: Evaluate Volatility (Score: Low / Normal / High — and implication)
+### Step 6: Evaluate Volatility (Score: 1–5)
 
 1. **ATR(14)**: `ta_atr14` — absolute volatility level. Compare to historical percentile `ta_atr_percentile_14_20`
 2. **Bollinger Bands**:
@@ -153,7 +153,7 @@ Read the latest values and compute signals:
 
 **Output:** Volatility score (1-5), current level, trend in volatility, breakout/bounce probability, alignment with best strategy.
 
-### Step 7: Evaluate Volume (Score: Bearish / Neutral / Bullish)
+### Step 7: Evaluate Volume (Score: 1–5)
 
 1. **OBV**: `ta_obv` — rising OBV confirms price trend, falling OBV warns of divergence
 2. **CMF(20)**: `ta_cmf` — `>0` = buying pressure, `<0` = selling pressure. Strength proportional to magnitude.
@@ -169,9 +169,9 @@ Read the latest values and compute signals:
 - Is volume currently supporting the price direction?
 - Reference the latest strategy file in `data/strategy/{ticker}/`.
 
-**Output:** Volume score (1-5), buying/selling pressure assessment, confirmation/divergence with price, alignment with best strategy.
+**Output:** Volume score (1–5), buying/selling pressure assessment, confirmation/divergence with price, alignment with best strategy.
 
-### Step 8: Evaluate Regime (Score: Bull / Bear / Sideways)
+### Step 8: Evaluate Regime (Score: 1–5)
 
 1. **HMM Regime Probabilities**:
    - `ta_hmm_regime_prob_0` — probability of state 0 (typically bullish)
@@ -188,7 +188,7 @@ Read the latest values and compute signals:
 - If the current regime differs from what the strategy prefers, flag as a concern.
 - Reference the latest strategy file in `data/strategy/{ticker}/`.
 
-**Output:** Regime score (1-5), dominant regime, regime stability, alignment with best strategy.
+**Output:** Regime score (1–5), dominant regime, regime stability, alignment with best strategy.
 
 ### Step 9: Signal Synthesis — Buy / Sell / Hold
 
@@ -216,189 +216,321 @@ Aggregate all 7 dimension scores:
 
 ### Step 10: Generate Report
 
-Write the evaluation report to `data/reports/evaluation/{ticker}/{latest_date}_evaluation.md` using the following template, broken into chunks.
+Write the evaluation report to `data/reports/evaluation/{ticker}/{latest_date}_evaluation.md` using the standardized template below, broken into chunks.
 
-## Output Report Template
+## Standardized Output Report Template
+
+Write the report using this unified structure (based on SVT.L and VUKG.L evaluation examples):
 
 ```markdown
-# Market Situation Evaluation: {Ticker}
+# Market Situation Evaluation: {company_name} ({Ticker})
 
 **Date:** {latest_date}
-**Ticker:** {Ticker}
+**Ticker:** {Ticker} ({company_name})
 **Price:** {close_price}
 **Data Range:** {first_date} to {latest_date} ({total_rows} rows)
+**Sector:** {sector}
 **Strategy Reference:** `data/strategy/{ticker}/{latest_strategy_date}.md`
 
 ---
 
 ## Executive Summary
 
-**Signal:** BUY / SELL / HOLD / WAIT (strength: strong/normal/weak)
+**Signal:** BUY / SELL / HOLD / WAIT
 **Confidence:** High / Medium / Low
 
-| Dimension | Score | Assessment |
-|-----------|-------|------------|
-| Trend | {1-5} | {Bullish/Neutral/Bearish} |
-| Momentum | {1-5} | {Bullish/Neutral/Bearish} |
-| Return | {1-5} | {Bullish/Neutral/Bearish} |
-| Structure | {1-5} | {Bullish/Neutral/Bearish} |
-| Volatility | {1-5} | {Low/Normal/High + implication} |
-| Volume | {1-5} | {Bullish/Neutral/Bearish} |
-| Regime | {1-5} | {Bull/Bear/Sideways} |
+### Dimension Overview
 
-**Summary:** {2-3 sentence summary of why this signal was generated}
+| Dimension | Signal | Confidence | Key Driver |
+|-----------|--------|------------|------------|
+| **Trend** | 🟢 BULLISH / 🟡 CAUTIOUS / 🔴 BEARISH | High / Medium / Low | {1-line key driver} |
+| **Momentum** | 🟢 BULLISH / 🟡 CAUTIOUS / 🔴 BEARISH | High / Medium / Low | {1-line key driver} |
+| **Return** | 🟢 POSITIVE / 🟡 MIXED / 🔴 NEGATIVE | High / Medium / Low | {1-line key driver} |
+| **Structure** | 🟢 BULLISH / 🟡 CAUTIOUS / 🔴 BEARISH | High / Medium / Low | {1-line key driver} |
+| **Volatility** | 🟢 LOW / 🟡 NORMAL / 🔴 HIGH | High / Medium / Low | {1-line key driver} |
+| **Volume** | 🟢 BULLISH / 🟡 MIXED / 🔴 BEARISH | High / Medium / Low | {1-line key driver} |
+| **Regime** | 🟢 BULL / 🟡 NEUTRAL / 🔴 BEAR | High / Medium / Low | {1-line key driver} |
+| **Overall** | 🟢 STRONG BUY / 🟡 BUY / 🟠 CAUTION / 🔴 SELL | High / Medium / Low | {1-line key driver} |
+
+### Current Market Snapshot
+
+| Metric | Value | Assessment |
+|--------|-------|------------|
+| Close | {price} | {context: e.g., "Near 52-week high of X"} |
+| 52-Week Range | {low} – {high} | {position: e.g., "At 98.8% of high"} |
+| P/E (TTM) | {pe_ttm} | {comparison to historical average} |
+| Dividend Yield | {yield}% | {assessment} |
+| Beta (20d) | {beta} | {vs FTSE 100} |
+| RS vs FTSE 100 | {rs} | {outperforming/underperforming} |
+
+### Strategy Alignment Summary
+
+| Strategy Element | Current State | Alignment |
+|-----------------|---------------|-----------|
+| {Strategy entry condition 1} | {current value} | ✅ MET / ❌ NOT MET |
+| {Strategy entry condition 2} | {current value} | ✅ MET / ❌ NOT MET |
+| {Strategy entry condition 3} | {current value} | ✅ MET / ❌ NOT MET |
+| {Key strategy observation} | {context} | ✅ CONFIRMED / ⚠️ CAUTION / ❌ NOT MET |
+
+**Strategy Verdict:** {1-2 sentences: whether current conditions match the recommended strategy's entry criteria}
+
+### Signal Summary
+
+**Current Signal: {SIGNAL} / {STRENGTH}**
+
+{2-3 sentence narrative explaining the overall signal, who should act, and for whom (holders vs non-holders).}
 
 ---
 
 ## 1. Trend Analysis
 
+**Signal:** BULLISH / CAUTIOUS / BEARISH | **Confidence:** HIGH / MEDIUM / LOW
+
+{1-2 sentence opening context paragraph.}
+
 ### Current Indicators
+
 | Indicator | Value | Signal |
 |-----------|-------|--------|
-| EMA20 | {value} | |
-| EMA50 | {value} | |
-| EMA200 | {value} | |
-| SuperTrend Direction | {1/-1} | |
-| MA20 Slope | {value} | |
-| MA50 Slope | {value} | |
-| MA200 Slope | {value} | |
-| ADX | {value} | |
-| DI+ / DI- | {value} / {value} | |
-| Price vs EMA20 | {pct} | |
+| EMA20 | {value} | {above/below price, distance} |
+| EMA50 | {value} | {above/below price, distance} |
+| EMA200 | {value} | {above/below price, distance} |
+| SuperTrend Direction | {1/-1} | {Bullish/Bearish} |
+| SuperTrend Trail | {value} | {distance from price} |
+| MA20 Slope | {value} | {positive/negative} |
+| MA50 Slope | {value} | {positive/negative} |
+| ADX(14) | {value} | {strong/weak trend} |
+| DI+ / DI- | {value} / {value} | {bullish/bearish dominance} |
+| Price vs EMA20 | {pct}% | {above/below} |
 
 ### Trend Assessment
-- **Alignment:** {EMA20 > EMA50 > EMA200 = bullish / reversed = bearish}
-- **SuperTrend:** {description of current direction and recent flips}
-- **Momentum of MAs:** {MA slopes trending up or down}
-- **Trend Strength:** {ADX interpretation: >25 strong, <20 weak}
-- **Donchian Position:** {Near upper = breakout / Near lower = breakdown}
+- **MA Alignment:** {EMA20 > EMA50 > EMA200 = bullish / reversed = bearish / mixed}
+- **SuperTrend:** {current direction, stability, trail level}
+- **MA Slopes:** {trend acceleration or deceleration}
+- **Trend Strength:** {ADX interpretation: >25 strong, 20–25 moderate, <20 weak}
+- **Donchian Position:** {Near upper = breakout / Near lower = breakdown / Middle = range}
+- **Keltner Position:** {Price above/below Keltner bands}
+
+### Trend Score
+
+| Factor | Score | Weight | Weighted |
+|--------|-------|--------|----------|
+| {Factor 1} | +/-{n} | {n}% | +/−{value} |
+| {Factor 2} | +/-{n} | {n}% | +/−{value} |
+| {Factor 3} | +/-{n} | {n}% | +/−{value} |
+| {Factor 4} | +/-{n} | {n}% | +/−{value} |
+| {Factor 5} | +/-{n} | {n}% | +/−{value} |
+| **Trend Score** | | **100%** | **+/−{total} / 3.0** |
+
+**Trend Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{Reference the entry/exit rules from the latest strategy file in `data/strategy/{ticker}/`. Are current trend conditions consistent with the recommended strategy's entry criteria?}
+{1-2 sentences: Do current trend conditions match the recommended strategy's entry criteria from the strategy report?}
 
 ---
 
 ## 2. Momentum Analysis
 
+**Signal:** BULLISH / CAUTIOUS / BEARISH | **Confidence:** HIGH / MEDIUM / LOW
+
 ### Current Indicators
+
 | Indicator | Value | Signal |
 |-----------|-------|--------|
 | RSI(14) | {value} | {Oversold/<30 / Normal / Overbought/>70} |
-| MACD Line | {value} | |
-| MACD Signal | {value} | |
-| MACD Histogram | {value} | {Rising / Falling} |
-| ROC(20) | {value} | |
-| Williams %R | {value} | {Oversold/<-80 / Normal / Overbought/>-20} |
-| CCI | {value} | {Oversold/<-100 / Normal / Overbought/>100} |
-| MFI(14) | {value} | {Oversold/<20 / Normal / Overbought/>80} |
+| RSI Z-Score(14,20) | {value} | {Above/below average} |
+| RSI Percentile(14,20) | {value}% | {Percentile interpretation} |
+| MACD Line | {value} | {Bullish/Bearish} |
+| MACD Signal | {value} | {Cross status} |
+| MACD Histogram | {value} | {Rising/Falling/Declining} |
+| ROC(20) | {value}% | {Positive/Negative} |
+| Williams %R | {value} | {Overbought/>-20 / Oversold/<-80} |
+| CCI(20) | {value} | {Overbought/>100 / Oversold/<-100} |
+| MFI(14) | {value} | {Overbought/>80 / Oversold/<20} |
 
 ### Momentum Assessment
-- **RSI Context:** {Current RSI, z-score, and percentile interpretation}
+- **RSI Context:** {Current RSI, z-score, percentile interpretation}
 - **MACD State:** {Cross status, histogram direction, divergence check}
-- **Momentum Strength:** {Combined reading of RSI, MACD, ROC, Williams %R}
+- **Oscillator Convergence:** {Are multiple oscillators aligned? Any extremes?}
 - **Divergence Check:** {Price vs RSI/MACD divergence if any}
 
+### Momentum Score
+
+| Factor | Score | Weight | Weighted |
+|--------|-------|--------|----------|
+| {Factor 1} | +/-{n} | {n}% | +/−{value} |
+| {Factor 2} | +/-{n} | {n}% | +/−{value} |
+| {Factor 3} | +/-{n} | {n}% | +/−{value} |
+| {Factor 4} | +/-{n} | {n}% | +/−{value} |
+| {Factor 5} | +/-{n} | {n}% | +/−{value} |
+| **Momentum Score** | | **100%** | **+/−{total} / 3.0** |
+
+**Momentum Verdict:** {1-sentence summary}
+
 ### Strategy Alignment
-{Reference strategy's momentum thresholds from the strategy report.}
+{1-2 sentences: Do current momentum conditions match the recommended strategy's entry criteria?}
 
 ---
 
 ## 3. Return Analysis
 
-### Performance Metrics
+**Signal:** POSITIVE / MIXED / NEGATIVE | **Confidence:** HIGH / MEDIUM / LOW
+
+### Past Performance
+
 | Period | Return | Assessment |
 |--------|--------|------------|
-| 1 Month | {ta_ret_1m}% | |
-| 3 Months | {ta_ret_3m}% | |
-| 6 Months | {ta_ret_6m}% | |
-| 1 Year | {ta_ret_1y}% | |
+| 1 Month | {ta_ret_1m}% | {assessment} |
+| 3 Months | {ta_ret_3m}% | {assessment} |
+| 6 Months | {ta_ret_6m}% | {assessment} |
+| 1 Year | {ta_ret_1y}% | {assessment} |
 
 ### Risk-Adjusted Metrics
+
 | Metric | Value | Interpretation |
 |--------|-------|----------------|
-| Alpha(20) | {ta_alpha20} | {Positive = outperforming} |
-| Beta(20) | {ta_beta20} | {>1 = more volatile} |
-| RS vs FTSE100 | {ta_rs_ftse100} | {Rising = outperforming} |
+| Alpha(20) | {ta_alpha20} | {Positive/negative = outperforming/underperforming} |
+| Beta(20) | {ta_beta20} | {>1 = more volatile / <1 = less volatile than benchmark} |
+| RS vs FTSE 100 | {ta_rs_ftse100} | {Rising = outperforming / Falling = underperforming} |
+
+### Forward Return Context
+
+| Forward Period | Mean Return | Std Dev | Assessment |
+|---------------|-------------|---------|------------|
+| 5 days | {mean}% | {std}% | {assessment} |
+| 10 days | {mean}% | {std}% | {assessment} |
+| 20 days | {mean}% | {std}% | {assessment} |
 
 ### Return Assessment
-- **Short-term momentum:** {1m/3m trend direction}
-- **Medium-term trend:** {6m/1y trend direction}
-- **Benchmark comparison:** {Alpha/Beta/RS interpretation}
+- **Short-term trend:** {1m/3m direction}
+- **Medium-term trend:** {6m/1y direction}
+- **Risk-adjusted:** {Alpha/Beta/RS interpretation}
+- **Forward expectations:** {Near-zero = no directional bias; positive = continuation likely}
+
+### Return Score
+
+| Factor | Score | Weight | Weighted |
+|--------|-------|--------|----------|
+| {Factor 1} | +/-{n} | {n}% | +/−{value} |
+| {Factor 2} | +/-{n} | {n}% | +/−{value} |
+| {Factor 3} | +/-{n} | {n}% | +/−{value} |
+| {Factor 4} | +/-{n} | {n}% | +/−{value} |
+| **Return Score** | | **100%** | **+/−{total} / 3.0** |
+
+**Return Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{Does the strategy report indicate this ticker is more mean-reverting or momentum-driven?}
+{1-2 sentences: Does the strategy indicate this ticker is more mean-reversion or momentum-driven?}
 
 ---
 
 ## 4. Structure Analysis
 
+**Signal:** BULLISH / CAUTIOUS / BEARISH | **Confidence:** HIGH / MEDIUM / LOW
+
 ### Key Levels
-| Level | Value | Note |
-|-------|-------|------|
-| Nearest Support | {ta_nearest_support} | Distance: {pct}% |
-| Nearest Resistance | {ta_nearest_resistance} | Distance: {pct}% |
-| Swing High (recent) | {ta_swing_high} | |
-| Swing Low (recent) | {ta_swing_low} | |
+
+| Level | Value | Distance from Current | Significance |
+|-------|-------|----------------------|--------------|
+| **Resistance** | {value} | {+pct}% | {e.g., Donchian upper, 52-week high} |
+| **Support** | {value} | {−pct}% | {e.g., SuperTrend trail, BB lower} |
+| Support | {value} | {−pct}% | {e.g., Structural support} |
+| Nearest Support | {ta_nearest_support} | {−pct}% | {closest support level} |
 
 ### Structure Signals
+
 | Signal | Value | Interpretation |
 |--------|-------|----------------|
-| HH (Higher High) | {bool} | Bullish structure |
-| HL (Higher Low) | {bool} | Bullish structure |
-| LH (Lower High) | {bool} | Bearish structure |
-| LL (Lower Low) | {bool} | Bearish structure |
-| BOS (Break of Structure) | {bool} | Trend continuation |
-| CHoCH (Change of Character) | {bool} | Potential reversal |
-| Trend Label | {ta_trend} | |
+| HH (Higher High) | {bool/count} | Bullish structure |
+| HL (Higher Low) | {bool/count} | Bullish structure |
+| LH (Lower High) | {bool/count} | Bearish structure |
+| LL (Lower Low) | {bool/count} | Bearish structure |
+| BOS (Break of Structure) | {bool/count} | Trend continuation |
+| CHoCH (Change of Character) | {bool/count} | Potential reversal |
+| Trend Label | {ta_trend} | {Bullish/Bearish} |
 
 ### Structure Assessment
 - **Pattern:** {Uptrend (HH/HL), Downtrend (LH/LL), or Range-bound}
 - **Key levels:** {Price position relative to support/resistance}
-- **Recent breaks:** {Any BOS or CHoCH signals in recent data}
+- **Recent breaks:** {Any BOS or CHoCH signals}
+- **Support touches:** {How well-established the support is}
+
+### Structure Score
+
+| Factor | Score | Weight | Weighted |
+|--------|-------|--------|----------|
+| {Factor 1} | +/-{n} | {n}% | +/−{value} |
+| {Factor 2} | +/-{n} | {n}% | +/−{value} |
+| {Factor 3} | +/-{n} | {n}% | +/−{value} |
+| {Factor 4} | +/-{n} | {n}% | +/−{value} |
+| **Structure Score** | | **100%** | **+/−{total} / 3.0** |
+
+**Structure Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{Does the recommended strategy rely on structural signals? Are they currently aligned?}
+{1-2 sentences: Does the recommended strategy rely on structural signals? Are they aligned?}
 
 ---
 
 ## 5. Volatility Analysis
 
+**Signal:** LOW RISK / NORMAL / HIGH RISK | **Confidence:** HIGH / MEDIUM / LOW
+
 ### Current Indicators
+
 | Indicator | Value | Assessment |
 |-----------|-------|------------|
-| ATR(14) | {value} | |
+| ATR(14) | {value} | {Absolute level} |
 | ATR Percentile | {value}% | {Low/Normal/High} |
-| BB Width | {value} | {Contraction / Expansion} |
-| %B | {value} | {Position in BB: 0=lower, 1=upper} |
-| HV(20) | {value} | {Rising / Falling} |
-| Park Volatility | {value} | |
+| BB Width | {value} | {Contraction / Expansion / Moderate} |
+| %B | {value} | {0=lower band, 0.5=middle, 1=upper} |
+| BB Upper | {value} | {Resistance level} |
+| BB Lower | {value} | {Support level} |
+| HV(20) | {value}% | {Rising / Falling / Stable} |
+| Park Volatility | {value}% | {Range-based estimate} |
 | GARCH Vol | {value} | {Forecast direction} |
-| ATR Stop Distance | {value} | Suggested stop level |
+| ATR Stop Distance | {value} | {Suggested stop level} |
 
 ### Volatility Assessment
-- **Volatility Level:** {Current ATR percentile interpretation}
+- **Volatility Level:** {ATR percentile interpretation}
 - **Band Position:** {Price position within Bollinger Bands}
 - **Volatility Trend:** {HV and GARCH direction}
-- **Breakout Potential:** {BB width contraction/expansion}
-- **Suggested Stop:** {ATR-based stop distance}
+- **Breakout Potential:** {BB width contraction = potential breakout; expansion = trend acceleration}
+- **Suggested Stop:** {ATR-based stop distance and level}
+
+### Volatility Score
+
+| Factor | Score | Weight | Weighted |
+|--------|-------|--------|----------|
+| {Factor 1} | +/-{n} | {n}% | +/−{value} |
+| {Factor 2} | +/-{n} | {n}% | +/−{value} |
+| {Factor 3} | +/-{n} | {n}% | +/−{value} |
+| {Factor 4} | +/-{n} | {n}% | +/−{value} |
+| **Volatility Score** | | **100%** | **+/−{total} / 3.0** |
+
+**Volatility Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{Does the strategy use volatility-based entries/exits? Is current volatility favorable?}
+{1-2 sentences: Does the strategy use volatility-based entries/exits? Is current volatility favorable?}
 
 ---
 
 ## 6. Volume Analysis
 
+**Signal:** BULLISH / MIXED / BEARISH | **Confidence:** HIGH / MEDIUM / LOW
+
 ### Current Indicators
+
 | Indicator | Value | Assessment |
 |-----------|-------|------------|
-| OBV | {value} | {Rising / Falling} |
+| OBV | {value} | {Rising / Falling / Stable} |
 | CMF(20) | {value} | {Buying / Selling pressure} |
 | OFI | {value} | {Order flow imbalance} |
 | VWAP | {value} | Price vs VWAP: {above/below} |
 | ADL | {value} | {Accumulation / Distribution} |
 | MFI(14) | {value} | {Overbought / Normal / Oversold} |
 | Volume Z-Score | {value} | {Above / Below average} |
+| Volume Percentile | {value}% | {Intensity} |
 | EMV(14) | {value} | {Ease of movement} |
 
 ### Volume Assessment
@@ -406,109 +538,157 @@ Write the evaluation report to `data/reports/evaluation/{ticker}/{latest_date}_e
 - **Volume Trend:** {OBV direction vs price direction — confirmation or divergence?}
 - **Volume Intensity:** {Z-Score and percentile}
 - **Smart Money:** {ADL direction — accumulation or distribution}
+- **Divergence Warning:** {Price vs volume divergence if present}
+
+### Volume Score
+
+| Factor | Score | Weight | Weighted |
+|--------|-------|--------|----------|
+| {Factor 1} | +/-{n} | {n}% | +/−{value} |
+| {Factor 2} | +/-{n} | {n}% | +/−{value} |
+| {Factor 3} | +/-{n} | {n}% | +/−{value} |
+| {Factor 4} | +/-{n} | {n}% | +/−{value} |
+| **Volume Score** | | **100%** | **+/−{total} / 3.0** |
+
+**Volume Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{Does the recommended strategy use volume confirmation? Is volume currently supporting the price action?}
+{1-2 sentences: Does the recommended strategy use volume confirmation? Is volume supporting the price action?}
 
 ---
 
 ## 7. Regime Analysis
 
+**Signal:** BULL / NEUTRAL / BEAR | **Confidence:** HIGH / MEDIUM / LOW
+
 ### HMM Regime Probabilities
-| Regime | Probability | Interpretation |
-|--------|-------------|----------------|
-| State 0 | {ta_hmm_regime_prob_0} | {Bull / Bear / Neutral} |
-| State 1 | {ta_hmm_regime_prob_1} | {Bull / Bear / Neutral} |
-| State 2 | {ta_hmm_regime_prob_2} | {Bull / Bear / Neutral} |
+
+| Regime State | Probability | Interpretation |
+|-------------|-------------|----------------|
+| State 0 | {ta_hmm_regime_prob_0}% | {Bull/Bear/Neutral} |
+| State 1 | {ta_hmm_regime_prob_1}% | {Bull/Bear/Neutral} |
+| State 2 | {ta_hmm_regime_prob_2}% | {Bull/Bear/Neutral} |
 
 ### Regime Assessment
-- **Dominant Regime:** {Highest probability state}
-- **Regime Stability:** {Has the regime changed in the last ~30 days?}
+- **Dominant Regime:** {Highest probability state and what it means}
+- **Regime Stability:** {Has the regime changed in the last ~30 days? How long has it been in current state?}
 - **GARCH Context:** {Volatility trend within current regime}
+- **Trend vs Regime Divergence:** {Any conflict between trend indicators and regime model?}
+
+### Regime Score
+
+| Factor | Score | Weight | Weighted |
+|--------|-------|--------|----------|
+| {Factor 1} | +/-{n} | {n}% | +/−{value} |
+| {Factor 2} | +/-{n} | {n}% | +/−{value} |
+| {Factor 3} | +/-{n} | {n}% | +/−{value} |
+| **Regime Score** | | **100%** | **+/−{total} / 3.0** |
+
+**Regime Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{What regime does the recommended strategy perform best in? Is the current regime aligned?}
+{1-2 sentences: What regime does the recommended strategy perform best in? Is the current regime aligned?}
 
 ---
 
 ## Signal Synthesis
 
-### Score Summary
-| Dimension | Score | Weight | Weighted |
-|-----------|-------|--------|----------|
-| Trend | {1-5} | 20% | |
-| Momentum | {1-5} | 15% | |
-| Return | {15%} | 15% | |
-| Structure | {1-5} | 15% | |
-| Volatility | {1-5} | 10% | |
-| Volume | {1-5} | 15% | |
-| Regime | {1-5} | 10% | |
-| **TOTAL** | | **100%** | **{weighted sum}** |
+### Aggregate Score Summary
+
+| # | Dimension | Signal | Score (/3.0) | Weight | Weighted |
+|---|-----------|--------|-------------|--------|----------|
+| 1 | **Trend** | {Signal} | {+/−val} | {n}% | {+/−val} |
+| 2 | **Momentum** | {Signal} | {+/−val} | {n}% | {+/−val} |
+| 3 | **Return** | {Signal} | {+/−val} | {n}% | {+/−val} |
+| 4 | **Structure** | {Signal} | {+/−val} | {n}% | {+/−val} |
+| 5 | **Volatility** | {Signal} | {+/−val} | {n}% | {+/−val} |
+| 6 | **Volume** | {Signal} | {+/−val} | {n}% | {+/−val} |
+| 7 | **Regime** | {Signal} | {+/−val} | {n}% | {+/−val} |
+| | **AGGREGATE** | | | **100%** | **+/−{total}** |
+
+### Score Interpretation
+
+| Range | Signal | Interpretation |
+|-------|--------|---------------|
+| +2.0 to +3.0 | Strong Bullish | All dimensions aligned — strong buy signal |
+| +0.5 to +1.9 | Mildly Bullish | Trend favors longs but monitor for reversals |
+| **-0.5 to +0.4** | **Neutral / Wait** | **Mixed signals — do not initiate new positions** |
+| -0.5 to -1.9 | Mildly Bearish | Caution warranted, consider reducing exposure |
+| -2.0 to -3.0 | Strong Bearish | All dimensions negative — avoid longs |
+
+**Aggregate Score: {+/−val} — {SIGNAL}**
+
+{1-2 sentence narrative explaining how the aggregate score was reached.}
 
 ### Signal Determination
 - **Overall Signal:** BUY / SELL / HOLD / WAIT
 - **Strength:** Strong / Normal / Weak
 - **Confidence:** High / Medium / Low
 
-### Supporting Indicators (Top 3 per dimension)
+### Supporting Indicators (Top 3 per Dimension)
+
 | Dimension | Indicator 1 | Indicator 2 | Indicator 3 |
 |-----------|------------|------------|------------|
-| Trend | | | |
-| Momentum | | | |
-| Return | | | |
-| Structure | | | |
-| Volatility | | | |
-| Volume | | | |
-| Regime | | | |
+| Trend | {name} | {name} | {name} |
+| Momentum | {name} | {name} | {name} |
+| Return | {name} | {name} | {name} |
+| Structure | {name} | {name} | {name} |
+| Volatility | {name} | {name} | {name} |
+| Volume | {name} | {name} | {name} |
+| Regime | {name} | {name} | {name} |
 
 ### Conflicting Indicators
-{List any indicators that contradict the overall signal, with explanation}
+- **{Conflict 1}:** {description — what contradicts what}
+- **{Conflict 2}:** {description}
+- **{Conflict 3}:** {description}
 
 ### Recommended Action
+
+| Stakeholder | Action | Rationale |
+|-------------|--------|-----------|
+| **Non-holders** | {e.g., DO NOT ENTER} | {reason} |
+| **Current holders** | {e.g., HOLD / REDUCE} | {reason} |
+| **Traders** | {e.g., AVOID} | {reason} |
+| **Value investors** | {e.g., PATIENCE} | {reason} |
+
 - **Entry:** {Specific conditions to trigger entry}
-- **Stop-Loss:** {Level, e.g., "Below nearest support or X% using ATR stop"}
-- **Target:** {Level, e.g., "Nearest resistance or X% using BB upper}
-- **Position Sizing:** {If mentioned in strategy report, reference it}
+- **Stop-Loss:** {Level, e.g., "Below nearest support or ATR-based"}
+- **Target:** {Level, e.g., "Nearest resistance or BB upper"}
+- **Position Sizing:** {If applicable}
 - **Max Holding Period:** {If applicable}
 
 ### Risk Factors
-- {Risk 1: e.g., "Regime shift to bear if HMM prob_1 rises above prob_0"}
-- {Risk 2: e.g., "Volume declining — potential false breakout"}
-- {Risk 3: e.g., "RSI overbought — mean reversion risk"}
+- **{Risk 1}:** {e.g., "Regime shift to bear if HMM prob_1 rises above prob_0"}
+- **{Risk 2}:** {e.g., "Volume declining — potential false breakout"}
+- **{Risk 3}:** {e.g., "RSI overbought — mean reversion risk"}
 
 ### When This Signal Is Invalidated
-- {Condition 1: e.g., "Close below EMA200"}
-- {Condition 2: e.g., "RSI drops below 30"}
-- {Condition 3: e.g., "SuperTrend flips to -1"}
+- **{Condition 1}:** {e.g., "Close below EMA200"} → Signal becomes {NEW_SIGNAL}
+- **{Condition 2}:** {e.g., "RSI drops below 30"} → Signal becomes {NEW_SIGNAL}
+- **{Condition 3}:** {e.g., "SuperTrend flips to -1"} → Signal becomes {NEW_SIGNAL}
+
+### Key Levels to Watch
+
+| Event | Price Level | Distance | Action Trigger |
+|-------|------------|----------|----------------|
+| Stop loss trigger | {value} | {−pct}% | {condition} |
+| Support 1 | {value} | {−pct}% | {condition} |
+| Support 2 | {value} | {−pct}% | {condition} |
+| Entry zone | {low–high} | {range} | {condition} |
+| Resistance 1 | {value} | {+pct}% | {condition} |
+| Resistance 2 | {value} | {+pct}% | {condition} |
 
 ---
 
 ## Next Steps
-- {Action items, e.g., "Monitor for breakout above resistance at X"}
-- {Re-evaluation trigger, e.g., "Re-run this evaluation if {condition}"}}
-- {Strategy-specific note, e.g., "If entering, use {strategy_name} entry rules from strategy report"}
-```
 
-## Chunked Write Instructions
+- **{Action item 1}:** {e.g., "Monitor for pullback to support at ~X"}
+- **{Action item 2}:** {e.g., "Watch MACD histogram for reversal"}
+- **{Re-evaluation trigger}:** {e.g., "Re-run evaluation if close below EMA20 or above resistance"}
+- **{Strategy note}:** {e.g., "If entering, use {strategy_name} entry rules from strategy report"}
+- **{Long-term note}:** {e.g., "Consider as long-term hold if applicable"}
+- **{Alerts}:** {e.g., "Set alerts at support X and resistance Y"}
 
-Due to token limits, write the report file in multiple chunks:
+---
 
-1. **Chunk 1:** Write header + Executive Summary table
-2. **Chunk 2:** Add Trend Analysis section (Step 2 results)
-3. **Chunk 3:** Add Momentum + Return sections (Step 3 + Step 4)
-4. **Chunk 4:** Add Structure + Volatility sections (Step 5 + Step 6)
-5. **Chunk 5:** Add Volume + Regime sections (Step 7 + Step 8)
-6. **Chunk 6:** Add Signal Synthesis and Recommended Action (Step 9)
-7. **Chunk 7:** Add Next Steps (closing)
-
-Use `edit` to insert sections into the existing file content. Each chunk should be ~500-800 words maximum.
-
-## Execution Steps
-
-1. **Verify prerequisites** — check the most recent `.md` file in `data/strategy/{ticker}/` exists; exit with advice if not
-2. **Load data** — read `data/analysis-data/{ticker}.csv`, identify latest date
-3. **Load strategy report** — read the latest strategy file from `data/strategy/{ticker}/` for cross-referencing
-4. **Evaluate each dimension** (Steps 1-8) — compute scores, note key indicators
-5. **Synthesize signal** (Step 9) — aggregate scores, determine BUY/SELL/HOLD
-6. **Write report in chunks** (Step 10) — use the template, write in 7 chunks
-7. **Verify report** — confirm the file was written completely
+*Report generated: {latest_date} | Data: `data/analysis-data/{ticker}.csv` ({total_rows} rows) | Strategy: `data/strategy/{ticker}/{latest_strategy_date}.md`*
