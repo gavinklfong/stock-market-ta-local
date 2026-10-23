@@ -258,14 +258,14 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 
 | Dimension | Signal | Confidence | Key Driver |
 |-----------|--------|------------|------------|
-| **Trend** | 🟢 BULLISH / 🟡 CAUTIOUS / 🔴 BEARISH | High / Medium / Low | {1-line key driver} |
-| **Momentum** | 🟢 BULLISH / 🟡 CAUTIOUS / 🔴 BEARISH | High / Medium / Low | {1-line key driver} |
-| **Return** | 🟢 POSITIVE / 🟡 MIXED / 🔴 NEGATIVE | High / Medium / Low | {1-line key driver} |
-| **Structure** | 🟢 BULLISH / 🟡 CAUTIOUS / 🔴 BEARISH | High / Medium / Low | {1-line key driver} |
-| **Volatility** | 🟢 LOW / 🟡 NORMAL / 🔴 HIGH | High / Medium / Low | {1-line key driver} |
-| **Volume** | 🟢 BULLISH / 🟡 MIXED / 🔴 BEARISH | High / Medium / Low | {1-line key driver} |
-| **Regime** | 🟢 BULL / 🟡 NEUTRAL / 🔴 BEAR | High / Medium / Low | {1-line key driver} |
-| **Overall** | 🟢 STRONG BUY / 🟡 BUY / 🟠 CAUTION / 🔴 SELL | High / Medium / Low | {1-line key driver} |
+| **Trend** | 🟢 BULLISH / 🟡 CAUTIOUS / 🔴 BEARISH | 🟢 High / 🟡 Medium / 🔴 Low | {1-line key driver} |
+| **Momentum** | 🟢 BULLISH / 🟡 CAUTIOUS / 🔴 BEARISH | 🟢 High / 🟡 Medium / 🔴 Low | {1-line key driver} |
+| **Return** | 🟢 POSITIVE / 🟡 MIXED / 🔴 NEGATIVE | 🟢 High / 🟡 Medium / 🔴 Low | {1-line key driver} |
+| **Structure** | 🟢 BULLISH / 🟡 CAUTIOUS / 🔴 BEARISH | 🟢 High / 🟡 Medium / 🔴 Low | {1-line key driver} |
+| **Volatility** | 🟢 LOW / 🟡 NORMAL / 🔴 HIGH | 🟢 High / 🟡 Medium / 🔴 Low | {1-line key driver} |
+| **Volume** | 🟢 BULLISH / 🟡 MIXED / 🔴 BEARISH | 🟢 High / 🟡 Medium / 🔴 Low | {1-line key driver} |
+| **Regime** | 🟢 BULL / 🟡 NEUTRAL / 🔴 BEAR | 🟢 High / 🟡 Medium / 🔴 Low | {1-line key driver} |
+| **Overall** | 🟢 STRONG BUY / 🟡 BUY / 🟠 CAUTION / 🔴 SELL | 🟢 High / 🟡 Medium / 🔴 Low | {1-line key driver} |
 
 ### Current Market Snapshot
 
