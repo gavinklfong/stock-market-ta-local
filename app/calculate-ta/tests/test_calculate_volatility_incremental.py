@@ -121,7 +121,7 @@ class TestProcessCSVIncremental:
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
             # State file should exist
-            state_path = output_path.replace(".csv", "_state.json")
+            state_path = _state_path(output_path)
             assert os.path.exists(state_path)
 
             # State file should have correct version
@@ -270,7 +270,7 @@ class TestProcessCSVIncremental:
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
             # Delete state file to simulate missing state
-            os.remove(output_path.replace(".csv", "_state.json"))
+            os.remove(_state_path(output_path))
 
             # Extend to all 250 rows
             self._write_test_csv(input_dir, "TICKER.csv", df_full)
@@ -295,14 +295,14 @@ class TestProcessCSVIncremental:
             output_path = os.path.join(output_dir, "TICKER.csv")
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
-            state_after_first = _load_state(output_path.replace(".csv", "_state.json"))
+            state_after_first = _load_state(_state_path(output_path))
             assert state_after_first["prev_row_count"] == 200
 
             # Append rows
             self._write_test_csv(input_dir, "TICKER.csv", df_full)
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
-            state_after_incremental = _load_state(output_path.replace(".csv", "_state.json"))
+            state_after_incremental = _load_state(_state_path(output_path))
             assert state_after_incremental["prev_row_count"] == 250
 
     def test_output_columns_unchanged_after_incremental(self):
@@ -401,7 +401,7 @@ class TestProcessCSVIncremental:
             assert len(final) == 300
 
             # State should reflect 300 rows
-            state = _load_state(output_path.replace(".csv", "_state.json"))
+            state = _load_state(_state_path(output_path))
             assert state["prev_row_count"] == 300
 
             # Compare all rows with full computation

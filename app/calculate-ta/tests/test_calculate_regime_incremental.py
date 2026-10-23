@@ -105,7 +105,7 @@ class TestIncrementalRegime:
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
             # State file should exist
-            state_path = output_path.replace(".csv", "_state.json")
+            state_path = _state_path(output_path)
             assert os.path.exists(state_path)
 
             # State file should have correct version
@@ -186,7 +186,7 @@ class TestIncrementalRegime:
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
             # Capture state after first run
-            state1 = _load_state(output_path.replace(".csv", "_state.json"))
+            state1 = _load_state(_state_path(output_path))
             with open(output_path, "r") as f:
                 output1 = f.read()
 
@@ -194,7 +194,7 @@ class TestIncrementalRegime:
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
             # State should be updated (prev_row_count = 200 still)
-            state2 = _load_state(output_path.replace(".csv", "_state.json"))
+            state2 = _load_state(_state_path(output_path))
             assert state2["prev_row_count"] == 200
 
             # Output should be the same (full computation path, same results)
@@ -267,7 +267,7 @@ class TestIncrementalRegime:
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
             # Delete state file to simulate missing state
-            os.remove(output_path.replace(".csv", "_state.json"))
+            os.remove(_state_path(output_path))
 
             # Extend to all 250 rows
             _write_csv(df_full, input_path)
@@ -310,13 +310,13 @@ class TestIncrementalRegime:
             output_path = os.path.join(tmpdir, "test_regime.csv")
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
-            state_after_first = _load_state(output_path.replace(".csv", "_state.json"))
+            state_after_first = _load_state(_state_path(output_path))
             assert state_after_first["prev_row_count"] == 200
 
             # Append rows
             _write_csv(df_full, input_path)
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
-            state_after_incremental = _load_state(output_path.replace(".csv", "_state.json"))
+            state_after_incremental = _load_state(_state_path(output_path))
             assert state_after_incremental["prev_row_count"] == 250
             assert state_after_incremental["last_close"] is not None

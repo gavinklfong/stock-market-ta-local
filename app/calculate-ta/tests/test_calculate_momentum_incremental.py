@@ -473,8 +473,7 @@ class TestProcessCSVIncremental:
 
         process_csv(input_path, output_path, 1, 1)
 
-        base, ext = os.path.splitext(output_path)
-        state_path = base + "_state.json"
+        state_path = _state_path(output_path)
         assert os.path.exists(state_path)
 
         with open(state_path) as f:
