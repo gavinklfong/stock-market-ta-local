@@ -4,8 +4,8 @@ VUKG.L Deep Analysis — Trade-level detail + multi-ticker validation +
 RSI threshold optimization + combo stop-loss protection.
 
 Usage:
-    python app/backtest/vukg_deep_analysis.py              # All analysis
-    python app/backtest/vukg_deep_analysis.py --tickers BP.L HSBA.L  # Also test these tickers
+    python app/backtest/custom_scripts/VUKG.L_deep_analysis.py              # All analysis
+    python app/backtest/custom_scripts/VUKG.L_deep_analysis.py --tickers BP.L HSBA.L  # Also test these tickers
 """
 import pandas as pd
 import numpy as np
