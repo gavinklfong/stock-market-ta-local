@@ -1,0 +1,57 @@
+# STAN.L strategy comparison config
+# Runs all built-in strategies plus custom STAN.L strategies
+#
+# Usage:  python app/backtest/run_backtest.py STAN.L -c app/backtest/configs/stan_compare.yaml
+
+strategies:
+  # Trend & momentum strategies
+  - module: trend_momentum
+  - module: momentum_comp
+  - module: highprob_multi
+  - module: vol_structure
+  - module: score80
+  # Mean-reversion strategies
+  - module: bb_meanrev
+  - module: bb_meanrev_upper
+  - module: bb_meanrev_atr
+  - module: vol_filtered_meanrev
+  - module: short_meanrev
+  - module: vol_breakout_rev
+  - module: bb_meanrev_optimized
+  - module: bb_meanrev_entry2
+  # Breakout & trend-following
+  - module: golden_cross
+  - module: ema_pullback
+  - module: supertrend_plus
+  - module: donchian
+  - module: bb_breakout
+  - module: ema_pullback_vol
+  # Volume & flow strategies
+  - module: institutional
+  - module: vwap
+  - module: ofi
+  # Market structure
+  - module: marketstruct
+  - module: bos_breakout
+  - module: choch
+  - module: vol_expansion
+  # Regime & adaptive
+  - module: hmm_regime
+  - module: regime_adaptive
+  # Multi-score
+  - module: multiscore60
+  - module: dual_exit_meanrev
+  - module: macd_divergence_rev
+  - module: rsi_macd_rev
+  # Custom STAN.L strategies
+  - module: stan_trend_trailing
+  - module: stan_adaptive_trend
+  - module: stan_pullback_rides
+  - module: stan_dual_trend
+  - module: stan_vol_breakout_trend
+
+# Custom strategy directory (relative to this config file)
+custom_dir: ../custom
+
+# Optional trailing stop (percentage below peak high)
+trailing_pct: 0.05
