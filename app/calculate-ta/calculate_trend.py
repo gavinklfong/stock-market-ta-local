@@ -3,7 +3,7 @@ import math
 import os
 import pandas as pd
 
-from common import main, read_yfinance_csv
+from common import compute_ema, main, read_yfinance_csv
 
 
 # =============================================================================
@@ -267,21 +267,6 @@ def compute_atr_from_state(highs, lows, closes, period, last_tr, last_atr, last_
 # =============================================================================
 # EMA computation
 # =============================================================================
-
-
-def compute_ema(values, period):
-    """Incremental EMA: returns a list where each element is the EMA up to that index."""
-    k = 2.0 / (period + 1)
-    result = [None] * len(values)
-    if len(values) < period:
-        return result
-    # Seed with SMA of first `period` values
-    ema = sum(float(v) for v in values[:period]) / period
-    for i in range(period - 1, len(values)):
-        result[i] = ema
-        if i < len(values) - 1:
-            ema = float(values[i + 1]) * k + ema * (1 - k)
-    return result
 
 
 def compute_ma_slope_incremental(closes, period, lookback, prev_row_count,

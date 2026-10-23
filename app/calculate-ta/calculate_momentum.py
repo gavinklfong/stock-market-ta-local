@@ -7,25 +7,11 @@ import numpy as np
 import pandas as pd
 
 from common import (
+    compute_ema,
     file_progress_bar,
     main,
     read_yfinance_csv,
 )
-
-
-def compute_ema(values, period):
-    """Incremental EMA: returns a list where each element is the EMA up to that index."""
-    k = 2.0 / (period + 1)
-    result = [None] * len(values)
-    if len(values) < period:
-        return result
-    # Seed with SMA of first `period` values
-    ema = sum(float(v) for v in values[:period]) / period
-    for i in range(period - 1, len(values)):
-        result[i] = ema
-        if i < len(values) - 1:
-            ema = float(values[i + 1]) * k + ema * (1 - k)
-    return result
 
 
 def compute_rsi(values, period=14):

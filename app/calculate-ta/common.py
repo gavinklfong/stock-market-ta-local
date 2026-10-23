@@ -2,7 +2,8 @@
 
 Exports:
     progress_bar, file_progress_bar, row_progress_bar — terminal progress helpers
-    compute_ema, compute_rsi, compute_macd, compute_roc — momentum-indicator core functions
+    compute_ema — vectorized EMA computation (used by multiple modules)
+    compute_rsi, compute_macd, compute_roc — momentum-indicator core functions
     compute_momentum_columns — assemble all momentum columns for a ticker
     compute_garch_volatility, compute_hmm_regime, compute_regime_columns — regime-indicator functions
     main — thread-pool pipeline with progress reporting (call from each module)
@@ -26,7 +27,74 @@ _bar_state = {"last_row_lines": {}}
 _row_lock = threading.Lock()
 
 
-# --- Progress bar helpers ---
+# --- Vectorized EMA helper ---
+
+
+def compute_ema(values, period):
+    """Compute Exponential Moving Average with SMA seed.
+
+    Returns a list where each element is the EMA up to that index.
+    Uses numpy convolution for the recursive computation, which is
+    significantly faster than a pure Python loop for large arrays.
+
+    The EMA is seeded with the SMA of the first period values, then
+    recurses.  Valid values start at index period - 1.
+
+    Parameters
+    ----------
+    values : array-like
+        Input price/values.
+    period : int
+        EMA lookback period.
+
+    Returns
+    -------
+    list[float | None]
+        EMA values aligned with input; None for indices before warm-up.
+    """
+    n = len(values)
+    result = [None] * n
+    if n < period:
+        return result
+
+    v = np.asarray(values, dtype=float)
+
+    # Seed with SMA of first `period` values
+    ema_seed = float(v[:period].mean())
+    result[period - 1] = ema_seed
+
+    if n <= period:
+        return result
+
+    k = 2.0 / (period + 1)
+    beta = 1.0 - k
+
+    # Recursive EMA from index `period` onwards:
+    #   ema[i] = k * v[i] + beta * ema[i-1]
+    #
+    # Closed-form expansion:
+    #   ema[period + j] = beta^(j+1) * ema_seed
+    #                   + k * sum_{m=0}^{j} v[period+m] * beta^(j-m)
+    #
+    # The price contribution is a causal convolution of the price series
+    # with the kernel [k, k*beta, k*beta^2, …], which numpy computes
+    # in O(n log n) via FFT.
+
+    prices = v[period:]              # shape (n_new,)
+    n_new = len(prices)
+
+    weights = k * beta ** np.arange(n_new)   # [k, k*beta, k*beta^2, …]
+
+    # Full convolution; extract first n_new elements (causal part).
+    conv = np.convolve(prices, weights, 'full')
+    price_contrib = conv[:n_new]
+
+    # Seed decay component: beta^(j+1) * ema_seed for j = 0..n_new-1
+    seed_decay = beta ** np.arange(1, n_new + 1) * ema_seed
+
+    result[period:] = price_contrib + seed_decay
+
+    return result
 
 def progress_bar(current, total, prefix="", bar_length=40):
     """Render a single-line progress bar to stdout."""
