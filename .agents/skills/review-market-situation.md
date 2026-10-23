@@ -2,15 +2,24 @@
 
 ## Objective
 
-Assess the current market situation for `{ticker}` based on the latest available data and recommend a buy / sell / hold signal. Evaluate across 7 dimensions: trend, momentum, return, structure, volatility, volume, and regime. Cross-reference findings with the most recent backtested strategy results from `data/strategy/{ticker}/`. Output the evaluation report to `data/reports/evaluation/{ticker}/{latest_market_data_date}_evaluation.md`.
+Assess the market situation for `{ticker}` as of `{evaluation_date}` and recommend a buy / sell / hold signal. Evaluate across 7 dimensions: trend, momentum, return, structure, volatility, volume, and regime. Cross-reference findings with the most recent backtested strategy results from `data/strategy/{ticker}/`. Output the evaluation report to `data/reports/evaluation/{ticker}/{evaluation_date}_evaluation.md`.
 
 ## Parameters
 
 - `{ticker}` — Ticker symbol (e.g. `NG.L`, `BP.L`, `HSBA.L`)
+- `{evaluation_date}` — The date to evaluate as of (format: `YYYY-MM-DD`). Defaults to the latest date in the CSV if not specified. Used for backtesting / historical verification of signals.
 - Data source: `data/analysis-data/{ticker}.csv`
 - Strategy reference: `data/strategy/{ticker}/` — the most recent `.md` file in this directory (must exist before running this skill)
 - TA knowledge base: `docs/all_technical_analysis.md`
-- Output: `data/reports/evaluation/{ticker}/{latest_date}_evaluation.md` (where `{latest_date}` is the last date in the CSV, formatted as `YYYY-MM-DD`)
+- Output: `data/reports/evaluation/{ticker}/{evaluation_date}_evaluation.md` (where `{evaluation_date}` is the specified date or the last date in the CSV)
+
+## Usage Notes
+
+- **Historical verification:** To test whether this skill would have given correct advice on a past date, pass the date as `{evaluation_date}` (e.g. `2025-06-15`). The evaluation will use only data available up to and including that date — no hindsight.
+- **Temporal cutoff:** When `{evaluation_date}` is provided, the skill **cuts off all data after that date**. Only rows where `Date <= {evaluation_date}` are used. Rolling indicators (RSI, MACD, ATR, etc.) are read at their values on the evaluation date, reflecting the data available at that time.
+- **Date not found:** If the specified date does not exist in the CSV (e.g. weekend/holiday), the skill falls back to the latest available date **on or before** the specified date.
+- **Future date:** If the specified date is after the last row in the CSV, the skill uses the latest available date and notes the discrepancy.
+- **Default behavior:** If `{evaluation_date}` is omitted, the skill uses the latest date in the CSV (original behavior).
 
 ## Prerequisites Check
 
@@ -48,13 +57,18 @@ All TA columns use the `ta_` prefix. Key columns for each evaluation dimension:
 
 ## Evaluation Methodology
 
-### Step 1: Load & Inspect Latest Data
+### Step 1: Load & Inspect Data for Evaluation Date
 
 1. Load `data/analysis-data/{ticker}.csv`
-2. Identify the latest date (`df["Date"].max()`) — this becomes `{latest_date}` in the output filename
-3. Read the LAST row (most recent data point) and the preceding ~20 rows for context
-4. Record: current price, date range, total rows, column count
-5. Check for any NaN values in key columns
+2. **Determine evaluation date:**
+   - If `{evaluation_date}` is provided and exists in the CSV, use it.
+   - If `{evaluation_date}` is not provided or not found, use `df["Date"].max()` (the latest date).
+   - If the specified date is not in the CSV, find the closest date **on or before** the specified date (i.e., the latest available data point at or before that date).
+   - Record the actual date used as `{actual_date}`.
+3. **CUT OFF FUTURE DATA:** If `{evaluation_date}` was explicitly provided (i.e., not the default latest date), slice the DataFrame to include only rows where `Date <= {actual_date}`. This ensures the evaluation uses only data that was actually available as of that date — no hindsight. The date range for all indicator readings should be from the earliest available date up to `{actual_date}`.
+4. Read the row matching `{actual_date}` (the evaluation date) and the preceding ~20 rows for context from the sliced data
+5. Record: current price on evaluation date, date range (up to `{actual_date}`), total rows (within the cutoff), column count
+6. Check for any NaN values in key columns
 
 ### Step 2: Evaluate Trend (Score: 1–5)
 
@@ -216,7 +230,7 @@ Aggregate all 7 dimension scores:
 
 ### Step 10: Generate Report
 
-Write the evaluation report to `data/reports/evaluation/{ticker}/{latest_date}_evaluation.md` using the standardized template below, broken into chunks.
+Write the evaluation report to `data/reports/evaluation/{ticker}/{actual_date}_evaluation.md` using the standardized template below, broken into chunks.
 
 ## Standardized Output Report Template
 
@@ -225,10 +239,11 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 ```markdown
 # Market Situation Evaluation: {company_name} ({Ticker})
 
-**Date:** {latest_date}
+**Evaluation Date:** {evaluation_date}
+**Actual Date Used:** {actual_date}
 **Ticker:** {Ticker} ({company_name})
 **Price:** {close_price}
-**Data Range:** {first_date} to {latest_date} ({total_rows} rows)
+**Data Range:** {first_date} to {last_date} ({total_rows} rows)
 **Sector:** {sector}
 **Strategy Reference:** `data/strategy/{ticker}/{latest_strategy_date}.md`
 
@@ -691,4 +706,4 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 
 ---
 
-*Report generated: {latest_date} | Data: `data/analysis-data/{ticker}.csv` ({total_rows} rows) | Strategy: `data/strategy/{ticker}/{latest_strategy_date}.md`*
+*Report generated: {actual_date} | Data point: {evaluation_date} → `{actual_date}` | Data: `data/analysis-data/{ticker}.csv` ({total_rows} rows) | Strategy: `data/strategy/{ticker}/{latest_strategy_date}.md`*
