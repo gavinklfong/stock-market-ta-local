@@ -68,14 +68,20 @@ def download_catchup(yf_ticker, last_date, end_date=None):
 
 
 def save_data(filepath, ticker_df):
-    """Save DataFrame to CSV with Date as a column, sorted by date."""
+    """Save DataFrame to CSV with Date as a column, sorted by date.
+    
+    Adds a 'weekday' column (0=Monday, 1=Tuesday, …, 6=Sunday) derived from the DatetimeIndex.
+    """
     ticker_df = ticker_df.copy()
     if isinstance(ticker_df.index, pd.DatetimeIndex):
         ticker_df.index.name = "Date"
+        # Derive weekday from the DatetimeIndex (0=Mon … 6=Sun)
+        ticker_df["weekday"] = ticker_df.index.dayofweek
     else:
         ticker_df["Date"] = pd.to_datetime(ticker_df["Date"])
         ticker_df = ticker_df.sort_values("Date")
         ticker_df = ticker_df.set_index("Date")
+        ticker_df["weekday"] = ticker_df.index.dayofweek
     ticker_df = ticker_df[~ticker_df.index.duplicated(keep="last")]
     ticker_df = ticker_df.sort_index()
     ticker_df.to_csv(filepath)

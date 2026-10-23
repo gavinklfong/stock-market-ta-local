@@ -1266,3 +1266,43 @@ Price above EMA200              → Long-term uptrend
 | `ta_next_ex_div_date` | Income timing | Plan for dividend income calendar |
 
 ---
+
+## 12. Time-Based Indicators
+
+### 12.1 Weekday (day-of-week effect)
+
+| Column | Description | Values |
+|--------|-------------|--------|
+| `weekday` | Day of week derived from Date index | 0=Monday, 1=Tuesday, 2=Wednesday, 3=Thursday, 4=Friday, 5=Saturday, 6=Sunday |
+
+The weekday column encodes the day of the week for each row. This is useful for analyzing day-of-week seasonal patterns in market behaviour.
+
+**Common weekday effect observations:**
+
+| Day | Typical behaviour | Strategy implication |
+|-----|-------------------|---------------------|
+| Monday | "Weekend effect" — prices may gap down after weekend news | Potential buying opportunity on Monday gaps |
+| Tuesday | Often the lowest volatility day of the week | Good day to enter positions |
+| Wednesday | Mid-week correction / profit-taking | Watch for reversals |
+| Thursday | "Four-day effect" — options expiry day (in markets with weekly options) | Increased volatility near expiry |
+| Friday | "Turnaround Tuesday" follow-through or pre-weekend positioning | Exit risk positions before weekend |
+| Saturday/Sunday | No trading (weekend) | Price gaps on Monday reflect weekend news |
+
+**Using weekday in analysis:**
+
+```text
+# Average return by weekday
+Group OHLCV data by 'weekday' column, compute mean daily return per weekday.
+
+# Entry filter — avoid Friday entries
+if weekday == 4:  # Friday
+    reduce_position_size()  # Weekend gap risk
+
+# Entry filter — Monday dip buying
+if weekday == 0 and price < previous_close:  # Monday gap down
+    increase_position_size()  # Weekend news already priced in
+```
+
+> **Note:** The "weekday effect" is an empirical observation, not a guaranteed pattern. Always combine with technical and fundamental signals.
+
+---
