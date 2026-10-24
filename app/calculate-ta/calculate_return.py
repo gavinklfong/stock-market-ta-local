@@ -281,11 +281,22 @@ def _compute_aligned_relative_strength(closes, dates, benchmark_df):
     return full_rs
 
 
-def _load_benchmark(input_dir):
+# Module-level cache for ^FTSE benchmark data (shared across all ticker processing).
+_bench_cached: pd.DataFrame | None = None
+
+
+def _load_benchmark(input_dir: str) -> pd.DataFrame | None:
     """Load ^FTSE benchmark data from market-data directory.
+
+    Results are cached in-process so the benchmark is only loaded once
+    regardless of how many tickers are processed.
 
     Returns a DataFrame with Date and Close columns, or None on failure.
     """
+    global _bench_cached
+    if _bench_cached is not None:
+        return _bench_cached
+
     bench_path = os.path.join(input_dir, "^FTSE.csv")
     if not os.path.exists(bench_path):
         return None
@@ -293,7 +304,8 @@ def _load_benchmark(input_dir):
         df = read_yfinance_csv(bench_path)
         df["Date"] = pd.to_datetime(df["Date"])
         df = df.sort_values("Date").reset_index(drop=True)
-        return df[["Date", "Close"]]
+        _bench_cached = df[["Date", "Close"]]
+        return _bench_cached
     except Exception:
         return None
 
