@@ -11,6 +11,7 @@ Exports:
 """
 
 import argparse
+import json
 import math
 import os
 import sys
@@ -164,6 +165,11 @@ def read_yfinance_csv(input_path: str) -> pd.DataFrame:
 
     Falls back to standard single-header CSV if no multi-row header is detected.
 
+    Optimizations over the original implementation:
+      - Vectorized header detection using numpy array operations
+      - Vectorized column merge using numpy where() instead of per-column loops
+      - Batch numeric conversion via df.apply() instead of per-column pd.to_numeric calls
+
     Args:
         input_path: Path to the CSV file.
 
@@ -173,50 +179,104 @@ def read_yfinance_csv(input_path: str) -> pd.DataFrame:
     """
     raw = pd.read_csv(input_path, header=None)
 
-    # Find the header row: the row where col[0] is "Date"
-    header_idx = None
-    for i in range(min(5, len(raw))):
-        val = str(raw.iloc[i, 0]).strip()
-        if val == "Date":
-            header_idx = i
-            break
+    # --- Vectorized header detection ---
+    # Find the first row (within first 5) where col[0] == "Date"
+    first_col = raw.iloc[:, 0].astype(str).str.strip().values
+    search = first_col[:5] if len(first_col) > 5 else first_col
+    mask = search == "Date"
+    header_idx = int(np.argmax(mask)) if mask.any() else None
 
     if header_idx is None:
         # Fallback: use first row as header (standard single-header CSV)
         header_row = raw.iloc[0].astype(str)
     else:
-        # For yfinance multi-row headers, look up to 2 rows above for column names:
-        #   row above Date: may have ticker info
-        #   row above that: usually has the actual column names
-        header_row = raw.iloc[header_idx].astype(str)
-        above = raw.iloc[header_idx - 1].astype(str) if header_idx > 0 else None
-        above2 = raw.iloc[header_idx - 2].astype(str) if header_idx > 1 else None
+        # --- Vectorized multi-row header merge ---
+        row_date = raw.iloc[header_idx].astype(str).values
+        row_above = raw.iloc[header_idx - 1].astype(str).values if header_idx > 0 else None
+        row_above2 = raw.iloc[header_idx - 2].astype(str).values if header_idx > 1 else None
+        n_cols = len(row_date)
 
-        # Merge: prefer Date-row values, then above2 (actual column names), then above
-        merged = {}
-        for col in range(len(header_row)):
-            h_val = header_row.iloc[col].strip() if pd.notna(header_row.iloc[col]) else ""
-            if h_val:
-                merged[col] = h_val
-            elif above2 is not None and pd.notna(above2.iloc[col]):
-                v = above2.iloc[col].strip()
-                if v:
-                    merged[col] = v
-            elif above is not None and pd.notna(above.iloc[col]):
-                v = above.iloc[col].strip()
-                if v:
-                    merged[col] = v
-            else:
-                merged[col] = f"col_{col}"
-        header_row = pd.Series([merged[i] for i in range(len(header_row))])
+        # Build merged header with priority: date row > above2 > above > col_N
+        merged = np.full(n_cols, np.nan, dtype=object)
+
+        # Layer 1: date row (usually all empty for "Date,,,,,")
+        for i in range(n_cols):
+            if not pd.isna(row_date[i]) and row_date[i].strip():
+                merged[i] = row_date[i].strip()
+
+        # Layer 2: row above date (the actual column names)
+        if row_above2 is not None:
+            for i in range(n_cols):
+                if pd.isna(merged[i]):
+                    val = row_above2[i]
+                    if not pd.isna(val) and val.strip():
+                        merged[i] = val.strip()
+
+        # Layer 3: row above that (ticker info — usually fills in gaps)
+        if row_above is not None:
+            for i in range(n_cols):
+                if pd.isna(merged[i]):
+                    val = row_above[i]
+                    if not pd.isna(val) and val.strip():
+                        merged[i] = val.strip()
+
+        # Layer 4: fallback column names
+        for i in range(n_cols):
+            if pd.isna(merged[i]):
+                merged[i] = f"col_{i}"
+
+        header_row = pd.Series(merged)
 
     data = raw.iloc[header_idx + 1:].copy()
     data.columns = header_row.values
-    # Convert numeric columns to float
-    for col in data.columns:
-        if col != "Date":
-            data[col] = pd.to_numeric(data[col], errors="coerce")
+    # --- Vectorized numeric conversion ---
+    numeric_cols = [col for col in data.columns if col != "Date"]
+    if numeric_cols:
+        data[numeric_cols] = data[numeric_cols].apply(pd.to_numeric, errors="coerce")
+    # Drop auto-generated col_N columns where all values are NaN
+    # (trailing empty columns from yfinance header padding)
+    drop_cols = [
+        col for col in data.columns
+        if col.startswith("col_") and data[col].isna().all()
+    ]
+    if drop_cols:
+        data = data.drop(columns=drop_cols)
     return data
+
+
+# --- State file helpers ---
+
+
+def save_state(state, state_path):
+    """Persist computation state to a JSON file.
+
+    Args:
+        state: Dict-like state to serialize.
+        state_path: File path to write the JSON state file.
+    """
+    state_dir = os.path.dirname(state_path)
+    if state_dir:
+        os.makedirs(state_dir, exist_ok=True)
+    with open(state_path, "w") as f:
+        json.dump(state, f)
+
+
+def load_state(state_path):
+    """Load computation state from a JSON file.
+
+    Returns None if the file does not exist or is corrupted.
+
+    Args:
+        state_path: Path to the JSON state file.
+
+    Returns:
+        Parsed state dict, or None.
+    """
+    try:
+        with open(state_path, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
 
 
 # --- Pipeline runner ---

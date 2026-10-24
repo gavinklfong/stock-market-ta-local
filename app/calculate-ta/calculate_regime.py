@@ -1,4 +1,3 @@
-import json
 import math
 import os
 import warnings
@@ -6,7 +5,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
-from common import main, read_yfinance_csv
+from common import load_state, main, read_yfinance_csv, save_state
 
 # Suppress arch/hmmlearn/scipy noise during fitting
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -266,23 +265,6 @@ def compute_regime_columns(closes, n):
 # =============================================================================
 
 
-def _save_state(state, state_path):
-    """Persist computation state to a JSON file."""
-    with open(state_path, "w") as f:
-        json.dump(state, f)
-
-
-def _load_state(state_path):
-    """Load computation state from a JSON file."""
-    if not os.path.exists(state_path):
-        return None
-    try:
-        with open(state_path, "r") as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
 def process_csv(input_or_df, output_path, total_files, current_file, _lock=None):
     """Process a single ticker's OHLCV data into regime indicator output.
 
@@ -360,7 +342,7 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
             prev_close = float(prev_df["Close"].iloc[-1]) if "Close" in prev_df.columns else None
 
             # Try to load state; if missing, fall back to full computation
-            state = _load_state(state_path)
+            state = load_state(state_path)
 
             # Detect today's date: if the last row's date matches today and
             # there's existing output, force full recomputation.
@@ -401,7 +383,7 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
                     # Update state
                     state["prev_row_count"] = file_total
                     state["last_close"] = closes[-1]
-                    _save_state(state, state_path)
+                    save_state(state, state_path)
 
                     return len(merged)
 
@@ -431,7 +413,7 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
         "prev_row_count": file_total,
         "last_close": closes[-1],
     }
-    _save_state(state, state_path)
+    save_state(state, state_path)
 
     return len(df)
 

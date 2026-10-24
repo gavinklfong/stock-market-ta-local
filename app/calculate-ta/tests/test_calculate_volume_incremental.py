@@ -17,8 +17,8 @@ from calculate_volume import (
     compute_volume_columns,
     compute_volume_columns_incremental,
     process_csv,
-    _load_state,
-    _save_state,
+    load_state,
+    save_state,
 )
 
 
@@ -76,21 +76,21 @@ class TestStateFile:
             state_path = f.name
         try:
             state = {"_version": 1, "prev_row_count": 100, "last_obv": 5000.0}
-            _save_state(state, state_path)
-            loaded = _load_state(state_path)
+            save_state(state, state_path)
+            loaded = load_state(state_path)
             assert loaded == state
         finally:
             os.unlink(state_path)
 
-    def test_load_state_missing_file(self):
-        assert _load_state("/nonexistent/path.json") is None
+    def testload_state_missing_file(self):
+        assert load_state("/nonexistent/path.json") is None
 
-    def test_load_state_invalid_json(self):
+    def testload_state_invalid_json(self):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             f.write("not valid json")
             state_path = f.name
         try:
-            assert _load_state(state_path) is None
+            assert load_state(state_path) is None
         finally:
             os.unlink(state_path)
 
@@ -274,7 +274,7 @@ class TestProcessCsvIncremental:
 
             state_path = _state_path(output_path)
             assert os.path.exists(state_path)
-            state = _load_state(state_path)
+            state = load_state(state_path)
             assert state["_version"] == 1
             assert state["prev_row_count"] == 100
 
@@ -358,12 +358,12 @@ class TestProcessCsvIncremental:
             # Create state directory (process_csv creates it, but we need it here)
             os.makedirs(os.path.dirname(state_path), exist_ok=True)
             # Create a state file with wrong version
-            _save_state({"_version": 99, "prev_row_count": 50}, state_path)
+            save_state({"_version": 99, "prev_row_count": 50}, state_path)
 
             rows = process_csv(input_path, output_path, 1, 1)
             assert rows == 100
 
             # Should have overwritten with correct state
-            state = _load_state(state_path)
+            state = load_state(state_path)
             assert state["_version"] == 1
             assert state["prev_row_count"] == 100

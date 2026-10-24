@@ -1,37 +1,11 @@
-import json
 import math
 import os
 import pandas as pd
 
-from common import main, read_yfinance_csv
+from common import load_state, main, read_yfinance_csv, save_state
 
 # Standard trading days per year for annualization
 _ANNUALIZATION_FACTOR = 252
-
-
-# =============================================================================
-# State file helpers
-# =============================================================================
-
-
-def _save_state(state, state_path):
-    """Persist computation state to a JSON file."""
-    with open(state_path, "w") as f:
-        json.dump(state, f)
-
-
-def _load_state(state_path):
-    """Load computation state from a JSON file.
-
-    Returns None if the file does not exist or is corrupted.
-    """
-    if not os.path.exists(state_path):
-        return None
-    try:
-        with open(state_path, "r") as f:
-            return json.load(f)
-    except Exception:
-        return None
 
 
 # =============================================================================
@@ -739,7 +713,7 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
     state_dir = os.path.join(os.path.dirname(output_path), "state")
     os.makedirs(state_dir, exist_ok=True)
     state_path = os.path.join(state_dir, os.path.basename(base) + "_state.json")
-    state = _load_state(state_path)
+    state = load_state(state_path)
 
     # Detect today's date: if the last row's date matches today and there's
     # existing output, force full recomputation so today's indicators are
@@ -786,7 +760,7 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
                 df[col] = values
 
         # Save updated state
-        _save_state({
+        save_state({
             "_version": 1,
             "prev_row_count": file_total,
             "last_date": str(raw_df["Date"].iloc[-1]),
@@ -805,7 +779,7 @@ def process_csv(input_or_df, output_path, total_files, current_file, _lock=None)
 
         # Save initial state
         atr_state = _get_atr_state(highs, lows, closes, 14)
-        _save_state({
+        save_state({
             "_version": 1,
             "prev_row_count": file_total,
             "last_date": str(raw_df["Date"].iloc[-1]),

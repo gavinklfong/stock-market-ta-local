@@ -15,8 +15,8 @@ import pytest
 from calculate_volatility import (
     compute_volatility_columns,
     process_csv,
-    _load_state,
-    _save_state,
+    load_state,
+    save_state,
 )
 
 
@@ -73,13 +73,13 @@ class TestStateFile:
         """State should be saved to and loaded from a JSON file."""
         state = {"key": "value", "count": 42}
         path = str(tmp_path / "state.json")
-        _save_state(state, path)
-        loaded = _load_state(path)
+        save_state(state, path)
+        loaded = load_state(path)
         assert loaded == state
 
     def test_load_nonexistent(self, tmp_path):
         """Loading a nonexistent state file should return None."""
-        result = _load_state(str(tmp_path / "nonexistent.json"))
+        result = load_state(str(tmp_path / "nonexistent.json"))
         assert result is None
 
     def test_load_corrupted(self, tmp_path):
@@ -87,7 +87,7 @@ class TestStateFile:
         path = str(tmp_path / "corrupted.json")
         with open(path, "w") as f:
             f.write("{invalid json")
-        result = _load_state(path)
+        result = load_state(path)
         assert result is None
 
 
@@ -125,7 +125,7 @@ class TestProcessCSVIncremental:
             assert os.path.exists(state_path)
 
             # State file should have correct version
-            state = _load_state(state_path)
+            state = load_state(state_path)
             assert state is not None
             assert state["_version"] == 1
             assert "prev_row_count" in state
@@ -295,14 +295,14 @@ class TestProcessCSVIncremental:
             output_path = os.path.join(output_dir, "TICKER.csv")
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
-            state_after_first = _load_state(_state_path(output_path))
+            state_after_first = load_state(_state_path(output_path))
             assert state_after_first["prev_row_count"] == 200
 
             # Append rows
             self._write_test_csv(input_dir, "TICKER.csv", df_full)
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
-            state_after_incremental = _load_state(_state_path(output_path))
+            state_after_incremental = load_state(_state_path(output_path))
             assert state_after_incremental["prev_row_count"] == 250
 
     def test_output_columns_unchanged_after_incremental(self):
@@ -401,7 +401,7 @@ class TestProcessCSVIncremental:
             assert len(final) == 300
 
             # State should reflect 300 rows
-            state = _load_state(_state_path(output_path))
+            state = load_state(_state_path(output_path))
             assert state["prev_row_count"] == 300
 
             # Compare all rows with full computation

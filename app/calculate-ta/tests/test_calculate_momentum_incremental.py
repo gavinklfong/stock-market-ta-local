@@ -27,8 +27,8 @@ from calculate_momentum import (
     compute_cci,
     compute_cci_incremental,
     compute_momentum_columns,
-    _save_state,
-    _load_state,
+    save_state,
+    load_state,
     process_csv,
 )
 
@@ -372,13 +372,13 @@ class TestStateFile:
         """State should be saved to and loaded from a JSON file."""
         state = {"key": "value", "count": 42}
         path = str(tmp_path / "state.json")
-        _save_state(state, path)
-        loaded = _load_state(path)
+        save_state(state, path)
+        loaded = load_state(path)
         assert loaded == state
 
     def test_load_nonexistent(self, tmp_path):
         """Loading a nonexistent state file should return None."""
-        result = _load_state(str(tmp_path / "nonexistent.json"))
+        result = load_state(str(tmp_path / "nonexistent.json"))
         assert result is None
 
     def test_load_corrupted(self, tmp_path):
@@ -386,7 +386,7 @@ class TestStateFile:
         path = str(tmp_path / "corrupted.json")
         with open(path, "w") as f:
             f.write("{invalid json")
-        result = _load_state(path)
+        result = load_state(path)
         assert result is None
 
 

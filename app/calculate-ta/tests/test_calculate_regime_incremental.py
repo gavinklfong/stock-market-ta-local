@@ -20,8 +20,8 @@ from calculate_regime import (
     compute_hmm_regime,
     compute_regime_columns,
     process_csv,
-    _load_state,
-    _save_state,
+    load_state,
+    save_state,
 )
 
 
@@ -109,7 +109,7 @@ class TestIncrementalRegime:
             assert os.path.exists(state_path)
 
             # State file should have correct version
-            state = _load_state(state_path)
+            state = load_state(state_path)
             assert state is not None
             assert state["_version"] == 1
             assert "prev_row_count" in state
@@ -186,7 +186,7 @@ class TestIncrementalRegime:
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
             # Capture state after first run
-            state1 = _load_state(_state_path(output_path))
+            state1 = load_state(_state_path(output_path))
             with open(output_path, "r") as f:
                 output1 = f.read()
 
@@ -194,7 +194,7 @@ class TestIncrementalRegime:
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
             # State should be updated (prev_row_count = 200 still)
-            state2 = _load_state(_state_path(output_path))
+            state2 = load_state(_state_path(output_path))
             assert state2["prev_row_count"] == 200
 
             # Output should be the same (full computation path, same results)
@@ -310,13 +310,13 @@ class TestIncrementalRegime:
             output_path = os.path.join(tmpdir, "test_regime.csv")
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
-            state_after_first = _load_state(_state_path(output_path))
+            state_after_first = load_state(_state_path(output_path))
             assert state_after_first["prev_row_count"] == 200
 
             # Append rows
             _write_csv(df_full, input_path)
             process_csv(input_path, output_path, total_files=1, current_file=1)
 
-            state_after_incremental = _load_state(_state_path(output_path))
+            state_after_incremental = load_state(_state_path(output_path))
             assert state_after_incremental["prev_row_count"] == 250
             assert state_after_incremental["last_close"] is not None
