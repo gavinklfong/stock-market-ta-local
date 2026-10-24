@@ -1,8 +1,10 @@
 import math
 import os
+
+import numpy as np
 import pandas as pd
 
-from common import load_state, main, read_yfinance_csv, save_state
+from common import compute_ema, load_state, main, read_yfinance_csv, save_state
 
 # Standard trading days per year for annualization
 _ANNUALIZATION_FACTOR = 252
@@ -21,33 +23,31 @@ def _get_atr_state(highs, lows, closes, period=14):
       - last_atr: ATR value at the last row (or None)
     """
     n = len(highs)
-    true_ranges = [None] * n
-    for i in range(n):
-        if i == 0:
-            true_ranges[i] = highs[i] - lows[i]
-        else:
-            tr = max(
-                highs[i] - lows[i],
-                abs(highs[i] - closes[i - 1]),
-                abs(lows[i] - closes[i - 1]),
-            )
-            true_ranges[i] = tr
-
+    if n == 0:
+        return {"last_tr": 0.0, "last_atr": None}
     if n < period + 1:
         return {"last_tr": 0.0, "last_atr": None}
 
-    atr_values = [None] * n
-    initial_atr = sum(true_ranges[i] for i in range(period)) / period
-    atr_values[period] = initial_atr
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
 
-    k = 2.0 / (period + 1)
-    for i in range(period + 1, n):
-        if true_ranges[i] is not None:
-            prev_atr = atr_values[i - 1]
-            if prev_atr is not None:
-                atr_values[i] = true_ranges[i] * k + prev_atr * (1 - k)
+    # Pad shorter arrays to match the longest
+    if len(c) < n:
+        c = np.pad(c, (0, n - len(c)), constant_values=c[-1] if len(c) > 0 else 0)
+    if len(l) < n:
+        l = np.pad(l, (0, n - len(l)), constant_values=0.0)
 
-    return {"last_tr": true_ranges[n - 1], "last_atr": atr_values[n - 1]}
+    # True Range vectorized
+    tr = np.empty(n, dtype=float)
+    tr[0] = h[0] - l[0]
+    tr[1:] = np.maximum(
+        np.maximum(h[1:] - l[1:], np.abs(h[1:] - c[:-1])),
+        np.abs(l[1:] - c[:-1]),
+    )
+
+    atr_values = compute_atr(highs, lows, closes, period)
+    return {"last_tr": float(tr[n - 1]), "last_atr": atr_values[n - 1]}
 
 
 # =============================================================================
@@ -85,45 +85,36 @@ def compute_atr_from_state(highs, lows, closes, period, last_tr, last_atr, last_
         ATR values for all indices (None where not yet valid).
     """
     n = len(highs)
-    result = [None] * n
+    if n == 0:
+        return []
 
-    # Step 1: Compute TR for all rows
-    tr = [0.0] * n
-    for i in range(n):
-        if i == 0:
-            tr[i] = highs[i] - lows[i]
-        else:
-            tr[i] = max(
-                highs[i] - lows[i],
-                abs(highs[i] - closes[i - 1]),
-                abs(lows[i] - closes[i - 1]),
-            )
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
 
-    # Step 2: Compute ATR from scratch for all rows (same formula as compute_atr)
-    # Uses EMA smoothing: k = 2/(period+1), matching the original.
-    k = 2.0 / (period + 1)
-    for i in range(n):
-        if i == 0:
-            result[i] = None
-            continue
-        if i < period:
-            result[i] = None
-            continue
-        if i == period:
-            # Seed ATR at index `period` using first `period` true ranges
-            result[i] = sum(tr[j] for j in range(period)) / period
-        else:
-            prev = result[i - 1]
-            if prev is not None:
-                result[i] = prev * (1 - k) + tr[i] * k
-            else:
-                result[i] = None
+    # Pad shorter arrays to match the longest
+    if len(c) < n:
+        c = np.pad(c, (0, n - len(c)), constant_values=c[-1] if len(c) > 0 else 0)
+    if len(l) < n:
+        l = np.pad(l, (0, n - len(l)), constant_values=0.0)
+
+    # True Range vectorized
+    tr = np.empty(n, dtype=float)
+    tr[0] = h[0] - l[0]
+    tr[1:] = np.maximum(
+        np.maximum(h[1:] - l[1:], np.abs(h[1:] - c[:-1])),
+        np.abs(l[1:] - c[:-1]),
+    )
+
+    # Step 2: Compute ATR from scratch for all rows (vectorized via compute_ema)
+    result = compute_ema(tr, period)
 
     # Step 3: Continue from state for rows after last_idx
+    k = 2.0 / (period + 1)
     if last_atr is not None and last_idx + 1 < n:
         current_atr = last_atr
         for i in range(last_idx + 1, n):
-            current_atr = current_atr * (1 - k) + tr[i] * k
+            current_atr = current_atr * (1 - k) + float(tr[i]) * k
             result[i] = current_atr
 
     return result
@@ -131,35 +122,59 @@ def compute_atr_from_state(highs, lows, closes, period, last_tr, last_atr, last_
 
 
 def compute_atr(highs, lows, closes, period=14):
-    """Compute Wilder's ATR. Returns list aligned with input."""
-    if len(highs) < period + 1:
-        return [None] * len(highs)
+    """Compute Wilder's ATR. Returns list aligned with input.
 
-    true_ranges = [None] * len(highs)
-    for i in range(len(highs)):
-        if i == 0:
-            true_ranges[i] = highs[i] - lows[i]
-        else:
-            tr = max(
-                highs[i] - lows[i],
-                abs(highs[i] - closes[i - 1]),
-                abs(lows[i] - closes[i - 1]),
-            )
-            true_ranges[i] = tr
+    Vectorized implementation: True Range via numpy, ATR via FFT-based EMA.
+    ATR seeds at index ``period`` (SMA of first period TRs), then recurses
+    from index ``period + 1`` using TR values — TR[period] is skipped.
+    """
+    n = len(highs)
+    if n < period + 1:
+        return [None] * n
+    if n == 0:
+        return []
 
-    atr_values = [None] * len(highs)
-    # Seed ATR at index `period` using first `period` true ranges (indices 0..period-1)
-    initial_atr = sum(true_ranges[i] for i in range(period)) / period
-    atr_values[period] = initial_atr
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
+
+    # Pad shorter arrays to match the longest (matches original loop behavior)
+    if len(c) < n:
+        c = np.pad(c, (0, n - len(c)), constant_values=c[-1] if len(c) > 0 else 0)
+    if len(l) < n:
+        l = np.pad(l, (0, n - len(l)), constant_values=0.0)
+
+    # True Range vectorized
+    tr = np.empty(n, dtype=float)
+    tr[0] = h[0] - l[0]
+    tr[1:] = np.maximum(
+        np.maximum(h[1:] - l[1:], np.abs(h[1:] - c[:-1])),
+        np.abs(l[1:] - c[:-1]),
+    )
 
     k = 2.0 / (period + 1)
-    for i in range(period + 1, len(highs)):
-        if true_ranges[i] is not None:
-            prev_atr = atr_values[i - 1]
-            if prev_atr is not None:
-                atr_values[i] = true_ranges[i] * k + prev_atr * (1 - k)
+    beta = 1.0 - k
 
-    return atr_values
+    # Seed: SMA of first `period` TRs
+    seed = float(np.mean(tr[:period]))
+
+    atr = [None] * n
+    atr[period] = seed
+
+    # TR values used in recursion start at index `period + 1`
+    new_tr = tr[period + 1:n]
+    n_new = len(new_tr)
+    if n_new == 0:
+        return atr
+
+    # Vectorized EMA recursion
+    weights = k * beta ** np.arange(n_new)
+    conv = np.convolve(new_tr, weights, 'full')
+    price_contrib = conv[:n_new]
+    seed_decay = beta ** np.arange(1, n_new + 1) * seed
+
+    atr[period + 1:period + 1 + n_new] = seed_decay + price_contrib
+    return atr
 
 
 def compute_bollinger_bands(closes, period=20, num_std=2.0):
@@ -390,8 +405,15 @@ def compute_atr_percentile(highs, lows, closes, atr_period=14, window=20):
         if len(window_atr) < 2:
             continue
 
+        # Round ATR values to eliminate floating-point noise before
+        # comparing — noise from convolution can be ~4e-16, so we
+        # use a tolerance of 1e-10 to distinguish true differences.
+        tol = 1e-10
+        rounded_atr = [round(v, 10) for v in window_atr]
+        current_rounded = round(atr_i, 10)
+
         # Count values strictly below current ATR
-        below_count = sum(1 for v in window_atr if v < atr_i)
+        below_count = sum(1 for v in rounded_atr if v < current_rounded)
         result[i] = (below_count / len(window_atr)) * 100.0
 
     return result

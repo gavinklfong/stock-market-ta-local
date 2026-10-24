@@ -1,5 +1,7 @@
 import math
 import os
+
+import numpy as np
 import pandas as pd
 
 from common import compute_ema, load_state, main, read_yfinance_csv, save_state
@@ -123,33 +125,29 @@ def _get_atr_state(highs, lows, closes, period=14):
       - last_atr: ATR value at the last row (or None)
     """
     n = len(highs)
-    true_ranges = [None] * n
-    for i in range(n):
-        if i == 0:
-            true_ranges[i] = highs[i] - lows[i]
-        else:
-            tr = max(
-                highs[i] - lows[i],
-                abs(highs[i] - closes[i - 1]),
-                abs(lows[i] - closes[i - 1]),
-            )
-            true_ranges[i] = tr
-
-    if n < period + 1:
+    if n == 0:
         return {"last_tr": 0.0, "last_atr": None}
 
-    atr_values = [None] * n
-    initial_atr = sum(true_ranges[i] for i in range(period)) / period
-    atr_values[period] = initial_atr
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
 
-    k = 2.0 / (period + 1)
-    for i in range(period + 1, n):
-        if true_ranges[i] is not None:
-            prev_atr = atr_values[i - 1]
-            if prev_atr is not None:
-                atr_values[i] = true_ranges[i] * k + prev_atr * (1 - k)
+    # Pad shorter arrays to match the longest
+    if len(c) < n:
+        c = np.pad(c, (0, n - len(c)), constant_values=c[-1] if len(c) > 0 else 0)
+    if len(l) < n:
+        l = np.pad(l, (0, n - len(l)), constant_values=0.0)
 
-    return {"last_tr": true_ranges[n - 1], "last_atr": atr_values[n - 1]}
+    # True Range vectorized
+    tr = np.empty(n, dtype=float)
+    tr[0] = h[0] - l[0]
+    tr[1:] = np.maximum(
+        np.maximum(h[1:] - l[1:], np.abs(h[1:] - c[:-1])),
+        np.abs(l[1:] - c[:-1]),
+    )
+
+    atr_values = compute_atr(highs, lows, closes, period)
+    return {"last_tr": float(tr[n - 1]), "last_atr": atr_values[n - 1]}
 
 
 # =============================================================================
@@ -219,20 +217,22 @@ def compute_atr_from_state(highs, lows, closes, period, last_tr, last_atr, last_
     result = [None] * n
     k = 2.0 / (period + 1)
 
+    # Vectorized True Range for new rows
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
+    tr = np.empty(n, dtype=float)
+    tr[0] = h[0] - l[0]
+    tr[1:] = np.maximum(
+        np.maximum(h[1:] - l[1:], np.abs(h[1:] - c[:-1])),
+        np.abs(l[1:] - c[:-1]),
+    )
+
     # Continue from last known ATR
     current_atr = last_atr
-    current_tr = last_tr
     for i in range(last_idx + 1, n):
-        if i == 0:
-            current_tr = highs[i] - lows[i]
-        else:
-            current_tr = max(
-                highs[i] - lows[i],
-                abs(highs[i] - closes[i - 1]),
-                abs(lows[i] - closes[i - 1]),
-            )
         if i > period:
-            current_atr = current_tr * k + current_atr * (1 - k)
+            current_atr = tr[i] * k + current_atr * (1 - k)
             result[i] = current_atr
 
     return result
@@ -295,35 +295,61 @@ def compute_ma_slope_incremental(closes, period, lookback, prev_row_count,
 
 
 def compute_atr(highs, lows, closes, period=14):
-    """Compute Wilder's ATR. Returns list aligned with input."""
-    if len(highs) < period + 1:
-        return [None] * len(highs)
+    """Compute Wilder's ATR. Returns list aligned with input.
 
-    true_ranges = [None] * len(highs)
-    for i in range(len(highs)):
-        if i == 0:
-            true_ranges[i] = highs[i] - lows[i]
-        else:
-            tr = max(
-                highs[i] - lows[i],
-                abs(highs[i] - closes[i - 1]),
-                abs(lows[i] - closes[i - 1]),
-            )
-            true_ranges[i] = tr
+    Vectorized implementation: True Range via numpy, ATR via FFT-based EMA.
+    ATR seeds at index ``period`` (SMA of first period TRs), then recurses
+    from index ``period + 1`` using TR values — TR[period] is skipped.
+    """
+    n = len(highs)
+    if n < period + 1:
+        return [None] * n
+    if n == 0:
+        return []
 
-    atr_values = [None] * len(highs)
-    # Seed ATR at index `period` using first `period` true ranges (indices 0..period-1)
-    initial_atr = sum(true_ranges[i] for i in range(period)) / period
-    atr_values[period] = initial_atr
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
+
+    # Pad shorter arrays to match the longest (matches original loop behavior)
+    if len(c) < n:
+        c = np.pad(c, (0, n - len(c)), constant_values=c[-1] if len(c) > 0 else 0)
+    if len(l) < n:
+        l = np.pad(l, (0, n - len(l)), constant_values=0.0)
+
+    # True Range vectorized
+    tr = np.empty(n, dtype=float)
+    tr[0] = h[0] - l[0]
+    tr[1:] = np.maximum(
+        np.maximum(h[1:] - l[1:], np.abs(h[1:] - c[:-1])),
+        np.abs(l[1:] - c[:-1]),
+    )
 
     k = 2.0 / (period + 1)
-    for i in range(period + 1, len(highs)):
-        if true_ranges[i] is not None:
-            prev_atr = atr_values[i - 1]
-            if prev_atr is not None:
-                atr_values[i] = true_ranges[i] * k + prev_atr * (1 - k)
+    beta = 1.0 - k
 
-    return atr_values
+    # Seed: SMA of first `period` TRs
+    seed = float(np.mean(tr[:period]))
+
+    atr = [None] * n
+    atr[period] = seed
+
+    # TR values used in recursion start at index `period + 1`
+    new_tr = tr[period + 1:n]
+    n_new = len(new_tr)
+    if n_new == 0:
+        return atr
+
+    # Vectorized EMA recursion (same closed-form as compute_ema):
+    #   atr[period + j] = beta^j * seed
+    #                   + k * sum_{m=0}^{j-1} new_tr[m] * beta^(j-1-m)
+    weights = k * beta ** np.arange(n_new)
+    conv = np.convolve(new_tr, weights, 'full')
+    price_contrib = conv[:n_new]
+    seed_decay = beta ** np.arange(1, n_new + 1) * seed
+
+    atr[period + 1:period + 1 + n_new] = seed_decay + price_contrib
+    return atr
 
 
 def compute_supertrend_incremental(highs, lows, closes, atr_period, multiplier,

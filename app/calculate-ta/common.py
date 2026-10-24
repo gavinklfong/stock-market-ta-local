@@ -97,6 +97,63 @@ def compute_ema(values, period):
 
     return result
 
+
+def compute_atr(highs, lows, closes, period=14):
+    """Compute Wilder's True Range Average — vectorized.
+
+    ATR seeds at index ``period`` (SMA of first period TRs), then recurses
+    from index ``period + 1`` using TR values — TR[period] is skipped.
+    """
+    n = len(highs)
+    if n < period + 1:
+        return [None] * n
+    if n == 0:
+        return []
+
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
+
+    # Pad shorter arrays to match the longest (matches original loop behavior)
+    if len(c) < n:
+        c = np.pad(c, (0, n - len(c)), constant_values=c[-1] if len(c) > 0 else 0)
+    if len(l) < n:
+        l = np.pad(l, (0, n - len(l)), constant_values=0.0)
+
+    # True Range vectorized
+    tr = np.empty(n, dtype=float)
+    tr[0] = h[0] - l[0]
+    prev_close = c[:-1]
+    tr[1:] = np.maximum(
+        np.maximum(h[1:] - l[1:], np.abs(h[1:] - prev_close)),
+        np.abs(l[1:] - prev_close),
+    )
+
+    k = 2.0 / (period + 1)
+    beta = 1.0 - k
+
+    # Seed: SMA of first `period` TRs
+    seed = float(np.mean(tr[:period]))
+
+    result = [None] * n
+    result[period] = seed
+
+    # TR values used in recursion start at index `period + 1`
+    new_tr = tr[period + 1:n]
+    n_new = len(new_tr)
+    if n_new == 0:
+        return result
+
+    # Vectorized EMA recursion
+    weights = k * beta ** np.arange(n_new)
+    conv = np.convolve(new_tr, weights, 'full')
+    price_contrib = conv[:n_new]
+    seed_decay = beta ** np.arange(1, n_new + 1) * seed
+
+    result[period + 1:period + 1 + n_new] = seed_decay + price_contrib
+    return result
+
+
 def progress_bar(current, total, prefix="", bar_length=40):
     """Render a single-line progress bar to stdout."""
     if total == 0:
