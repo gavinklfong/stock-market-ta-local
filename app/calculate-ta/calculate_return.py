@@ -1,6 +1,7 @@
 import os
 import sys
 
+import numpy as np
 import pandas as pd
 
 from common import (
@@ -15,8 +16,8 @@ from common import (
 def compute_future_returns(closes, horizons=(5, 10, 20)):
     """Compute forward-looking percentage returns for each horizon.
 
-    For each horizon H, future_return_H = (close[t+H] - close[t]) / close[t].
-    Returns None for the last H rows where future data is unavailable.
+    Vectorized implementation: uses numpy shift operations instead
+    of Python loops for all horizon calculations.
 
     Args:
         closes: list/array of close prices.
@@ -26,23 +27,22 @@ def compute_future_returns(closes, horizons=(5, 10, 20)):
         dict mapping horizon (int) to list of float returns aligned with input.
     """
     n = len(closes)
+    c = np.asarray(closes, dtype=float)
     result = {}
     for h in horizons:
-        returns = [None] * n
-        for i in range(n - h):
-            prev_close = closes[i]
-            future_close = closes[i + h]
-            if prev_close != 0:
-                returns[i] = (future_close - prev_close) / prev_close
-        result[h] = returns
+        returns = np.full(n, np.nan, dtype=float)
+        valid = c[:n - h] != 0
+        returns[:n - h] = np.where(valid, (c[h:] - c[:n - h]) / c[:n - h], np.nan)
+        # Convert nan to None for JSON/CSV compatibility
+        result[h] = [None if np.isnan(v) else float(v) for v in returns]
     return result
 
 
 def compute_past_performance(closes, horizons=(21, 63, 126, 252)):
     """Compute past performance (percentage returns) for each horizon.
 
-    For each horizon H, past_performance_H = (close[t] - close[t-H]) / close[t-H] * 100.
-    Returns None for the first H rows where past data is unavailable.
+    Vectorized implementation: uses numpy shift operations instead
+    of Python loops for all horizon calculations.
 
     Args:
         closes: list/array of close prices.
@@ -53,15 +53,14 @@ def compute_past_performance(closes, horizons=(21, 63, 126, 252)):
         aligned with input, expressed as percentages.
     """
     n = len(closes)
+    c = np.asarray(closes, dtype=float)
     result = {}
     for h in horizons:
-        returns = [None] * n
-        for i in range(h, n):
-            past_close = closes[i - h]
-            current_close = closes[i]
-            if past_close != 0:
-                returns[i] = (current_close - past_close) / past_close * 100
-        result[h] = returns
+        returns = np.full(n, np.nan, dtype=float)
+        if h < n:
+            valid = c[:n - h] != 0
+            returns[h:] = np.where(valid, (c[h:] - c[:n - h]) / c[:n - h] * 100, np.nan)
+        result[h] = [None if np.isnan(v) else float(v) for v in returns]
     return result
 
 
@@ -74,6 +73,9 @@ def compute_alpha_beta(stock_closes, benchmark_closes, window=20):
 
     Both alpha and beta are expressed as percentages (×100).
 
+    Vectorized implementation: uses pandas rolling operations for
+    covariance, variance, and means instead of Python loops.
+
     Args:
         stock_closes: list/array of stock close prices.
         benchmark_closes: list/array of benchmark close prices (same length).
@@ -84,39 +86,53 @@ def compute_alpha_beta(stock_closes, benchmark_closes, window=20):
         aligned with input (None for first window-1 rows).
     """
     n = len(stock_closes)
-    stock_ret = [None] * n
-    bench_ret = [None] * n
-    for i in range(1, n):
-        if stock_closes[i - 1] != 0:
-            stock_ret[i] = (stock_closes[i] - stock_closes[i - 1]) / stock_closes[i - 1]
-        if benchmark_closes[i - 1] != 0:
-            bench_ret[i] = (benchmark_closes[i] - benchmark_closes[i - 1]) / benchmark_closes[i - 1]
+    stock_arr = np.asarray(stock_closes, dtype=float)
+    bench_arr = np.asarray(benchmark_closes, dtype=float)
 
-    alpha = [None] * n
-    beta = [None] * n
+    # Compute daily returns using numpy (vectorized)
+    stock_ret = np.empty(n, dtype=float)
+    bench_ret = np.empty(n, dtype=float)
+    stock_ret[0] = np.nan
+    bench_ret[0] = np.nan
 
-    for i in range(window, n):
-        # Extract windows of returns (both need to be valid)
-        s_window = stock_ret[i - window + 1 : i + 1]
-        b_window = bench_ret[i - window + 1 : i + 1]
+    stock_diff = np.diff(stock_arr)
+    bench_diff = np.diff(bench_arr)
 
-        if None in s_window or None in b_window:
-            continue
+    # Avoid division by zero
+    stock_prev = stock_arr[:-1]
+    bench_prev = bench_arr[:-1]
+    valid_stock = stock_prev != 0
+    valid_bench = bench_prev != 0
 
-        s_mean = sum(s_window) / window
-        b_mean = sum(b_window) / window
+    stock_ret[1:] = np.where(valid_stock, stock_diff / np.where(valid_stock, stock_prev, 1.0), np.nan)
+    bench_ret[1:] = np.where(valid_bench, bench_diff / np.where(valid_bench, bench_prev, 1.0), np.nan)
 
-        cov = sum((s_window[j] - s_mean) * (b_window[j] - b_mean) for j in range(window)) / window
-        var_b = sum((b_window[j] - b_mean) ** 2 for j in range(window)) / window
+    # Fully vectorized rolling operations using pandas
+    s_series = pd.Series(stock_ret)
+    b_series = pd.Series(bench_ret)
 
-        if var_b != 0:
-            beta[i] = cov / var_b
-            alpha[i] = (s_mean - beta[i] * b_mean) * 100
-        else:
-            beta[i] = 0.0
-            alpha[i] = s_mean * 100
+    rolling_cov = s_series.rolling(window, min_periods=window).cov(b_series).values
+    rolling_var = b_series.rolling(window, min_periods=window).var().values
+    s_mean = s_series.rolling(window, min_periods=window).mean().values
+    b_mean = b_series.rolling(window, min_periods=window).mean().values
 
-    return {"alpha": alpha, "beta": beta}
+    # Compute beta and alpha (fully vectorized, no Python loop)
+    beta_arr = np.full(n, np.nan)
+    alpha_arr = np.full(n, np.nan)
+
+    valid_mask = (~np.isnan(rolling_cov)) & (~np.isnan(rolling_var)) & (rolling_var != 0)
+    beta_arr[valid_mask] = rolling_cov[valid_mask] / rolling_var[valid_mask]
+    alpha_arr[valid_mask] = (s_mean[valid_mask] - beta_arr[valid_mask] * b_mean[valid_mask]) * 100
+
+    # For zero variance: beta=0, alpha = s_mean * 100
+    zero_var_mask = (~np.isnan(rolling_cov)) & (~np.isnan(rolling_var)) & (rolling_var == 0)
+    beta_arr[zero_var_mask] = 0.0
+    alpha_arr[zero_var_mask] = s_mean[zero_var_mask] * 100
+
+    return {
+        "alpha": [None if np.isnan(v) else float(v) for v in alpha_arr],
+        "beta": [None if np.isnan(v) else float(v) for v in beta_arr],
+    }
 
 
 def _align_benchmark(stock_dates, benchmark_df):
@@ -137,6 +153,9 @@ def _align_benchmark(stock_dates, benchmark_df):
 def compute_relative_strength(stock_closes, benchmark_closes):
     """Compute relative strength of stock vs benchmark.
 
+    Vectorized implementation: uses numpy element-wise division
+    instead of Python loops.
+
     RS = (stock_close / benchmark_close) * 100
 
     An indexed value where 100 means the stock is at the same relative level
@@ -152,11 +171,13 @@ def compute_relative_strength(stock_closes, benchmark_closes):
         Returns None where benchmark price is zero.
     """
     n = len(stock_closes)
-    rs = [None] * n
-    for i in range(n):
-        if benchmark_closes[i] != 0:
-            rs[i] = (stock_closes[i] / benchmark_closes[i]) * 100
-    return rs
+    stock = np.asarray(stock_closes, dtype=float)
+    bench = np.asarray(benchmark_closes, dtype=float)
+    valid = bench != 0
+    # Avoid divide-by-zero warning: replace zeros with 1 in denominator where invalid
+    safe_bench = np.where(valid, bench, 1.0)
+    rs = np.where(valid, stock / safe_bench * 100, np.nan)
+    return [None if np.isnan(v) else float(v) for v in rs]
 
 
 def compute_return_columns(highs, lows, closes, volumes, n, dates, horizons=(5, 10, 20),

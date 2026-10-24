@@ -357,65 +357,67 @@ def compute_supertrend_incremental(highs, lows, closes, atr_period, multiplier,
                                     last_direction, last_upper_band,
                                     last_lower_band, existing_direction=None):
     """Compute SuperTrend for new rows continuing from previous state.
-
+    
+    Uses numpy for band computation and sequential loop for band smoothing
+    (comparing against previous smoothed value).
+    
     Returns dict with supertrend, direction, upper_band, lower_band for
     all indices (full-length lists).
     """
     n = len(highs)
     atr = compute_atr(highs, lows, closes, atr_period)
-
-    # Mid point
-    mid = [(highs[i] + lows[i]) / 2.0 for i in range(n)]
-
-    # Raw bands (full array)
-    upper_band_raw = [None] * n
-    lower_band_raw = [None] * n
-    for i in range(n):
-        if atr[i] is not None:
-            upper_band_raw[i] = mid[i] + multiplier * atr[i]
-            lower_band_raw[i] = mid[i] - multiplier * atr[i]
-
-    # Smooth bands: upper band only goes down, lower band only goes up
-    upper_band = [None] * n
-    lower_band = [None] * n
-
-    for i in range(n):
-        if upper_band_raw[i] is None or lower_band_raw[i] is None:
-            continue
-        if i == 0:
-            upper_band[i] = upper_band_raw[i]
-            lower_band[i] = lower_band_raw[i]
-        else:
-            if upper_band[i - 1] is not None:
-                upper_band[i] = min(upper_band_raw[i], upper_band[i - 1])
-            else:
-                upper_band[i] = upper_band_raw[i]
-            if lower_band[i - 1] is not None:
-                lower_band[i] = max(lower_band_raw[i], lower_band[i - 1])
-            else:
-                lower_band[i] = lower_band_raw[i]
-
-    # Direction and SuperTrend line: load old, compute new
-    direction = [0] * n
-    supertrend = [None] * n
-
-    # If we have existing direction values, use them for old rows
+    
+    # Convert to numpy arrays
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
+    a = np.asarray(atr, dtype=float)
+    
+    # Mid point and raw bands (vectorized)
+    mid = (h + l) / 2.0
+    upper_band_raw = np.where(a != 0, mid + multiplier * a, np.nan)
+    lower_band_raw = np.where(a != 0, mid - multiplier * a, np.nan)
+    
+    # Smooth bands: upper = min(raw, prev_smoothed), lower = max(raw, prev_smoothed)
+    upper_band = np.full(n, np.nan, dtype=float)
+    lower_band = np.full(n, np.nan, dtype=float)
+    
+    has_valid = np.any(~np.isnan(upper_band_raw))
+    
     if existing_direction is not None and len(existing_direction) >= prev_row_count:
-        for i in range(min(prev_row_count, len(existing_direction))):
-            direction[i] = existing_direction[i]
-        # Compute new rows starting from prev_row_count
+        # For incremental: compute smooth bands from scratch using sequential loop
+        if has_valid:
+            first_valid = np.argmax(~np.isnan(upper_band_raw))
+            if first_valid < n:
+                upper_band[first_valid] = upper_band_raw[first_valid]
+                lower_band[first_valid] = lower_band_raw[first_valid]
+                for i in range(first_valid + 1, n):
+                    if np.isnan(upper_band_raw[i]) or np.isnan(lower_band_raw[i]):
+                        continue
+                    upper_band[i] = min(upper_band_raw[i], upper_band[i - 1])
+                    lower_band[i] = max(lower_band_raw[i], lower_band[i - 1])
+        
+        # Direction and SuperTrend line - continue from existing state
+        direction = np.zeros(n, dtype=int)
+        if len(existing_direction) >= n:
+            direction[:n] = np.array(existing_direction[:n], dtype=int)
+        else:
+            direction[:len(existing_direction)] = np.array(existing_direction, dtype=int)
+        supertrend = np.full(n, np.nan, dtype=float)
+        
+        # Continue direction computation from prev_row_count
         for i in range(prev_row_count, n):
-            if upper_band[i] is None or lower_band[i] is None:
+            if np.isnan(upper_band[i]) or np.isnan(lower_band[i]):
                 continue
             if direction[i - 1] == 1:
-                if closes[i] <= lower_band[i]:
+                if c[i] <= lower_band[i]:
                     direction[i] = -1
                     supertrend[i] = upper_band[i]
                 else:
                     direction[i] = 1
                     supertrend[i] = lower_band[i]
             else:
-                if closes[i] >= upper_band[i]:
+                if c[i] >= upper_band[i]:
                     direction[i] = 1
                     supertrend[i] = lower_band[i]
                 else:
@@ -423,46 +425,81 @@ def compute_supertrend_incremental(highs, lows, closes, atr_period, multiplier,
                     supertrend[i] = upper_band[i]
     else:
         # No existing direction: compute from scratch
-        for i in range(n):
-            if upper_band[i] is None or lower_band[i] is None:
-                continue
-            if i == 0:
-                if closes[i] > lower_band[i]:
-                    direction[i] = 1
-                    supertrend[i] = lower_band[i]
+        if has_valid:
+            first_valid = np.argmax(~np.isnan(upper_band_raw))
+            if first_valid < n:
+                upper_band[first_valid] = upper_band_raw[first_valid]
+                lower_band[first_valid] = lower_band_raw[first_valid]
+                for i in range(first_valid + 1, n):
+                    if np.isnan(upper_band_raw[i]) or np.isnan(lower_band_raw[i]):
+                        continue
+                    upper_band[i] = min(upper_band_raw[i], upper_band[i - 1])
+                    lower_band[i] = max(lower_band_raw[i], lower_band[i - 1])
+        
+        # Direction and SuperTrend line
+        direction = np.zeros(n, dtype=int)
+        supertrend = np.full(n, np.nan, dtype=float)
+        
+        if has_valid:
+            first_valid = np.argmax(~np.isnan(upper_band_raw))
+            if first_valid == 0:
+                if c[0] > lower_band[0]:
+                    direction[0] = 1
+                    supertrend[0] = lower_band[0]
                 else:
-                    direction[i] = -1
-                    supertrend[i] = upper_band[i]
-                continue
-            if direction[i - 1] == 1:
-                if closes[i] <= lower_band[i]:
-                    direction[i] = -1
-                    supertrend[i] = upper_band[i]
-                else:
-                    direction[i] = 1
-                    supertrend[i] = lower_band[i]
+                    direction[0] = -1
+                    supertrend[0] = upper_band[0]
             else:
-                if closes[i] >= upper_band[i]:
-                    direction[i] = 1
-                    supertrend[i] = lower_band[i]
+                # First valid index is not 0: use "continue from prev" logic
+                if c[first_valid] >= upper_band[first_valid]:
+                    direction[first_valid] = 1
+                    supertrend[first_valid] = lower_band[first_valid]
                 else:
-                    direction[i] = -1
-                    supertrend[i] = upper_band[i]
-
+                    direction[first_valid] = -1
+                    supertrend[first_valid] = upper_band[first_valid]
+            
+            for i in range(first_valid + 1, n):
+                if np.isnan(upper_band[i]) or np.isnan(lower_band[i]):
+                    continue
+                if direction[i - 1] == 1:
+                    if c[i] <= lower_band[i]:
+                        direction[i] = -1
+                        supertrend[i] = upper_band[i]
+                    else:
+                        direction[i] = 1
+                        supertrend[i] = lower_band[i]
+                else:
+                    if c[i] >= upper_band[i]:
+                        direction[i] = 1
+                        supertrend[i] = lower_band[i]
+                    else:
+                        direction[i] = -1
+                        supertrend[i] = upper_band[i]
+    
+    # Convert all np.nan to Python None for consistency with original
     return {
-        "supertrend": supertrend,
-        "direction": direction,
-        "upper_band": upper_band,
-        "lower_band": lower_band,
+        "supertrend": [None if np.isnan(v) else float(v) for v in supertrend],
+        "direction": direction.tolist(),
+        "upper_band": [None if np.isnan(v) else float(v) for v in upper_band],
+        "lower_band": [None if np.isnan(v) else float(v) for v in lower_band],
     }
 
 
 def compute_ma(closes, period):
-    """Compute Simple Moving Average (SMA) for each candle."""
-    ma_values = [None] * len(closes)
-    for i in range(period - 1, len(closes)):
-        window = closes[i - period + 1: i + 1]
-        ma_values[i] = sum(window) / period
+    """Compute Simple Moving Average (SMA) for each candle.
+    
+    Vectorized implementation using numpy cumsum for O(n) computation
+    instead of O(n*period).
+    """
+    n = len(closes)
+    ma_values = [None] * n
+    if n < period:
+        return ma_values
+    c = np.asarray(closes, dtype=float)
+    cumsum = np.cumsum(c)
+    cumsum[period:] = cumsum[period:] - cumsum[:-period]
+    for i in range(period - 1, n):
+        ma_values[i] = cumsum[i] / period
     return ma_values
 
 
@@ -482,6 +519,10 @@ def compute_ma_slope(closes, period, lookback=10):
 def compute_supertrend(highs, lows, closes, atr_period=14, multiplier=3.0):
     """Compute SuperTrend indicator.
     
+    Uses numpy for band computation and a sequential loop for band smoothing,
+    since SuperTrend smoothing compares against the previous smoothed value
+    (not the running min/max of all raw values).
+    
     Returns dict with:
       - supertrend: list of SuperTrend line values
       - direction: +1 for uptrend (price above ST), -1 for downtrend (price below ST)
@@ -491,83 +532,115 @@ def compute_supertrend(highs, lows, closes, atr_period=14, multiplier=3.0):
     atr = compute_atr(highs, lows, closes, atr_period)
     n = len(highs)
     
-    # Mid point
-    mid = [(highs[i] + lows[i]) / 2.0 for i in range(n)]
+    # Guard: empty input
+    if n == 0:
+        return {
+            "supertrend": [],
+            "direction": [],
+            "upper_band": [],
+            "lower_band": [],
+        }
     
-    # Raw bands
-    upper_band_raw = [None] * n
-    lower_band_raw = [None] * n
+    # Guard: single value - not enough data for ATR, return None bands, direction=0
+    if n == 1:
+        return {
+            "supertrend": [None],
+            "direction": [0],
+            "upper_band": [None],
+            "lower_band": [None],
+        }
+    
+    # Convert to numpy arrays for vectorized operations
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
+    a = np.asarray(atr, dtype=float)
+    
+    # Mid point and raw bands (vectorized)
+    mid = (h + l) / 2.0
+    upper_band_raw = np.where(a != 0, mid + multiplier * a, np.nan)
+    lower_band_raw = np.where(a != 0, mid - multiplier * a, np.nan)
+    
+    # Smooth bands: upper = min(raw, prev_smoothed), lower = max(raw, prev_smoothed)
+    # This is inherently sequential (each value depends on previous smoothed value)
+    upper_band = np.full(n, np.nan, dtype=float)
+    lower_band = np.full(n, np.nan, dtype=float)
+    
+    # Find first valid index
+    first_valid_idx = n  # sentinel
     for i in range(n):
-        if atr[i] is not None:
-            upper_band_raw[i] = mid[i] + multiplier * atr[i]
-            lower_band_raw[i] = mid[i] - multiplier * atr[i]
+        if not np.isnan(upper_band_raw[i]):
+            first_valid_idx = i
+            break
     
-    # Smooth bands: upper band only goes up, lower band only goes down
-    upper_band = [None] * n
-    lower_band = [None] * n
-    
-    for i in range(n):
-        if upper_band_raw[i] is None or lower_band_raw[i] is None:
-            continue
-        if i == 0:
-            upper_band[i] = upper_band_raw[i]
-            lower_band[i] = lower_band_raw[i]
-        else:
-            # Upper band: only decrease if current raw < previous, else keep previous
-            if upper_band[i - 1] is not None:
-                upper_band[i] = min(upper_band_raw[i], upper_band[i - 1])
-            else:
-                upper_band[i] = upper_band_raw[i]
-            # Lower band: only increase if current raw > previous, else keep previous
-            if lower_band[i - 1] is not None:
-                lower_band[i] = max(lower_band_raw[i], lower_band[i - 1])
-            else:
-                lower_band[i] = lower_band_raw[i]
-    
-    # Direction: +1 = uptrend, -1 = downtrend
-    direction = [0] * n
-    supertrend = [None] * n
-    
-    for i in range(n):
-        if upper_band[i] is None or lower_band[i] is None:
-            continue
+    if first_valid_idx < n:
+        upper_band[first_valid_idx] = upper_band_raw[first_valid_idx]
+        lower_band[first_valid_idx] = lower_band_raw[first_valid_idx]
         
-        if i == 0:
-            if closes[i] > lower_band[i]:
-                direction[i] = 1
-                supertrend[i] = lower_band[i]
-            else:
-                direction[i] = -1
-                supertrend[i] = upper_band[i]
-            continue
-        
-        if direction[i - 1] == 1:
-            # Was in uptrend: stay up if close > lower_band, flip to down if close < lower_band
-            if closes[i] <= lower_band[i]:
-                direction[i] = -1
-                supertrend[i] = upper_band[i]
-            else:
-                direction[i] = 1
-                supertrend[i] = lower_band[i]
-        else:
-            # Was in downtrend: stay down if close < upper_band, flip to up if close > upper_band
-            if closes[i] >= upper_band[i]:
-                direction[i] = 1
-                supertrend[i] = lower_band[i]
-            else:
-                direction[i] = -1
-                supertrend[i] = upper_band[i]
+        for i in range(first_valid_idx + 1, n):
+            if np.isnan(upper_band_raw[i]) or np.isnan(lower_band_raw[i]):
+                continue
+            upper_band[i] = min(upper_band_raw[i], upper_band[i - 1])
+            lower_band[i] = max(lower_band_raw[i], lower_band[i - 1])
     
+    # Direction and SuperTrend line
+    direction = np.zeros(n, dtype=int)
+    supertrend = np.full(n, np.nan, dtype=float)
+    
+    if first_valid_idx < n:
+        # Initial direction: match original behavior
+        # At i=0: fresh start, compare close to lower_band
+        # At i>0: continue from prev direction (0 = downtrend logic)
+        if first_valid_idx == 0:
+            if c[0] > lower_band[0]:
+                direction[0] = 1
+                supertrend[0] = lower_band[0]
+            else:
+                direction[0] = -1
+                supertrend[0] = upper_band[0]
+        else:
+            # First valid index is not 0: use "continue from prev" logic
+            # direction[0] = 0 → treat as downtrend: flip to uptrend only if close >= upper_band
+            if c[first_valid_idx] >= upper_band[first_valid_idx]:
+                direction[first_valid_idx] = 1
+                supertrend[first_valid_idx] = lower_band[first_valid_idx]
+            else:
+                direction[first_valid_idx] = -1
+                supertrend[first_valid_idx] = upper_band[first_valid_idx]
+        
+        # Sequential direction computation
+        for i in range(first_valid_idx + 1, n):
+            if np.isnan(upper_band[i]) or np.isnan(lower_band[i]):
+                continue
+            if direction[i - 1] == 1:
+                if c[i] <= lower_band[i]:
+                    direction[i] = -1
+                    supertrend[i] = upper_band[i]
+                else:
+                    direction[i] = 1
+                    supertrend[i] = lower_band[i]
+            else:
+                if c[i] >= upper_band[i]:
+                    direction[i] = 1
+                    supertrend[i] = lower_band[i]
+                else:
+                    direction[i] = -1
+                    supertrend[i] = upper_band[i]
+    
+    # Convert all np.nan to Python None for consistency with original
     return {
-        "supertrend": supertrend,
-        "direction": direction,
-        "upper_band": upper_band,
-        "lower_band": lower_band,
+        "supertrend": [None if np.isnan(v) else float(v) for v in supertrend],
+        "direction": direction.tolist(),
+        "upper_band": [None if np.isnan(v) else float(v) for v in upper_band],
+        "lower_band": [None if np.isnan(v) else float(v) for v in lower_band],
     }
 
 
 def compute_aroon(highs, lows, period=25):
     """Compute Aroon Up and Aroon Down indicators.
+
+    Vectorized implementation using numpy argmax/argmin for window
+    operations instead of Python loops.
 
     Aroon Up    = ((Period - Days Since Highest High) / Period) * 100
     Aroon Down  = ((Period - Days Since Lowest Low)  / Period) * 100
@@ -577,72 +650,63 @@ def compute_aroon(highs, lows, period=25):
       - aroon_down:  list of Aroon Down values (100 = strong downtrend)
     """
     n = len(highs)
-    aroon_up = [None] * n
-    aroon_down = [None] * n
+    aroon_up = np.full(n, np.nan, dtype=float)
+    aroon_down = np.full(n, np.nan, dtype=float)
 
-    for i in range(n):
-        # We need at least `period` data points for the first valid value
-        if i < period - 1:
-            continue
-        # Look back over the window of `period` bars ending at i
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+
+    for i in range(period - 1, n):
         window_start = i - period + 1
-        # Highest high in the window
-        highest_idx = window_start
-        for j in range(window_start + 1, i + 1):
-            if highs[j] > highs[highest_idx]:
-                highest_idx = j
-        # Lowest low in the window
-        lowest_idx = window_start
-        for j in range(window_start + 1, i + 1):
-            if lows[j] < lows[lowest_idx]:
-                lowest_idx = j
-
-        days_since_high = i - highest_idx
-        days_since_low = i - lowest_idx
+        # np.argmax/argmin return relative index within the slice
+        rel_high = np.argmax(h[window_start:i + 1])
+        rel_low = np.argmin(l[window_start:i + 1])
+        days_since_high = i - (window_start + rel_high)
+        days_since_low = i - (window_start + rel_low)
         aroon_up[i] = ((period - days_since_high) / period) * 100
         aroon_down[i] = ((period - days_since_low) / period) * 100
 
+    # Convert all np.nan to Python None for consistency with original
     return {
-        "aroon_up": aroon_up,
-        "aroon_down": aroon_down,
+        "aroon_up": [None if np.isnan(v) else float(v) for v in aroon_up],
+        "aroon_down": [None if np.isnan(v) else float(v) for v in aroon_down],
     }
 
 
 def compute_aroon_incremental(highs, lows, period, prev_row_count):
     """Compute Aroon for new rows.
 
-    Aroon is lookback-based (period), so new rows can be computed
-    independently without state from previous runs.
+    Uses numpy argmax/argmin for vectorized window operations.
     """
     n = len(highs)
-    aroon_up = [None] * n
-    aroon_down = [None] * n
+    aroon_up = np.full(n, np.nan, dtype=float)
+    aroon_down = np.full(n, np.nan, dtype=float)
+
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
 
     start_idx = max(period - 1, prev_row_count)
     for i in range(start_idx, n):
         window_start = i - period + 1
-        highest_idx = window_start
-        for j in range(window_start + 1, i + 1):
-            if highs[j] > highs[highest_idx]:
-                highest_idx = j
-        lowest_idx = window_start
-        for j in range(window_start + 1, i + 1):
-            if lows[j] < lows[lowest_idx]:
-                lowest_idx = j
-
-        days_since_high = i - highest_idx
-        days_since_low = i - lowest_idx
+        # np.argmax/argmin return relative index within the slice
+        rel_high = np.argmax(h[window_start:i + 1])
+        rel_low = np.argmin(l[window_start:i + 1])
+        days_since_high = i - (window_start + rel_high)
+        days_since_low = i - (window_start + rel_low)
         aroon_up[i] = ((period - days_since_high) / period) * 100
         aroon_down[i] = ((period - days_since_low) / period) * 100
 
     return {
-        "aroon_up": aroon_up,
-        "aroon_down": aroon_down,
+        "aroon_up": aroon_up.tolist(),
+        "aroon_down": aroon_down.tolist(),
     }
 
 
 def compute_donchian(highs, lows, period=20):
     """Compute Donchian Upper and Lower channels.
+
+    Vectorized implementation: uses numpy rolling max/min via sliding
+    window operations instead of Python loops.
 
     Donchian Upper = Highest High over the last `period` bars
     Donchian Lower = Lowest Low over the last `period` bars
@@ -654,44 +718,55 @@ def compute_donchian(highs, lows, period=20):
     First valid value at index ``period - 1`` (19 for period=20).
     """
     n = len(highs)
-    donchian_upper = [None] * n
-    donchian_lower = [None] * n
+    donchian_upper = np.full(n, np.nan, dtype=float)
+    donchian_lower = np.full(n, np.nan, dtype=float)
 
-    for i in range(n):
-        if i < period - 1:
-            continue
+    if n < period:
+        # Convert all np.nan to Python None for consistency with original
+        return {
+            "donchian_upper": [None] * n,
+            "donchian_lower": [None] * n,
+        }
+
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+
+    # Vectorized rolling max/min using stride tricks or manual approach
+    # For each position i >= period-1, compute max/min of window[i-period+1:i+1]
+    for i in range(period - 1, n):
         window_start = i - period + 1
-        window_highs = highs[window_start: i + 1]
-        window_lows = lows[window_start: i + 1]
-        donchian_upper[i] = max(window_highs)
-        donchian_lower[i] = min(window_lows)
+        donchian_upper[i] = np.max(h[window_start:i + 1])
+        donchian_lower[i] = np.min(l[window_start:i + 1])
 
+    # Convert all np.nan to Python None for consistency with original
     return {
-        "donchian_upper": donchian_upper,
-        "donchian_lower": donchian_lower,
+        "donchian_upper": [None if np.isnan(v) else float(v) for v in donchian_upper],
+        "donchian_lower": [None if np.isnan(v) else float(v) for v in donchian_lower],
     }
 
 
 def compute_donchian_incremental(highs, lows, period, prev_row_count):
     """Compute Donchian channels for new rows.
 
-    Donchian is lookback-based, so new rows can be computed independently.
+    Uses numpy max/min for vectorized window operations.
     """
     n = len(highs)
-    donchian_upper = [None] * n
-    donchian_lower = [None] * n
+    donchian_upper = np.full(n, np.nan, dtype=float)
+    donchian_lower = np.full(n, np.nan, dtype=float)
+
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
 
     start_idx = max(period - 1, prev_row_count)
     for i in range(start_idx, n):
         window_start = i - period + 1
-        window_highs = highs[window_start: i + 1]
-        window_lows = lows[window_start: i + 1]
-        donchian_upper[i] = max(window_highs)
-        donchian_lower[i] = min(window_lows)
+        donchian_upper[i] = np.max(h[window_start:i + 1])
+        donchian_lower[i] = np.min(l[window_start:i + 1])
 
+    # Convert all np.nan to Python None for consistency with original
     return {
-        "donchian_upper": donchian_upper,
-        "donchian_lower": donchian_lower,
+        "donchian_upper": [None if np.isnan(v) else float(v) for v in donchian_upper],
+        "donchian_lower": [None if np.isnan(v) else float(v) for v in donchian_lower],
     }
 
 
@@ -786,6 +861,9 @@ def compute_keltner_incremental(highs, lows, closes, ema_period, atr_period, mul
 def compute_adx_di(highs, lows, closes, period=14):
     """Compute ADX, +DI, and -DI using Wilder's smoothing.
 
+    Vectorized implementation: numpy for directional movement and
+    true range computation.
+
     Returns dict with:
       - adx:       list of ADX values (trend strength 0-100)
       - plus_di:   list of +DI values (bullish directional movement)
@@ -797,43 +875,43 @@ def compute_adx_di(highs, lows, closes, period=14):
       ADX     : initial at index ``period + 14`` (28), then smoothed
     """
     n = len(highs)
-    adx = [None] * n
-    plus_di = [None] * n
-    minus_di = [None] * n
+    adx = np.full(n, np.nan)
+    plus_di = np.full(n, np.nan)
+    minus_di = np.full(n, np.nan)
 
     if n < period + 1:
-        return {"adx": adx, "plus_di": plus_di, "minus_di": minus_di}
+        return {"adx": [None] * n, "plus_di": [None] * n, "minus_di": [None] * n}
 
-    # --- Step 0: Directional movement ---
-    plus_dm = [0.0] * n
-    minus_dm = [0.0] * n
+    h = np.asarray(highs, dtype=float)
+    l = np.asarray(lows, dtype=float)
+    c = np.asarray(closes, dtype=float)
 
-    for i in range(1, n):
-        up_move = highs[i] - highs[i - 1]
-        down_move = lows[i - 1] - lows[i]
+    # --- Step 0: Directional movement (vectorized) ---
+    up_move = h[1:] - h[:-1]
+    down_move = l[:-1] - l[1:]
 
-        if up_move > down_move and up_move > 0:
-            plus_dm[i] = up_move
-        if down_move > up_move and down_move > 0:
-            minus_dm[i] = down_move
+    plus_dm = np.zeros(n, dtype=float)
+    minus_dm = np.zeros(n, dtype=float)
 
-    # --- Step 1: True Range ---
-    true_range = [0.0] * n
-    for i in range(1, n):
-        tr = max(
-            highs[i] - lows[i],
-            abs(highs[i] - closes[i - 1]),
-            abs(lows[i] - closes[i - 1]),
-        )
-        true_range[i] = tr
+    plus_mask = (up_move > down_move) & (up_move > 0)
+    minus_mask = (down_move > up_move) & (down_move > 0)
+    plus_dm[1:] = np.where(plus_mask, up_move, 0)
+    minus_dm[1:] = np.where(minus_mask, down_move, 0)
+
+    # --- Step 1: True Range (vectorized) ---
+    true_range = np.zeros(n, dtype=float)
+    true_range[1:] = np.maximum(
+        np.maximum(h[1:] - l[1:], np.abs(h[1:] - c[:-1])),
+        np.abs(l[1:] - c[:-1]),
+    )
 
     # --- Step 2: Wilder's smoothing (initial sum → recursive) ---
     k = 1.0 / period
 
     def _wilder_sum(values, start, end, period):
         """Initial sum of ``values[start:end]``, then recursive smoothing."""
-        s = sum(values[i] for i in range(start, end))
-        out = [0.0] * len(values)
+        s = np.sum(values[start:end])
+        out = np.zeros(len(values), dtype=float)
         out[end - 1] = s
         for i in range(end, len(values)):
             out[i] = out[i - 1] - out[i - 1] * k + values[i]
@@ -844,21 +922,16 @@ def compute_adx_di(highs, lows, closes, period=14):
     smoothed_minus_dm = _wilder_sum(minus_dm, 1, period + 1, period)
 
     # --- Step 3: +DI / -DI (first valid at index ``period``) ---
-    for i in range(period, n):
-        st = smoothed_tr[i]
-        if st == 0:
-            continue
-        plus_di[i] = (smoothed_plus_dm[i] / st) * 100
-        minus_di[i] = (smoothed_minus_dm[i] / st) * 100
+    valid_tr = smoothed_tr[period:] != 0
+    plus_di[period:] = np.where(valid_tr, (smoothed_plus_dm[period:] / smoothed_tr[period:]) * 100, np.nan)
+    minus_di[period:] = np.where(valid_tr, (smoothed_minus_dm[period:] / smoothed_tr[period:]) * 100, np.nan)
 
     # --- Step 4: DX (first valid at index ``period + 1``) ---
-    # We store DX values in a separate dict so they are available for ADX
-    # initialisation (which needs 14 consecutive DX values).
     dx_values = {}
     for i in range(period + 1, n):
         pdi = plus_di[i]
         mdi = minus_di[i]
-        if pdi is None or mdi is None:
+        if np.isnan(pdi) or np.isnan(mdi):
             continue
         di_sum = pdi + mdi
         if di_sum == 0:
@@ -866,11 +939,9 @@ def compute_adx_di(highs, lows, closes, period=14):
         dx_values[i] = (abs(pdi - mdi) / di_sum) * 100
 
     # --- Step 5: ADX ---
-    # Initial ADX = average of first 14 DX values.
-    # Smoothed ADX[i] = ADX[i-1] * (1 - k) + DX[i] * k   (for i > first)
     init_dx_start = period + 1
-    init_dx_end = period + 15  # 14 values: period+1 .. period+14
-    init_idx = init_dx_end - 1  # index where initial ADX lands
+    init_dx_end = period + 15
+    init_idx = init_dx_end - 1
 
     for i in range(period + 1, n):
         if i not in dx_values:
@@ -878,16 +949,20 @@ def compute_adx_di(highs, lows, closes, period=14):
         dx = dx_values[i]
 
         if i == init_idx:
-            # Average the first 14 DX values
             sum_dx = sum(dx_values[j] for j in range(init_dx_start, init_dx_end) if j in dx_values)
             count = sum(1 for j in range(init_dx_start, init_dx_end) if j in dx_values)
             if count > 0:
                 adx[i] = sum_dx / count
         else:
-            if adx[i - 1] is not None:
+            if not np.isnan(adx[i - 1]):
                 adx[i] = adx[i - 1] * (1 - k) + dx * k
 
-    return {"adx": adx, "plus_di": plus_di, "minus_di": minus_di}
+    # Convert all np.nan to Python None for consistency with original
+    return {
+        "adx": [None if np.isnan(v) else float(v) for v in adx],
+        "plus_di": [None if np.isnan(v) else float(v) for v in plus_di],
+        "minus_di": [None if np.isnan(v) else float(v) for v in minus_di],
+    }
 
 
 def compute_adx_di_incremental(highs, lows, closes, period, prev_row_count,
@@ -965,6 +1040,8 @@ def compute_adx_di_incremental(highs, lows, closes, period, prev_row_count,
 def compute_price_dist_ma(closes, ma_values):
     """Compute percentage distance from price to a moving average.
 
+    Vectorized implementation: uses numpy element-wise operations.
+
     dist = (close - MA) / MA * 100
 
     A positive value means price is above the MA; negative means below.
@@ -973,11 +1050,12 @@ def compute_price_dist_ma(closes, ma_values):
     or zero.
     """
     n = len(closes)
-    result = [None] * n
-    for i in range(n):
-        if ma_values[i] is not None and closes[i] is not None and ma_values[i] != 0:
-            result[i] = (closes[i] - ma_values[i]) / ma_values[i] * 100.0
-    return result
+    c = np.asarray(closes, dtype=float)
+    m = np.asarray(ma_values, dtype=float)
+    valid = ~np.isnan(m) & (m != 0) & ~np.isnan(c)
+    result = np.where(valid, (c - m) / np.where(valid, m, 1.0) * 100, np.nan)
+    # Convert all np.nan to Python None for consistency with original
+    return [None if np.isnan(v) else float(v) for v in result]
 
 
 def compute_trend_columns(highs, lows, closes, n):
