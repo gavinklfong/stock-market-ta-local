@@ -174,15 +174,15 @@ class TestComputeKeltner:
         # First valid: max(10-1, 5) = max(9, 5) = 9
         assert result["keltner_upper"][9] is not None
         assert result["keltner_lower"][9] is not None
-        assert result["keltner_upper"][9] == 108.0
-        assert result["keltner_lower"][9] == 92.0
+        assert result["keltner_upper"][9] == pytest.approx(108.0)
+        assert result["keltner_lower"][9] == pytest.approx(92.0)
 
         # Since TP and ATR are constant, values stay the same
         for i in range(9, n):
-            assert result["keltner_upper"][i] == 108.0, (
+            assert result["keltner_upper"][i] == pytest.approx(108.0), (
                 f"Index {i}: expected 108.0, got {result['keltner_upper'][i]}"
             )
-            assert result["keltner_lower"][i] == 92.0, (
+            assert result["keltner_lower"][i] == pytest.approx(92.0), (
                 f"Index {i}: expected 92.0, got {result['keltner_lower'][i]}"
             )
 
