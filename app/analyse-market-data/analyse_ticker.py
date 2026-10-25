@@ -240,6 +240,17 @@ def _common_analysis(df):
     prev_regime = _v(L_prev, "ta_hmm_regime")
     prev_volume = _v(L_prev, "Volume")
 
+    # Previous date: additional indicators for Quick Summary
+    prev_pe = _v(L_prev, "ta_pe")
+    prev_eps = _v(L_prev, "ta_eps_ttm")
+    prev_div_yield = _v(L_prev, "ta_div_yield")
+    prev_pctb = _v(L_prev, "ta_bband_pctb")
+    prev_stoch_k = _v(L_prev, "ta_stoch_k")
+    prev_stoch_d = _v(L_prev, "ta_stoch_d")
+    prev_rsi_pct = _v(L_prev, "ta_rsi_percentile")
+    prev_adx = _v(L_prev, "ta_adx14")
+    prev_cci = _v(L_prev, "ta_cci")
+
     # Price change
     price_chg = close - prev_close if close and prev_close else None
     price_chg_pct = (price_chg / prev_close * 100) if price_chg and prev_close else None
@@ -255,7 +266,11 @@ def _common_analysis(df):
         "prev_ema20": prev_ema20, "prev_ema50": prev_ema50, "prev_ema200": prev_ema200,
         "prev_st_dir": prev_st_dir, "prev_cmf": prev_cmf, "prev_atr": prev_atr,
         "prev_norm_atr": prev_norm_atr, "prev_roc": prev_rroc, "prev_regime": prev_regime,
-        "prev_volume": prev_volume, "price_chg": price_chg, "price_chg_pct": price_chg_pct,
+        "prev_volume": prev_volume, "prev_pe": prev_pe, "prev_eps": prev_eps,
+        "prev_div_yield": prev_div_yield, "prev_pctb": prev_pctb,
+        "prev_stoch_k": prev_stoch_k, "prev_stoch_d": prev_stoch_d,
+        "prev_rsi_pct": prev_rsi_pct, "prev_adx": prev_adx, "prev_cci": prev_cci,
+        "price_chg": price_chg, "price_chg_pct": price_chg_pct,
         "price_chg_periods": price_chg_periods,
         "_df": df,  # internal: popped by callers
     }
@@ -900,6 +915,72 @@ def _summary_table_html(report):
     roc_prev = "Positive" if prev_roc else "Negative" if prev_roc is False else "N/A"
     roc_prev_pos = prev_roc is True
 
+    # Previous date: additional indicators formatting
+    prev_pe = report.get("prev_pe")
+    prev_eps = report.get("prev_eps")
+    prev_div_yield = report.get("prev_div_yield")
+    prev_atr_pct = report.get("prev_norm_atr")
+    prev_pctb = report.get("prev_pctb")
+    prev_stoch_k = report.get("prev_stoch_k")
+    prev_stoch_d = report.get("prev_stoch_d")
+    prev_rsi_pct = report.get("prev_rsi_pct")
+    prev_adx = report.get("prev_adx")
+    prev_cci = report.get("prev_cci")
+
+    def _prev_pe_label(pe):
+        if pe is None:
+            return "N/A"
+        if pe < 10:
+            return f"{_fmt(pe,1)} (Deep Value)"
+        elif pe < 15:
+            return f"{_fmt(pe,1)} (Undervalued)"
+        elif pe < 20:
+            return f"{_fmt(pe,1)} (Fair)"
+        elif pe < 30:
+            return f"{_fmt(pe,1)} (Premium)"
+        else:
+            return f"{_fmt(pe,1)} (Overvalued)"
+
+    def _prev_atr_label(atr):
+        if atr is None:
+            return "N/A"
+        return f"{_fmt(atr,2)}% ({'High' if atr > 2 else 'Normal' if atr > 1 else 'Low'})"
+
+    def _prev_bb_label(pctb):
+        if pctb is None:
+            return "N/A"
+        return f"{_fmt(pctb,3)} ({'Near Upper' if pctb > 0.9 else 'Near Lower' if pctb < 0.1 else 'Middle'})"
+
+    def _prev_stoch_label(k, d):
+        if k is None or d is None:
+            return "N/A"
+        state = ""
+        if k > 80:
+            state = " (Overbought)"
+        elif k < 20:
+            state = " (Oversold)"
+        return f"%K:{_fmt(k,1)} / %D:{_fmt(d,1)}{state}"
+
+    def _prev_rsi_pct_label(pct):
+        if pct is None:
+            return "N/A"
+        return f"{_fmt(pct,0)}% ({'Elevated' if pct > 75 else 'Depressed' if pct < 25 else 'Normal'})"
+
+    def _prev_adx_label(adx):
+        if adx is None:
+            return "N/A"
+        return f"{_fmt(adx,1)} ({'Strong' if adx > 25 else 'Weak' if adx < 20 else 'Moderate'} trend)"
+
+    def _prev_cci_label(cci):
+        if cci is None:
+            return "N/A"
+        state = ""
+        if cci > 100:
+            state = " (Overbought)"
+        elif cci < -100:
+            state = " (Oversold)"
+        return f"{_fmt(cci,1)}{state}"
+
     return f"""
 <div class="summary-table" style="background:#fff;border-radius:12px;padding:20px;margin:0 0 20px;box-shadow:0 1px 4px rgba(0,0,0,0.06);border:1px solid #e5e7eb">
 <h3 style="margin:0 0 16px;font-size:1.05rem;color:#1e293b;display:flex;align-items:center;gap:8px"><span>📋</span> Quick Summary</h3>
@@ -908,6 +989,9 @@ def _summary_table_html(report):
 {_signal_badges(st_cur, macd_cur, roc, cmf)}
 </div>
 <table>
+<thead>
+<tr><th style="text-align:left;padding:8px 12px;font-weight:600;color:#64748b;border-bottom:2px solid #e2e8f0"></th><th style="text-align:center;padding:8px 12px;font-weight:600;color:#64748b;border-bottom:2px solid #e2e8f0">Current</th><th style="text-align:center;padding:8px 12px;font-weight:600;color:#64748b;border-bottom:2px solid #e2e8f0">Previous Date</th></tr>
+</thead>
 <tbody>
 {cmp_row("Close", price_cur, _fmt(report.get("prev_close")))}
 {cmp_row("RSI(14)", f"{_fmt(rsi,1)}{rsi_state}", _fmt(report.get("prev_rsi")) + prev_rsi_state)}
@@ -917,15 +1001,15 @@ def _summary_table_html(report):
 {badge_row("CMF(20)", cmf, "Positive" if cmf else "Negative", cmf_prev_pos, cmf_prev, "cmf")}
 <tr><td class="label-col">Regime</td><td class="metric-value">{regime_cur}</td><td class="metric-value">{regime_prev_label}</td></tr>
 {badge_row("ROC(20)", roc, "Positive" if roc else "Negative", roc_prev_pos, roc_prev, "roc")}
-<tr><td class="label-col">P/E Ratio</td><td class="metric-value">{pe_label}</td><td class="metric-value"></td></tr>
-<tr><td class="label-col">EPS (TTM)</td><td class="metric-value">{f"{_fmt(ta_eps, 4)}" if ta_eps else "N/A"}</td><td class="metric-value"></td></tr>
-<tr><td class="label-col">Div Yield</td><td class="metric-value">{f"{_fmt(ta_div_yield, 2)}%" if ta_div_yield else "N/A"}</td><td class="metric-value"></td></tr>
-<tr><td class="label-col">ATR(14) %</td><td class="metric-value">{atr_label}</td><td class="metric-value"></td></tr>
-<tr><td class="label-col">BB %B</td><td class="metric-value">{bb_label}</td><td class="metric-value"></td></tr>
-<tr><td class="label-col">Stoch %K/%D</td><td class="metric-value">{stoch_label}</td><td class="metric-value"></td></tr>
-<tr><td class="label-col">RSI Percentile</td><td class="metric-value">{rsi_pct_label}</td><td class="metric-value"></td></tr>
-<tr><td class="label-col">ADX(14)</td><td class="metric-value">{adx_label}</td><td class="metric-value"></td></tr>
-<tr><td class="label-col">CCI(20)</td><td class="metric-value">{cci_label}</td><td class="metric-value"></td></tr>
+<tr><td class="label-col">P/E Ratio</td><td class="metric-value">{pe_label}</td><td class="metric-value">{_prev_pe_label(prev_pe)}</td></tr>
+<tr><td class="label-col">EPS (TTM)</td><td class="metric-value">{f"{_fmt(ta_eps, 4)}" if ta_eps else "N/A"}</td><td class="metric-value">{f"{_fmt(prev_eps, 4)}" if prev_eps else "N/A"}</td></tr>
+<tr><td class="label-col">Div Yield</td><td class="metric-value">{f"{_fmt(ta_div_yield, 2)}%" if ta_div_yield else "N/A"}</td><td class="metric-value">{f"{_fmt(prev_div_yield, 2)}%" if prev_div_yield else "N/A"}</td></tr>
+<tr><td class="label-col">ATR(14) %</td><td class="metric-value">{atr_label}</td><td class="metric-value">{_prev_atr_label(prev_atr_pct)}</td></tr>
+<tr><td class="label-col">BB %B</td><td class="metric-value">{bb_label}</td><td class="metric-value">{_prev_bb_label(prev_pctb)}</td></tr>
+<tr><td class="label-col">Stoch %K/%D</td><td class="metric-value">{stoch_label}</td><td class="metric-value">{_prev_stoch_label(prev_stoch_k, prev_stoch_d)}</td></tr>
+<tr><td class="label-col">RSI Percentile</td><td class="metric-value">{rsi_pct_label}</td><td class="metric-value">{_prev_rsi_pct_label(prev_rsi_pct)}</td></tr>
+<tr><td class="label-col">ADX(14)</td><td class="metric-value">{adx_label}</td><td class="metric-value">{_prev_adx_label(prev_adx)}</td></tr>
+<tr><td class="label-col">CCI(20)</td><td class="metric-value">{cci_label}</td><td class="metric-value">{_prev_cci_label(prev_cci)}</td></tr>
 </tbody>
 </table>
 </div>"""
