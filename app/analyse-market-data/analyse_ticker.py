@@ -765,6 +765,40 @@ def _summary_table_html(report):
             return f"<td>{val}</td>"
         return f"<td>{val:.{d}f}</td>"
 
+    def _change_icon(cur_val, prev_val, d=2):
+        """Format value with a directional icon if different from previous."""
+        if cur_val is None:
+            return "N/A"
+        formatted = f"{float(cur_val):.{d}f}" if isinstance(cur_val, (float, int)) else str(cur_val)
+        if prev_val is None:
+            return formatted
+        if not isinstance(prev_val, (float, int)):
+            return formatted
+        try:
+            c, p = float(cur_val), float(prev_val)
+        except (ValueError, TypeError):
+            return formatted
+        if c != p:
+            arrow = "<span style='color:#26a69a;margin-right:3px'>&#9650;</span>" if c > p else "<span style='color:#ef5350;margin-right:3px'>&#9660;</span>"
+            return f"{arrow}{formatted}"
+        return formatted
+
+    def _icon_prefix(cur_val, prev_val):
+        """Return an HTML arrow prefix if numeric values differ."""
+        if cur_val is None or prev_val is None:
+            return ""
+        if not isinstance(prev_val, (float, int)):
+            return ""
+        try:
+            c, p = float(cur_val), float(prev_val)
+        except (ValueError, TypeError):
+            return ""
+        if c == p:
+            return ""
+        if c > p:
+            return "<span style='color:#26a69a;margin-right:3px'>&#9650;</span>"
+        return "<span style='color:#ef5350;margin-right:3px'>&#9660;</span>"
+
     close = report["close"]
     rsi = report["rsi"]
     macd_hist = report["macd_hist"]
@@ -981,6 +1015,42 @@ def _summary_table_html(report):
             state = " (Oversold)"
         return f"{_fmt(cci,1)}{state}"
 
+    # Regime numeric values for comparison
+    _regime_map = {"Bull": 0, "Bear": 1, "Volatile": 2}
+    _regime_num = _regime_map.get(regime_cur, 0)
+    _prev_regime_num = int(report.get("prev_regime", -1))
+
+    # Tooltip descriptions for Quick Summary labels
+    _tooltip = {
+        "Close": "Current closing price of the stock",
+        "RSI(14)": "Relative Strength Index (14-period) — measures speed and magnitude of recent price changes. >70 = overbought, <30 = oversold",
+        "MACD Histogram": "MACD line minus signal line — shows momentum convergence/divergence. Positive = bullish momentum",
+        "SuperTrend": "SuperTrend indicator — +1 = uptrend, −1 = downtrend. Based on ATR multipliers",
+        "EMA Trend": "EMA alignment trend — Bullish when EMA20 > EMA50 > EMA200, Bearish when EMA20 < EMA50 < EMA200",
+        "CMF(20)": "Chaikin Money Flow (20-period) — measures buying/selling pressure. Positive = accumulation, Negative = distribution",
+        "Regime": "HMM market regime — Bull (low vol, rising), Bear (low vol, falling), Volatile (high vol, unpredictable)",
+        "ROC(20)": "Rate of Change (20-period) — percentage change over 20 days. Positive = price increased",
+        "P/E Ratio": "Price-to-Earnings Ratio — current price divided by earnings per share",
+        "EPS (TTM)": "Earnings Per Share (Trailing Twelve Months)",
+        "Div Yield": "Dividend Yield — annual dividends per share as percentage of current price",
+        "ATR(14) %": "Average True Range as % of price (14-period) — measures volatility. Higher = more volatile",
+        "BB %B": "Bollinger Bands %B — position within bands. >1 = above upper band, <0 = below lower band, 0.5 = middle",
+        "Stoch %K/%D": "Stochastic Oscillator — %K (fast) and %D (slow) lines. >80 = overbought, <20 = oversold",
+        "RSI Percentile": "RSI percentile rank over 20-day lookback — shows where current RSI falls in recent range",
+        "ADX(14)": "Average Directional Index (14-period) — trend strength. >25 = strong, <20 = weak trend",
+        "CCI(20)": "Commodity Channel Index (20-period) — measures current price vs statistical average. >100 = overbought, <-100 = oversold",
+    }
+
+    # Pre-compute badge HTML to avoid nested f-string issues
+    st_badge_html = (f'<span class="badge-bull">{st_cur}</span>' if st_dir
+                     else f'<span class="badge-bear">{st_cur}</span>' if st_dir is not None else '')
+    _prev_ema_bullish = (report.get("prev_ema20") and report.get("prev_ema50") and report.get("prev_ema200")
+                         and report["prev_ema20"] > report["prev_ema50"] > report["prev_ema200"])
+    _prev_ema_bearish = (report.get("prev_ema20") and report.get("prev_ema50") and report.get("prev_ema200")
+                         and report["prev_ema20"] < report["prev_ema50"] < report["prev_ema200"])
+    ema_badge_html = (f'<span class="badge-bull">{ema_cur}</span>' if ema_trend
+                      else f'<span class="badge-bear">{ema_cur}</span>' if ema_trend is not None else '')
+
     return f"""
 <div class="summary-table" style="background:#fff;border-radius:12px;padding:20px;margin:0 0 20px;box-shadow:0 1px 4px rgba(0,0,0,0.06);border:1px solid #e5e7eb">
 <h3 style="margin:0 0 16px;font-size:1.05rem;color:#1e293b;display:flex;align-items:center;gap:8px"><span>📋</span> Quick Summary</h3>
@@ -993,23 +1063,23 @@ def _summary_table_html(report):
 <tr><th style="text-align:left;padding:8px 12px;font-weight:600;color:#64748b;border-bottom:2px solid #e2e8f0"></th><th style="text-align:center;padding:8px 12px;font-weight:600;color:#64748b;border-bottom:2px solid #e2e8f0">Current</th><th style="text-align:center;padding:8px 12px;font-weight:600;color:#64748b;border-bottom:2px solid #e2e8f0">Previous Date</th></tr>
 </thead>
 <tbody>
-{cmp_row("Close", price_cur, _fmt(report.get("prev_close")))}
-{cmp_row("RSI(14)", f"{_fmt(rsi,1)}{rsi_state}", _fmt(report.get("prev_rsi")) + prev_rsi_state)}
-{cmp_row("MACD Histogram", macd_cur, macd_prev)}
-{badge_row("SuperTrend", st_dir, st_cur, st_prev_bullish, st_prev, "st")}
-{badge_row("EMA Trend", ema_trend, ema_cur, ema_prev_bullish, ema_prev, "ema")}
-{badge_row("CMF(20)", cmf, "Positive" if cmf else "Negative", cmf_prev_pos, cmf_prev, "cmf")}
-<tr><td class="label-col">Regime</td><td class="metric-value">{regime_cur}</td><td class="metric-value">{regime_prev_label}</td></tr>
-{badge_row("ROC(20)", roc, "Positive" if roc else "Negative", roc_prev_pos, roc_prev, "roc")}
-<tr><td class="label-col">P/E Ratio</td><td class="metric-value">{pe_label}</td><td class="metric-value">{_prev_pe_label(prev_pe)}</td></tr>
-<tr><td class="label-col">EPS (TTM)</td><td class="metric-value">{f"{_fmt(ta_eps, 4)}" if ta_eps else "N/A"}</td><td class="metric-value">{f"{_fmt(prev_eps, 4)}" if prev_eps else "N/A"}</td></tr>
-<tr><td class="label-col">Div Yield</td><td class="metric-value">{f"{_fmt(ta_div_yield, 2)}%" if ta_div_yield else "N/A"}</td><td class="metric-value">{f"{_fmt(prev_div_yield, 2)}%" if prev_div_yield else "N/A"}</td></tr>
-<tr><td class="label-col">ATR(14) %</td><td class="metric-value">{atr_label}</td><td class="metric-value">{_prev_atr_label(prev_atr_pct)}</td></tr>
-<tr><td class="label-col">BB %B</td><td class="metric-value">{bb_label}</td><td class="metric-value">{_prev_bb_label(prev_pctb)}</td></tr>
-<tr><td class="label-col">Stoch %K/%D</td><td class="metric-value">{stoch_label}</td><td class="metric-value">{_prev_stoch_label(prev_stoch_k, prev_stoch_d)}</td></tr>
-<tr><td class="label-col">RSI Percentile</td><td class="metric-value">{rsi_pct_label}</td><td class="metric-value">{_prev_rsi_pct_label(prev_rsi_pct)}</td></tr>
-<tr><td class="label-col">ADX(14)</td><td class="metric-value">{adx_label}</td><td class="metric-value">{_prev_adx_label(prev_adx)}</td></tr>
-<tr><td class="label-col">CCI(20)</td><td class="metric-value">{cci_label}</td><td class="metric-value">{_prev_cci_label(prev_cci)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['Close']}">Close</td><td>{_icon_prefix(close, report.get("prev_close"))}{price_cur}</td><td>{_fmt(report.get("prev_close"))}</td></tr>
+<tr><td class="label-col" title="{_tooltip['RSI(14)']}">RSI(14)</td><td>{_icon_prefix(rsi, report.get("prev_rsi"))}{_fmt(rsi, 1)}{rsi_state}</td><td>{_fmt(report.get("prev_rsi"), 1)}{prev_rsi_state}</td></tr>
+<tr><td class="label-col" title="{_tooltip['MACD Histogram']}">MACD Histogram</td><td>{_icon_prefix(macd_hist, report.get("prev_macd_hist"))}{macd_cur}</td><td>{macd_prev}</td></tr>
+<tr><td class="label-col" title="{_tooltip['SuperTrend']}">SuperTrend</td><td class="metric-value">{_icon_prefix(st_dir, report.get("prev_st_dir"))}{st_badge_html}</td><td class="metric-value">{st_prev}</td></tr>
+<tr><td class="label-col" title="{_tooltip['EMA Trend']}">EMA Trend</td><td class="metric-value">{_icon_prefix(ema_trend, _prev_ema_bullish or _prev_ema_bearish or None)}{ema_badge_html}</td><td class="metric-value">{ema_prev}</td></tr>
+<tr><td class="label-col" title="{_tooltip['CMF(20)']}">CMF(20)</td><td class="metric-value">{_icon_prefix(cmf, report.get("prev_cmf"))}{f'<span class="badge-bull">Positive</span>' if cmf else '<span class="badge-bear">Negative</span>'}</td><td class="metric-value">{cmf_prev}</td></tr>
+<tr><td class="label-col" title="{_tooltip['Regime']}">Regime</td><td class="metric-value">{_icon_prefix(_regime_num, _prev_regime_num)}{regime_cur}</td><td class="metric-value">{regime_prev_label}</td></tr>
+<tr><td class="label-col" title="{_tooltip['ROC(20)']}">ROC(20)</td><td class="metric-value">{_icon_prefix(roc, report.get("prev_roc"))}{f'<span class="badge-bull">Positive</span>' if roc else '<span class="badge-bear">Negative</span>'}</td><td class="metric-value">{roc_prev}</td></tr>
+<tr><td class="label-col" title="{_tooltip['P/E Ratio']}">P/E Ratio</td><td>{_icon_prefix(ta_pe, prev_pe)}{pe_label}</td><td>{_prev_pe_label(prev_pe)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['EPS (TTM)']}">EPS (TTM)</td><td>{_icon_prefix(ta_eps, prev_eps)}{f"{_fmt(ta_eps, 4)}" if ta_eps else "N/A"}</td><td>{f"{_fmt(prev_eps, 4)}" if prev_eps else "N/A"}</td></tr>
+<tr><td class="label-col" title="{_tooltip['Div Yield']}">Div Yield</td><td>{_icon_prefix(ta_div_yield, prev_div_yield)}{f"{_fmt(ta_div_yield, 2)}%" if ta_div_yield else "N/A"}</td><td>{f"{_fmt(prev_div_yield, 2)}%" if prev_div_yield else "N/A"}</td></tr>
+<tr><td class="label-col" title="{_tooltip['ATR(14) %']}">ATR(14) %</td><td>{_icon_prefix(ta_atr_pct, prev_atr_pct)}{atr_label}</td><td>{_prev_atr_label(prev_atr_pct)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['BB %B']}">BB %B</td><td>{_icon_prefix(ta_pctb, prev_pctb)}{bb_label}</td><td>{_prev_bb_label(prev_pctb)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['Stoch %K/%D']}">Stoch %K/%D</td><td>{_icon_prefix(ta_stoch_k, prev_stoch_k)}{stoch_label}</td><td>{_prev_stoch_label(prev_stoch_k, prev_stoch_d)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['RSI Percentile']}">RSI Percentile</td><td>{_icon_prefix(ta_rsi_pct, prev_rsi_pct)}{rsi_pct_label}</td><td>{_prev_rsi_pct_label(prev_rsi_pct)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['ADX(14)']}">ADX(14)</td><td>{_icon_prefix(ta_adx, prev_adx)}{adx_label}</td><td>{_prev_adx_label(prev_adx)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['CCI(20)']}">CCI(20)</td><td>{_icon_prefix(ta_cci, prev_cci)}{cci_label}</td><td>{_prev_cci_label(prev_cci)}</td></tr>
 </tbody>
 </table>
 </div>"""
@@ -1252,7 +1322,7 @@ body {{
 }}
 .summary-table tbody tr:last-child td {{ border-bottom: none; }}
 .summary-table tbody tr:hover {{ background: #f8fafc; }}
-.summary-table .label-col {{ text-align: left; font-weight: 600; color: #334155; }}
+.summary-table .label-col {{ text-align: left; font-weight: 600; color: #334155; cursor: help; }}
 .summary-table .change-col {{ font-weight: 600; font-size: 1.05rem; min-width: 80px; }}
 
 /* ── Badge / Status ───────────────────────────────────────────── */
