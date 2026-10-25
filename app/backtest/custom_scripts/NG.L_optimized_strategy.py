@@ -6,7 +6,7 @@ Entry: BB Mean-Reversion (Close <= BB Lower, RSI(14) < 30, Williams %R < -80)
 Exit:  Time-Stop 90d (primary optimal), BB Middle (alternative)
 Valuation: P/E and dividend yield filters analyzed as overlays
 
-Output: data/reports/backtest/NG.L/optimized_strategy.html
+Output: data/reports/backtest/NG.L_optimized_strategy.html
 """
 import json
 from pathlib import Path
@@ -771,7 +771,7 @@ def main():
     # ── Strategy comparison (from exit analysis results) ──
     print("\nLoading strategy comparison data...")
     results = []
-    json_path = REPORT_DIR / "NG.L" / "exit_analysis_results.json"
+    json_path = REPORT_DIR / "NG.L_exit_analysis_results.json"
     if json_path.exists():
         with open(json_path) as f:
             all_results = json.load(f)
@@ -816,10 +816,7 @@ def main():
     html = build_html(ticker, company, trades_90, m_bh, m_90, m_pe, m_div,
                       figs, df, analysis_figs, results)
 
-    ticker = "NG.L"
-    ticker_dir = REPORT_DIR / ticker
-    ticker_dir.mkdir(parents=True, exist_ok=True)
-    out = ticker_dir / "optimized_strategy.html"
+    out = REPORT_DIR / "NG.L_optimized_strategy.html"
     out.write_text(html, encoding="utf-8")
     print(f"\nReport saved to: {out}")
     print(f"\n{'='*60}")
