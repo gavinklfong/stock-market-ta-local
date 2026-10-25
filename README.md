@@ -1,6 +1,6 @@
 # stock-market-ta-local
 
-Modular pipeline for UK stock/ETF analysis: download OHLCV data, compute 70+ technical indicators, fetch fundamental metrics, merge everything into unified per-ticker CSVs, and generate interactive Plotly HTML reports.
+Modular pipeline for stock/ETF analysis: download OHLCV data, compute 70+ technical indicators, fetch fundamental metrics, merge everything into unified per-ticker CSVs, and generate interactive Plotly HTML reports.
 
 ## Quick Start
 
