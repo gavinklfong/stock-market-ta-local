@@ -383,6 +383,10 @@ def build_charts(name, df):
     for col, color, label in [("ta_ema20", "#ff9800", "EMA20"), ("ta_ema50", "#2196f3", "EMA50"), ("ta_ema200", "#9c27b0", "EMA200")]:
         if col in df.columns:
             fig1.add_trace(go.Scatter(x=dates, y=df[col], mode="lines", name=label, line=dict(color=color, width=1)))
+    # Bollinger Bands
+    if "ta_bband_upper" in df.columns and "ta_bband_lower" in df.columns:
+        fig1.add_trace(go.Scatter(x=dates, y=df["ta_bband_upper"], mode="lines", name="BB Upper", line=dict(color="#06b6d4", width=1, dash="dot")))
+        fig1.add_trace(go.Scatter(x=dates, y=df["ta_bband_lower"], mode="lines", name="BB Lower", line=dict(color="#06b6d4", width=1, dash="dot"), fill="tonexty", fillcolor="rgba(6,182,212,0.05)"))
     fig1.update_layout(hovermode="x unified", height=480, margin=dict(l=50, r=20, t=30, b=40), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
 
     # 2. Volume + OBV + CMF
@@ -407,9 +411,6 @@ def build_charts(name, df):
     fig4 = go.Figure()
     if "ta_rsi14" in df.columns:
         fig4.add_trace(go.Scatter(x=dates, y=df["ta_rsi14"], mode="lines", name="RSI(14)", line=dict(color="#7b1fa2", width=1.5)))
-    if "ta_bband_upper" in df.columns:
-        fig4.add_trace(go.Scatter(x=dates, y=df["ta_bband_upper"], mode="lines", name="BB Upper", line=dict(color="#aaa", width=0.5, dash="dot")))
-        fig4.add_trace(go.Scatter(x=dates, y=df["ta_bband_lower"], mode="lines", name="BB Lower", line=dict(color="#aaa", width=0.5, dash="dot"), fill="tonexty", fillcolor="rgba(170,170,170,0.1)"))
     fig4.add_hline(y=70, line_dash="dash", line_color="red", opacity=0.5)
     fig4.add_hline(y=30, line_dash="dash", line_color="green", opacity=0.5)
     fig4.update_layout(hovermode="x unified", height=280, margin=dict(l=50, r=20, t=10, b=40), yaxis=dict(range=[0, 100]), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
@@ -804,8 +805,11 @@ def _summary_table_html(report):
     macd_hist = report["macd_hist"]
     st_dir = report["trend"][1][1]  # st_bullish bool or None
     ema_trend = report["trend"][0][1]  # ema_bullish bool or None
-    cmf = report["volume"][1][1]  # cmf_pos bool
-    roc = report["momentum"][3][1]  # roc bullish bool
+    cmf = report["volume"][2][1]  # cmf_pos bool (CMF(20) is at index 2)
+    roc = report["momentum"][3][1]  # roc bullish bool (ROC(20) is at index 3)
+    _df = report.get("df")
+    cmf_val = _v(_df.iloc[-1], "ta_cmf") if _df is not None and "ta_cmf" in _df.columns else None
+    roc_val = _v(_df.iloc[-1], "ta_roc20") if _df is not None and "ta_roc20" in _df.columns else None
 
     # Regime
     regime_labels = {0: "Bull", 1: "Bear", 2: "Volatile"}
@@ -1015,6 +1019,15 @@ def _summary_table_html(report):
             state = " (Oversold)"
         return f"{_fmt(cci,1)}{state}"
 
+    def _delta_label(cur, prev, d=2):
+        """Format delta from previous: (delta, delta_pct%)."""
+        if cur is None or prev is None:
+            return ""
+        c, p = float(cur), float(prev)
+        delta = c - p
+        delta_pct = (delta / p * 100) if p != 0 else 0
+        return f"({delta:+.{d}f}, {delta_pct:+.2f}%)"
+
     # Regime numeric values for comparison
     _regime_map = {"Bull": 0, "Bear": 1, "Volatile": 2}
     _regime_num = _regime_map.get(regime_cur, 0)
@@ -1064,22 +1077,22 @@ def _summary_table_html(report):
 </thead>
 <tbody>
 <tr><td class="label-col" title="{_tooltip['Close']}">Close</td><td>{_icon_prefix(close, report.get("prev_close"))}{price_cur}</td><td>{_fmt(report.get("prev_close"))}</td></tr>
-<tr><td class="label-col" title="{_tooltip['RSI(14)']}">RSI(14)</td><td>{_icon_prefix(rsi, report.get("prev_rsi"))}{_fmt(rsi, 1)}{rsi_state}</td><td>{_fmt(report.get("prev_rsi"), 1)}{prev_rsi_state}</td></tr>
-<tr><td class="label-col" title="{_tooltip['MACD Histogram']}">MACD Histogram</td><td>{_icon_prefix(macd_hist, report.get("prev_macd_hist"))}{macd_cur}</td><td>{macd_prev}</td></tr>
+<tr><td class="label-col" title="{_tooltip['RSI(14)']}">RSI(14)</td><td>{_icon_prefix(rsi, report.get("prev_rsi"))}{_fmt(rsi, 1)} {_delta_label(rsi, report.get("prev_rsi"), 0)}{rsi_state}</td><td>{_fmt(report.get("prev_rsi"), 1)}{prev_rsi_state}</td></tr>
+<tr><td class="label-col" title="{_tooltip['MACD Histogram']}">MACD Histogram</td><td>{_icon_prefix(macd_hist, report.get("prev_macd_hist"))}{_fmt(macd_hist)} {_delta_label(macd_hist, report.get("prev_macd_hist"))} ({macd_cur})</td><td>{macd_prev}</td></tr>
 <tr><td class="label-col" title="{_tooltip['SuperTrend']}">SuperTrend</td><td class="metric-value">{_icon_prefix(st_dir, report.get("prev_st_dir"))}{st_badge_html}</td><td class="metric-value">{st_prev}</td></tr>
 <tr><td class="label-col" title="{_tooltip['EMA Trend']}">EMA Trend</td><td class="metric-value">{_icon_prefix(ema_trend, _prev_ema_bullish or _prev_ema_bearish or None)}{ema_badge_html}</td><td class="metric-value">{ema_prev}</td></tr>
-<tr><td class="label-col" title="{_tooltip['CMF(20)']}">CMF(20)</td><td class="metric-value">{_icon_prefix(cmf, report.get("prev_cmf"))}{f'<span class="badge-bull">Positive</span>' if cmf else '<span class="badge-bear">Negative</span>'}</td><td class="metric-value">{cmf_prev}</td></tr>
+<tr><td class="label-col" title="{_tooltip['CMF(20)']}">CMF(20)</td><td class="metric-value">{_icon_prefix(cmf_val, report.get("prev_cmf"))}{_fmt(cmf_val, 3)} {_delta_label(cmf_val, report.get("prev_cmf"), 3)} ({'Positive' if cmf else 'Negative'})</td><td class="metric-value">{_fmt(report.get("prev_cmf"), 3)} ({'Positive' if report.get("prev_cmf") else 'Negative'})</td></tr>
 <tr><td class="label-col" title="{_tooltip['Regime']}">Regime</td><td class="metric-value">{_icon_prefix(_regime_num, _prev_regime_num)}{regime_cur}</td><td class="metric-value">{regime_prev_label}</td></tr>
-<tr><td class="label-col" title="{_tooltip['ROC(20)']}">ROC(20)</td><td class="metric-value">{_icon_prefix(roc, report.get("prev_roc"))}{f'<span class="badge-bull">Positive</span>' if roc else '<span class="badge-bear">Negative</span>'}</td><td class="metric-value">{roc_prev}</td></tr>
-<tr><td class="label-col" title="{_tooltip['P/E Ratio']}">P/E Ratio</td><td>{_icon_prefix(ta_pe, prev_pe)}{pe_label}</td><td>{_prev_pe_label(prev_pe)}</td></tr>
-<tr><td class="label-col" title="{_tooltip['EPS (TTM)']}">EPS (TTM)</td><td>{_icon_prefix(ta_eps, prev_eps)}{f"{_fmt(ta_eps, 4)}" if ta_eps else "N/A"}</td><td>{f"{_fmt(prev_eps, 4)}" if prev_eps else "N/A"}</td></tr>
-<tr><td class="label-col" title="{_tooltip['Div Yield']}">Div Yield</td><td>{_icon_prefix(ta_div_yield, prev_div_yield)}{f"{_fmt(ta_div_yield, 2)}%" if ta_div_yield else "N/A"}</td><td>{f"{_fmt(prev_div_yield, 2)}%" if prev_div_yield else "N/A"}</td></tr>
-<tr><td class="label-col" title="{_tooltip['ATR(14) %']}">ATR(14) %</td><td>{_icon_prefix(ta_atr_pct, prev_atr_pct)}{atr_label}</td><td>{_prev_atr_label(prev_atr_pct)}</td></tr>
-<tr><td class="label-col" title="{_tooltip['BB %B']}">BB %B</td><td>{_icon_prefix(ta_pctb, prev_pctb)}{bb_label}</td><td>{_prev_bb_label(prev_pctb)}</td></tr>
-<tr><td class="label-col" title="{_tooltip['Stoch %K/%D']}">Stoch %K/%D</td><td>{_icon_prefix(ta_stoch_k, prev_stoch_k)}{stoch_label}</td><td>{_prev_stoch_label(prev_stoch_k, prev_stoch_d)}</td></tr>
-<tr><td class="label-col" title="{_tooltip['RSI Percentile']}">RSI Percentile</td><td>{_icon_prefix(ta_rsi_pct, prev_rsi_pct)}{rsi_pct_label}</td><td>{_prev_rsi_pct_label(prev_rsi_pct)}</td></tr>
-<tr><td class="label-col" title="{_tooltip['ADX(14)']}">ADX(14)</td><td>{_icon_prefix(ta_adx, prev_adx)}{adx_label}</td><td>{_prev_adx_label(prev_adx)}</td></tr>
-<tr><td class="label-col" title="{_tooltip['CCI(20)']}">CCI(20)</td><td>{_icon_prefix(ta_cci, prev_cci)}{cci_label}</td><td>{_prev_cci_label(prev_cci)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['ROC(20)']}">ROC(20)</td><td class="metric-value">{_icon_prefix(roc_val, report.get("prev_roc"))}{_fmt(roc_val, 1)} {_delta_label(roc_val, report.get("prev_roc"), 1)} ({'Positive' if roc else 'Negative'})</td><td class="metric-value">{_fmt(report.get("prev_roc"), 1)} ({'Positive' if report.get("prev_roc") else 'Negative'})</td></tr>
+<tr><td class="label-col" title="{_tooltip['P/E Ratio']}">P/E Ratio</td><td>{_icon_prefix(ta_pe, prev_pe)}{f'{_fmt(ta_pe, 1)} {_delta_label(ta_pe, prev_pe)} ({pe_label})' if ta_pe else 'N/A'}</td><td>{_prev_pe_label(prev_pe)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['EPS (TTM)']}">EPS (TTM)</td><td>{_icon_prefix(ta_eps, prev_eps)}{f'{_fmt(ta_eps, 4)} {_delta_label(ta_eps, prev_eps, 4)}' if ta_eps else 'N/A'}</td><td>{_fmt(prev_eps, 4) if prev_eps else 'N/A'}</td></tr>
+<tr><td class="label-col" title="{_tooltip['Div Yield']}">Div Yield</td><td>{_icon_prefix(ta_div_yield, prev_div_yield)}{f'{_fmt(ta_div_yield, 2)} {_delta_label(ta_div_yield, prev_div_yield, 2)}%' if ta_div_yield else 'N/A'}</td><td>{_fmt(prev_div_yield, 2) if prev_div_yield else 'N/A'}%</td></tr>
+<tr><td class="label-col" title="{_tooltip['ATR(14) %']}">ATR(14) %</td><td>{_icon_prefix(ta_atr_pct, prev_atr_pct)}{_fmt(ta_atr_pct, 2)} {_delta_label(ta_atr_pct, prev_atr_pct, 2)}</td><td>{_prev_atr_label(prev_atr_pct)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['BB %B']}">BB %B</td><td>{_icon_prefix(ta_pctb, prev_pctb)}{_fmt(ta_pctb, 3)} {_delta_label(ta_pctb, prev_pctb, 3)}</td><td>{_prev_bb_label(prev_pctb)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['Stoch %K/%D']}">Stoch %K/%D</td><td>{_icon_prefix(ta_stoch_k, prev_stoch_k)}{_fmt(ta_stoch_k, 1)} {_delta_label(ta_stoch_k, prev_stoch_k, 1)} ({stoch_label})</td><td>{_prev_stoch_label(prev_stoch_k, prev_stoch_d)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['RSI Percentile']}">RSI Percentile</td><td>{_icon_prefix(ta_rsi_pct, prev_rsi_pct)}{_fmt(ta_rsi_pct, 0)} {_delta_label(ta_rsi_pct, prev_rsi_pct, 0)}%</td><td>{_prev_rsi_pct_label(prev_rsi_pct)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['ADX(14)']}">ADX(14)</td><td>{_icon_prefix(ta_adx, prev_adx)}{_fmt(ta_adx, 1)} {_delta_label(ta_adx, prev_adx, 1)}</td><td>{_prev_adx_label(prev_adx)}</td></tr>
+<tr><td class="label-col" title="{_tooltip['CCI(20)']}">CCI(20)</td><td>{_icon_prefix(ta_cci, prev_cci)}{_fmt(ta_cci, 1)} {_delta_label(ta_cci, prev_cci, 1)}</td><td>{_prev_cci_label(prev_cci)}</td></tr>
 </tbody>
 </table>
 </div>"""
@@ -1160,15 +1173,79 @@ def _card_html(report):
     def row(emoji, label, val):
         return f"<tr><td class='metric-label'>{emoji} {label}</td><td class='metric-value'>{val}</td></tr>"
 
-    def signal_row(signal, label, val):
-        return f"<tr><td class='metric-label'>{label}</td><td class='metric-value'>{signal}</td></tr>"
+    def signal_row(signal, label, val, tooltip=None):
+        title_attr = f' title="{tooltip}"' if tooltip else ""
+        return f"<tr><td class='metric-label'{title_attr}>{label}</td><td class='metric-value'>{signal}</td></tr>"
 
-    trend_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in report["trend"])
-    mom_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in report["momentum"])
-    vol_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in report["volume"])
-    vola_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in report["volatility"])
-    reg_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in report["regime"])
-    struct_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2]) for item in report["structure"])
+    # Tooltip descriptions for Trend indicators
+    _trend_tooltip = {
+        "EMA20 > EMA50 > EMA200": "Checks if the 20-day EMA is above the 50-day EMA, which is above the 200-day EMA — a classic bullish trend signal.",
+        "SuperTrend": "A trend-following indicator based on ATR multiples. 'Uptrend' means price is above the SuperTrend line; 'Downtrend' means below.",
+        "Price vs EMA20": "Whether the current close price is above or below the 20-day Exponential Moving Average.",
+        "MA20 Slope": "The percentage slope of the 20-day Moving Average. Positive indicates the short-term trend is increasing; negative indicates decreasing.",
+        "MA50 Slope": "The percentage slope of the 50-day Moving Average. Positive indicates the medium-term trend is increasing; negative indicates decreasing.",
+        "Donchian Breakout": "Whether the price has broken above the Donchian Channel upper band (resistance breakout, often bullish).",
+        "Donchian Breakdown": "Whether the price has broken below the Donchian Channel lower band (support breakdown, often bearish).",
+        "Keltner Breakout": "Whether the price has broken above the Keltner Channel upper band (volatility breakout).",
+        "Keltner Breakdown": "Whether the price has broken below the Keltner Channel lower band (volatility breakdown).",
+        "Aroon": "The Aroon oscillator compares upward vs downward movement over the lookback period. Bullish when Aroon Up > Aroon Down.",
+    }
+
+    # Tooltip descriptions for Momentum indicators
+    _momentum_tooltip = {
+        "RSI(14)": "Relative Strength Index over 14 periods. Values above 70 suggest overbought conditions; below 30 suggest oversold.",
+        "MACD Histogram": "MACD line minus MACD signal line. Positive indicates bullish momentum; negative indicates bearish momentum.",
+        "MACD Cross": "Compares the MACD line to its signal line. 'Line > Signal' is bullish; 'Line < Signal' is bearish.",
+        "ROC(20)": "Rate of Change over 20 periods — the percentage price change from 20 bars ago to the current bar.",
+        "Williams %R": "Williams Percent Range. Values above -20 indicate overbought; below -80 indicate oversold conditions.",
+        "CCI(20)": "Commodity Channel Index over 20 periods. Values above +100 suggest overbought; below -100 suggest oversold.",
+        "TSI(25,13)": "True Strength Index using 25-period and 13-period EMA of price changes. Measures momentum with double smoothing.",
+        "RSI Z-Score(14,20)": "How many standard deviations the current RSI(14) is from its 20-period average. Positive = overbought, negative = oversold.",
+        "RSI Percentile(14,20)": "Where the current RSI(14) ranks within its 20-period range. 90th percentile = highest RSI in 20 bars.",
+    }
+
+    # Tooltip descriptions for Volume indicators
+    _volume_tooltip = {
+        "OBV Trend (5-bar)": "On-Balance Volume trend over the last 5 bars. Rising OBV suggests buying pressure; falling suggests selling pressure.",
+        "ADL Trend (5-bar)": "Accumulation/Distribution Line trend over the last 5 bars. Rising suggests accumulation; falling suggests distribution.",
+        "CMF(20)": "Chaikin Money Flow over 20 periods. Positive indicates buying pressure (money flowing in); negative indicates selling pressure.",
+        "Volume": "Current trading volume. Compare to recent average to gauge participation level.",
+        "MFI(14)": "Money Flow Index over 14 periods — volume-weighted RSI. Above 80 overbought; below 20 oversold.",
+        "EMV(14)": "Ease of Movement over 14 periods. Measures how easily price moves with volume. Rising suggests easy upward movement.",
+        "Volume Oscillator(14,28)": "Percentage difference between 14-period and 28-period volume EMAs. Positive = volume accelerating.",
+        "Volume Z-Score(20)": "How many standard deviations current volume is from its 20-period average. High values indicate unusual volume.",
+        "Volume Percentile(20)": "Where current volume ranks within its 20-period range. High percentile indicates unusually high volume.",
+    }
+
+    # Tooltip descriptions for Volatility indicators
+    _volatility_tooltip = {
+        "ATR(14) %": "Average True Range over 14 periods as a percentage of price. Higher values indicate greater price volatility.",
+        "Hist. Volatility(20)": "Historical (realized) volatility over 20 periods — standard deviation of returns annualized. Low <15%, Normal >15%.",
+        "Parkinson Vol": "Parkinson volatility estimator over 20 periods using high-low range. More efficient than close-only estimators.",
+        "Price in BB": "Whether the current price is inside the Bollinger Bands (between upper and lower bands).",
+        "BB Width": "Bollinger Bands width as percentage — (Upper - Lower) / Middle. Measures volatility expansion/contraction.",
+        "BB %B": "Bollinger Bands %B — where price sits within the bands. 0 = at lower band, 1 = at upper band.",
+        "Price near BB Upper": "Whether the current price is within 2% of the Bollinger Bands upper band.",
+    }
+
+    # Tooltip descriptions for Market Structure indicators
+    _structure_tooltip = {
+        "Swing High Index": "Number of bars since the most recent swing high. Under 5 = fresh high (strong trend); over 50 = aging trend.",
+        "Swing Low Index": "Number of bars since the most recent swing low. Under 5 = fresh low (strong downtrend).",
+        "Higher High": "Whether the latest swing high is higher than the previous swing high — a sign of an uptrend.",
+        "Higher Low": "Whether the latest swing low is higher than the previous swing low — a sign of an uptrend.",
+        "Lower High": "Whether the latest swing high is lower than the previous swing high — a sign of a downtrend.",
+        "Lower Low": "Whether the latest swing low is lower than the previous swing low — a sign of a downtrend.",
+        "BOS": "Break of Structure — confirms trend continuation when price breaks a previous swing point in the trend direction.",
+        "CHoCH": "Change of Character — potential trend reversal signal when price breaks the most recent structural swing point opposite to the trend.",
+    }
+
+    trend_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2], _trend_tooltip.get(item[0])) for item in report["trend"])
+    mom_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2], _momentum_tooltip.get(item[0])) for item in report["momentum"])
+    vol_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2], _volume_tooltip.get(item[0])) for item in report["volume"])
+    vola_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2], _volatility_tooltip.get(item[0])) for item in report["volatility"])
+    reg_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2], "Hidden Markov Model with 3 states: Bull, Bear, and Volatile regime probabilities.") for item in report["regime"])
+    struct_html = "".join(signal_row(_metric_color(item[2], item[1]), item[0], item[2], _structure_tooltip.get(item[0])) for item in report["structure"])
 
     # Regime probability bar
     regime_bar_html = _regime_bar_html(report)
@@ -1352,7 +1429,7 @@ body {{
     vertical-align: middle;
 }}
 .analysis-grid table tr:last-child td {{ border-bottom: none; }}
-.analysis-grid table .metric-label {{ font-weight: 600; color: #334155; width: 40%; }}
+.analysis-grid table .metric-label {{ font-weight: 600; color: #334155; width: 40%; cursor: help; }}
 .analysis-grid table .metric-value {{ color: #1e293b; text-align: right; }}
 
 /* ── Regime Probability Bar ───────────────────────────────────── */
