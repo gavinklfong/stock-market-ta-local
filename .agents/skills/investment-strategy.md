@@ -38,7 +38,7 @@ All custom scripts must follow these rules:
 
 ## Objective
 
-Investigate and recommend the best investment strategy (maximum return / minimum drawdown) for `{ticker}` based on `{year}` of market data. Create and evaluate custom strategies when built-in ones are insufficient. Output findings to `data/strategy/{ticker}/{latest_date}.md`, where `{latest_date}` is the last date in the market data CSV (formatted `YYYY-MM-DD`). This date represents the latest market data the strategy was formulated against.
+Investigate and recommend the best investment strategy (maximum return / minimum drawdown) for `{ticker}` based on `{year}` of market data. Create and evaluate custom strategies when built-in ones are insufficient. Output findings to `data/reports/strategies/{ticker}/{latest_date}.md`, where `{latest_date}` is the last date in the market data CSV (formatted `YYYY-MM-DD`). This date represents the latest market data the strategy was formulated against.
 
 ## Parameters
 
@@ -139,7 +139,7 @@ from app.backtest.framework.engine import BacktestEngine
 from app.backtest.strategies.builtins import STRATEGIES, STRATEGY_LABELS
 ```
 
-**Record results in `data/strategy/{ticker}/{latest_date}.md`:**
+**Record results in `data/reports/strategies/{ticker}/{latest_date}.md`:**
 
 For each strategy, capture:
 - Strategy name (key from `STRATEGIES`) and label (from `STRATEGY_LABELS`)
@@ -200,7 +200,7 @@ Compile findings into a recommendation:
 5. **Recommended entry/exit rules** — the logic behind the top pick
 6. **Risk considerations** — conditions where the strategy may fail
 
-## Output Format for `data/strategy/{ticker}/{latest_date}.md`
+## Output Format for `data/reports/strategies/{ticker}/{latest_date}.md`
 
 Write the output file in chunks to avoid token limits. Structure:
 
@@ -305,12 +305,12 @@ After backtesting, rate strategies on:
 4. **Deep dive top 5** — understand why top strategies worked
 5. **Create custom strategies** — if needed, write to `app/backtest/custom/`
 6. **Optimize parameters** — test variants of promising custom strategies
-7. **Compile report** — write findings to `data/strategy/{ticker}/{latest_date}.md` in chunks
+7. **Compile report** — write findings to `data/reports/strategies/{ticker}/{latest_date}.md` in chunks
 8. **Verify report** — confirm the file was written completely and is well-structured
 
 ## Token Limit Handling
 
-When writing `data/strategy/{ticker}/{latest_date}.md`:
+When writing `data/reports/strategies/{ticker}/{latest_date}.md`:
 - Write the file in sections using separate write/edit calls
 - Start with the header and executive summary
 - Append Phase 1, 2, 3, etc. separately
