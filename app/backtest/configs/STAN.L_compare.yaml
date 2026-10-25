@@ -1,10 +1,7 @@
-# BARC.L (Barclays) strategy comparison config
-# Runs all built-in strategies plus custom BARC.L strategies
+# STAN.L strategy comparison config
+# Runs all built-in strategies plus custom STAN.L strategies
 #
-# BARC.L characteristics: cyclical banking stock, +104% 5Y return,
-# 53% bullish trend, more mean-reverting than STAN.L
-#
-# Usage:  python app/backtest/run_backtest.py BARC.L -c app/backtest/configs/barc_compare.yaml
+# Usage:  python app/backtest/run_backtest.py STAN.L -c app/backtest/configs/STAN.L_compare.yaml
 
 strategies:
   # Trend & momentum strategies
@@ -22,9 +19,6 @@ strategies:
   - module: vol_breakout_rev
   - module: bb_meanrev_optimized
   - module: bb_meanrev_entry2
-  - module: dual_exit_meanrev
-  - module: macd_divergence_rev
-  - module: rsi_macd_rev
   # Breakout & trend-following
   - module: golden_cross
   - module: ema_pullback
@@ -46,12 +40,15 @@ strategies:
   - module: regime_adaptive
   # Multi-score
   - module: multiscore60
-  # Custom BARC.L strategies
-  - module: barc_meanrev_range
-  - module: barc_trend_pullback
-  - module: barc_vol_breakout
-  - module: barc_adaptive_score
-  - module: barc_ema_bounce
+  - module: dual_exit_meanrev
+  - module: macd_divergence_rev
+  - module: rsi_macd_rev
+  # Custom STAN.L strategies
+  - module: stan_trend_trailing
+  - module: stan_adaptive_trend
+  - module: stan_pullback_rides
+  - module: stan_dual_trend
+  - module: stan_vol_breakout_trend
 
 # Custom strategy directory (relative to this config file)
 custom_dir: ../custom

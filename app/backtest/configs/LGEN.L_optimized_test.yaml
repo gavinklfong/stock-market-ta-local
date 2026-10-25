@@ -1,0 +1,28 @@
+# Usage:  python app/backtest/run_backtest.py LGEN.L -c app/backtest/configs/LGEN.L_optimized_test.yaml
+# LGEN.L optimized strategy test — new custom strategies + key benchmarks
+custom_dir: ../custom
+
+strategies:
+  # Benchmarks
+  - module: bb_meanrev_upper
+    label: "BB MeanRev (Upper Exit)"
+  - module: dividend_meanrev
+    label: "Dividend MeanRev (baseline)"
+  - module: dual_exit_div_meanrev
+    label: "Dual-Exit Div MeanRev (baseline)"
+
+  # New optimized strategies
+  - module: lgen_div_upper_exit
+    label: "LGEN Div Upper Exit"
+  - module: lgen_div_upper_exit_rsi_filter
+    label: "LGEN Div Upper + RSI Filter"
+  - module: lgen_upper_exit_time_stop
+    label: "LGEN Upper Exit + Time Stop"
+  - module: lgen_crash_protected_upper
+    label: "LGEN Crash-Protected Upper"
+  - module: lgen_hybrid_upper_atr
+    label: "LGEN Hybrid Upper + ATR"
+  - module: lgen_rsi_acceleration
+    label: "LGEN RSI Acceleration"
+  - module: lgen_rsi_acceleration_upper_exit
+    label: "LGEN RSI Accel + Upper Exit"

@@ -79,7 +79,7 @@ python app/analyse-market-data/analyse_all.py --dry-run
 # 5. Backtest (reads data/analysis-data/{ticker}.csv)
 python app/backtest/run_backtest.py NG.L                                # single ticker
 python app/backtest/run_backtest.py NG.L --dry-run                      # show strategies/data
-python app/backtest/run_backtest.py NG.L -c app/backtest/configs/ng_optimized.yaml
+python app/backtest/run_backtest.py NG.L -c app/backtest/configs/NG.L_optimized.yaml
 python app/backtest/run_backtest.py NG.L --no-report                    # run but skip HTML
 python app/backtest/run_backtest.py NG.L --cutoff 2024-01-01            # restrict data
 python app/backtest/backtest_all.py                                     # all tickers in ticker_list.csv

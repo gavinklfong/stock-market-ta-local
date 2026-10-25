@@ -1,0 +1,32 @@
+# Usage:  python app/backtest/run_backtest.py LGEN.L -c app/backtest/configs/LGEN.L_custom.yaml
+# LGEN.L strategy config — built-in + custom strategies
+custom_dir: ../custom
+
+strategies:
+  # Top built-in performers
+  - module: bb_meanrev_upper
+    label: "BB MeanRev (Upper Exit)"
+  - module: vol_filtered_meanrev
+    label: "Vol-Filtered MeanRev"
+  - module: dual_exit_meanrev
+    label: "Dual-Exit MeanRev"
+  - module: bb_meanrev
+    label: "BB Mean Reversion"
+  - module: bb_meanrev_atr
+    label: "BB MeanRev (ATR Trail)"
+  - module: regime_adaptive
+    label: "Regime-Adaptive"
+  - module: bb_meanrev_entry2
+    label: "BB MeanRev Entry2"
+  - module: macd_divergence_rev
+    label: "MACD Div Rev"
+  - module: short_meanrev
+    label: "Short-Term MeanRev"
+
+  # Custom strategies (use registered function names)
+  - module: lgen_meanrev_risk
+    label: "LGEN MeanRev Risk Mgmt"
+  - module: lgen_regime_adaptive_v2
+    label: "LGEN Regime Adaptive V2"
+  - module: lgen_multisignal_mr
+    label: "LGEN MultiSignal MR"

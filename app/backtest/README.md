@@ -28,11 +28,12 @@ app/backtest/
 │   └── builtins.py              # 32 built-in strategies + group registry
 ├── configs/
 │   ├── default.yaml             # All 32 strategies
-│   ├── ng_optimized.yaml        # NG.L optimized (10 mean-reversion strategies)
+│   ├── NG.L_optimized.yaml        # NG.L optimized (10 mean-reversion strategies). Ticker-specific config — use `{Ticker}_{function}.yaml`
 │   └── trend_stock.yaml         # Trend-following for stock tickers
 └── custom/
     ├── template_strategy.py     # Starter template
-    └── ng_custom.py             # Example custom strategies
+    └── NG.L_custom.py             # Example custom strategies. Ticker-specific scripts — use `{Ticker}_{function}.py`
+└── custom_scripts/              # Ticker-specific scripts — use `{Ticker}_{function}.py`
 ```
 
 ### Data Flow
@@ -161,7 +162,7 @@ report_path = generate_report(
 python app/backtest/run_backtest.py NG.L
 
 # Specific config
-python app/backtest/run_backtest.py NG.L -c app/backtest/configs/ng_optimized.yaml
+python app/backtest/run_backtest.py NG.L -c app/backtest/configs/NG.L_optimized.yaml
 
 # With custom strategies
 python app/backtest/run_backtest.py NG.L --custom-dir app/backtest/custom
@@ -228,7 +229,7 @@ trailing_pct: 0.05
 | Config | Strategies | Use Case |
 |---|---|---|
 | `configs/default.yaml` | All 32 | Full evaluation |
-| `configs/ng_optimized.yaml` | 10 mean-reversion | NG.L crude oil |
+| `configs/NG.L_optimized.yaml` | 10 mean-reversion | NG.L crude oil |
 | `configs/trend_stock.yaml` | 17 trend-following | UK stock tickers |
 
 ## Custom Strategies
@@ -342,6 +343,33 @@ def multi_indicator_long(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
 
     return entry.astype(int), exit_.astype(int)
 ```
+
+### File Naming Convention
+
+When a file (strategy, config, or custom script) is specific to a particular ticker, its name must follow this pattern:
+
+```
+{ticker}_{function}.py    # Python strategy or script
+{ticker}_{function}.yaml  # YAML config file
+```
+
+**Rules:**
+
+1. **`{ticker}`** — The ticker ID **in uppercase**, as it appears in `config/ticker_list.csv` and `data/analysis-data/`. For example: `LGEN.L`, `NG.L`, `BP.L`, `AZN.L`.
+   - **Correct:** `LGEN.L_crash_protected.py`, `NG.L_backtest.py`
+   - **Incorrect:** `lgen_crash_protected.py`, `ng_backtest.py`, `Lgen.L_strategy.py`
+2. **`{function}`** — A short descriptive name of the file's purpose (lowercase, underscore-separated).
+   - Examples: `backtest`, `optimized`, `crash_protected`, `exit_analysis`, `deep_analysis`
+3. **Location:** Place ticker-specific scripts in `app/backtest/custom_scripts/`. Place ticker-specific custom strategies in `app/backtest/custom/`. Place ticker-specific YAML configs in `app/backtest/configs/`.
+
+| File | Purpose | Correct Name |
+|------|---------|-------------|
+| Custom strategy for LGEN.L | Crash-protected mean reversion | `app/backtest/custom/LGEN.L_crash_protected.py` |
+| Custom backtest script | Deep dive into LGEN.L exits | `app/backtest/custom_scripts/LGEN.L_exit_analysis.py` |
+| YAML config | NG.L mean-reversion focused | `app/backtest/configs/NG.L_meanrev.yaml` |
+| Custom script | AZN.L optimized parameters | `app/backtest/custom_scripts/AZN.L_optimized.py` |
+
+**Note:** Built-in strategies (in `strategies/builtins.py`) are **ticker-agnostic** — they are not named with a ticker prefix. Only files that are **specific to a single ticker** (custom strategies, one-off scripts, per-ticker configs) should follow this naming convention.
 
 ### File Organization
 

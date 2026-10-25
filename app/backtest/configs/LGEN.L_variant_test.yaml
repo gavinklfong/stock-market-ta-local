@@ -1,0 +1,24 @@
+# Usage:  python app/backtest/run_backtest.py LGEN.L -c app/backtest/configs/LGEN.L_variant_test.yaml
+# LGEN.L variant test — additional strategy variants
+custom_dir: ../custom
+
+strategies:
+  # Key benchmarks
+  - module: lgen_crash_protected_upper
+    label: "LGEN Crash-Protected Upper"
+  - module: dual_exit_div_meanrev
+    label: "Dual-Exit Div MeanRev"
+  - module: dividend_meanrev
+    label: "Dividend MeanRev"
+  - module: bb_meanrev_upper
+    label: "BB MeanRev (Upper Exit)"
+
+  # New variants
+  - module: lgen_strict_crash_upper
+    label: "LGEN Strict + Crash + Upper"
+  - module: lgen_cci_strict_upper
+    label: "LGEN CCI<-150 + Crash + Upper"
+  - module: lgen_dual_exit_crash
+    label: "LGEN Dual-Exit + Crash"
+  - module: lgen_atr_exit_strict
+    label: "LGEN Strict Entry + ATR Trail"

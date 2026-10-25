@@ -1,7 +1,7 @@
 # NG.L mean-reversion optimized config
 # Uses only the best-performing strategies for this commodity
 #
-# Usage:  python app/backtest/run_backtest.py NG.L -c app/backtest/configs/ng_optimized.yaml
+# Usage:  python app/backtest/run_backtest.py NG.L -c app/backtest/configs/NG.L_optimized.yaml
 
 strategies:
   # NG.L Optimized strategies (Config 1 & 2)

@@ -264,6 +264,20 @@ Write the output file in chunks to avoid token limits. Structure:
 - **Risk management:** {position sizing, stop loss, max holding period}
 - **When it fails:** {market conditions where this strategy underperforms}
 - **Suggested improvements:** {ideas for further refinement}
+
+## Year-by-Year Performance
+Compare Buy-and-Hold benchmark against the top 5 strategies by Total Return (ranked from Phase 2 / Phase 4 results):
+
+| Year | Buy & Hold | {strategy_1} | {strategy_2} | {strategy_3} | {strategy_4} | {strategy_5} |
+|------|------------|--------------|--------------|--------------|--------------|--------------|
+| 20XX | {return}%  | {return}%    | {return}%    | {return}%    | {return}%    | {return}%    |
+| ...  | ...        | ...          | ...          | ...          | ...          | ...          |
+
+**Key observations per year:**
+- Highlight years where strategies diverged significantly from Buy-and-Hold
+- Note crash years where crash-protected / mean-reversion strategies outperformed
+- Note recovery years where trend-following strategies caught up
+- Bold the best-performing strategy per row (or the crash-protected one in crash years)
 ```
 
 ## Strategy Formulation Reference
@@ -328,3 +342,4 @@ When writing `data/reports/strategies/{ticker}/{latest_date}.md`:
 - **Custom strategy files** must use `@register_custom("name")` decorator and import `from framework.extensions import register_custom`
 - **Strategy function** signature: `def name(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]`
 - **Don't** hardcode to NG.L — this skill must work for any ticker
+- **File naming:** When creating ticker-specific custom configs or scripts, follow the naming convention in `app/backtest/README.md`: `{Ticker}_{function}.py` and `{Ticker}_{function}.yaml`, where `{Ticker}` is the ticker ID **in uppercase** (e.g. `LGEN.L`, `NG.L`, `BP.L`) as it appears in `config/ticker_list.csv`. Place ticker-specific scripts in `app/backtest/custom_scripts/`, custom strategies in `app/backtest/custom/`, and per-ticker YAML configs in `app/backtest/configs/`.
