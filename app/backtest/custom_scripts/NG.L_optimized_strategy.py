@@ -6,7 +6,7 @@ Entry: BB Mean-Reversion (Close <= BB Lower, RSI(14) < 30, Williams %R < -80)
 Exit:  Time-Stop 90d (primary optimal), BB Middle (alternative)
 Valuation: P/E and dividend yield filters analyzed as overlays
 
-Output: data/backtest-reports/NG.L/optimized_strategy.html
+Output: data/reports/backtest/NG.L/optimized_strategy.html
 """
 import json
 from pathlib import Path
@@ -16,7 +16,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-REPORT_DIR = BASE_DIR / "data" / "backtest-reports"
+REPORT_DIR = BASE_DIR / "data" / "reports" / "backtest"
 REPORT_DIR.mkdir(exist_ok=True)
 
 SLIPPAGE = 0.001

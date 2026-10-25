@@ -27,7 +27,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_PATH = ROOT / "data" / "analysis-data" / "NG.L.csv"
 CUTOFF_DATE = pd.Timestamp("2016-10-15")
-REPORT_DIR = ROOT / "data" / "backtest-reports"
+REPORT_DIR = ROOT / "data" / "reports" / "backtest"
 REPORT_DIR.mkdir(parents=True, exist_ok=True)
 SLIPPAGE = 0.001
 RISK_FREE = 0.05

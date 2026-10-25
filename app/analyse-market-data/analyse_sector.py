@@ -9,7 +9,7 @@ import pandas as pd
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ANALYSIS_DIR = BASE_DIR / "data" / "analysis-data"
 TICKER_LIST = BASE_DIR / "config" / "ticker_list.csv"
-DEFAULT_OUTPUT_DIR = BASE_DIR / "data" / "reports"
+DEFAULT_OUTPUT_DIR = BASE_DIR / "data" / "reports" / "sector-overview"
 
 
 # ---------------------------------------------------------------------------

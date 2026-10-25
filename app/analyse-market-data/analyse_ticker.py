@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 ANALYSIS_DIR = BASE_DIR / "data" / "analysis-data"
-DEFAULT_OUTPUT_DIR = BASE_DIR / "data" / "reports"
+DEFAULT_OUTPUT_DIR = BASE_DIR / "data" / "reports" / "ticker-overview"
 PLOTLY_VERSION = "2.35.0"
 
 

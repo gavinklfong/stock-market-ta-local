@@ -59,7 +59,7 @@ sys.path.insert(0, str(Path(__file__).parent / ".." / "calculate-ta"))
 
 # Configuration
 DATA_PATH = Path(__file__).parent.parent.parent / "data" / "analysis-data" / "HSBA.L.csv"
-OUTPUT_DIR = Path(__file__).parent.parent.parent / "data" / "backtest-reports"
+OUTPUT_DIR = Path(__file__).parent.parent.parent / "data" / "reports" / "backtest"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 TICKER_DIR = OUTPUT_DIR / "HSBA.L"
 TICKER_DIR.mkdir(parents=True, exist_ok=True)

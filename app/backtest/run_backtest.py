@@ -120,7 +120,7 @@ def main() -> None:
     parser.add_argument(
         "-o", "--output-dir",
         default=None,
-        help="Output directory for reports (default: data/backtest-reports)",
+        help="Output directory for reports (default: data/reports/backtest)",
     )
     parser.add_argument(
         "--cutoff",
@@ -158,7 +158,7 @@ def main() -> None:
     else:
         data_dir = Path(args.data_dir)
     if args.output_dir is None:
-        output_dir = root / "data" / "backtest-reports"
+        output_dir = root / "data" / "reports" / "backtest"
     else:
         output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-REPORT_DIR = BASE_DIR / "data" / "backtest-reports"
+REPORT_DIR = BASE_DIR / "data" / "reports" / "backtest"
 REPORT_DIR.mkdir(exist_ok=True)
 
 SLIPPAGE = 0.001

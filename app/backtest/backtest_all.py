@@ -188,7 +188,7 @@ def main() -> None:
         # Per-ticker report
         if not args.no_report and not args.csv_only:
             try:
-                report_dir = root / "data" / "backtest-reports"
+                report_dir = root / "data" / "reports" / "backtest"
                 report_dir.mkdir(parents=True, exist_ok=True)
                 df = pd.read_csv(data_path)
                 report_path = generate_report(
@@ -217,7 +217,7 @@ def main() -> None:
 
         results_path = args.results_file
         if results_path is None:
-            results_path = str(root / "data" / "backtest-reports" / "backtest_all_results.csv")
+            results_path = str(root / "data" / "reports" / "backtest" / "backtest_all_results.csv")
         Path(results_path).parent.mkdir(parents=True, exist_ok=True)
         results_df.to_csv(results_path, index=False)
         print(f"\nMerged results ({len(results_df)} rows) → {results_path}")
