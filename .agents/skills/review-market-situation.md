@@ -2,14 +2,14 @@
 
 ## Objective
 
-Assess the market situation for `{ticker}` as of `{evaluation_date}` and recommend a buy / sell / hold signal. Evaluate across 7 dimensions: trend, momentum, return, structure, volatility, volume, and regime. Cross-reference findings with the most recent backtested strategy results from `data/strategy/{ticker}/`. Output the evaluation report to `data/reports/evaluation/{ticker}/{evaluation_date}_evaluation.md`.
+Assess the market situation for `{ticker}` as of `{evaluation_date}` and recommend a buy / sell / hold signal. Evaluate across 7 dimensions: trend, momentum, return, structure, volatility, volume, and regime. Cross-reference findings with the most recent backtested strategy results from `data/reports/strategies/{ticker}/`. Output the evaluation report to `data/reports/evaluation/{ticker}/{evaluation_date}_evaluation.md`.
 
 ## Parameters
 
 - `{ticker}` — Ticker symbol (e.g. `NG.L`, `BP.L`, `HSBA.L`)
 - `{evaluation_date}` — The date to evaluate as of (format: `YYYY-MM-DD`). Defaults to the latest date in the CSV if not specified. Used for backtesting / historical verification of signals.
 - Data source: `data/analysis-data/{ticker}.csv`
-- Strategy reference: `data/strategy/{ticker}/` — the most recent `.md` file in this directory (must exist before running this skill)
+- Strategy reference: `data/reports/strategies/{ticker}/` — the most recent `.md` file in this directory (must exist before running this skill)
 - TA knowledge base: `docs/all_technical_analysis.md`
 - Output: `data/reports/evaluation/{ticker}/{evaluation_date}_evaluation.md` (where `{evaluation_date}` is the specified date or the last date in the CSV)
 
@@ -17,26 +17,27 @@ Assess the market situation for `{ticker}` as of `{evaluation_date}` and recomme
 
 - **Historical verification:** To test whether this skill would have given correct advice on a past date, pass the date as `{evaluation_date}` (e.g. `2025-06-15`). The evaluation will use only data available up to and including that date — no hindsight.
 - **Temporal cutoff:** When `{evaluation_date}` is provided, the skill **cuts off all data after that date**. Only rows where `Date <= {evaluation_date}` are used. Rolling indicators (RSI, MACD, ATR, etc.) are read at their values on the evaluation date, reflecting the data available at that time.
+- **Historical data:** Load last 10 years market data {evaluation_date} for evaluation 
 - **Date not found:** If the specified date does not exist in the CSV (e.g. weekend/holiday), the skill falls back to the latest available date **on or before** the specified date.
 - **Future date:** If the specified date is after the last row in the CSV, the skill uses the latest available date and notes the discrepancy.
 - **Default behavior:** If `{evaluation_date}` is omitted, the skill uses the latest date in the CSV (original behavior).
 
 ## Prerequisites Check
 
-**Before proceeding, verify that the most recent strategy file exists in `data/strategy/{ticker}/`.**
+**Before proceeding, verify that the most recent strategy file exists in `data/reports/strategies/{ticker}/`.**
 
-- List all `.md` files in `data/strategy/{ticker}/` and select the one with the most recent filename (which encodes the date).
+- List all `.md` files in `data/reports/strategies/{ticker}/` and select the one with the most recent filename (which encodes the date).
 - If the directory is empty or does NOT exist, advise the user to run the investment strategy skill first:
-  > "Please run the investment strategy skill `.agents/skills/investment-strategy.md` for `{ticker}` first to generate a strategy report in `data/strategy/{ticker}/`. This review skill requires the backtest results to cross-reference current signals with historically optimal strategies."
+  > "Please run the investment strategy skill `.agents/skills/investment-strategy.md` for `{ticker}` first to generate a strategy report in `data/reports/strategies/{ticker}/`. This review skill requires the backtest results to cross-reference current signals with historically optimal strategies."
 - Exit the current task until the strategy report is available.
-- Record the path of the selected strategy file (e.g. `data/strategy/{ticker}/2025-06-30.md`) and use it throughout the evaluation.
+- Record the path of the selected strategy file (e.g. `data/reports/strategies/{ticker}/2025-06-30.md`) and use it throughout the evaluation.
 
 ## Relevant Files Reference
 
 | File | Purpose |
 |------|---------|
 | `data/analysis-data/{ticker}.csv` | Latest market data — OHLCV + all TA indicators (prefixed `ta_`) + P/E fundamentals |
-| `data/strategy/{ticker}/{latest_strategy_date}.md` | Most recent backtested strategy results — best strategies, their logic, parameters, and recommended entry/exit rules |
+| `data/reports/strategies/{ticker}/{latest_strategy_date}.md` | Most recent backtested strategy results — best strategies, their logic, parameters, and recommended entry/exit rules |
 | `docs/all_technical_analysis.md` | TA indicator definitions and interpretation guidelines (12 sections) |
 | `app/backtest/strategies/builtins.py` | 32 built-in strategy source code — read entry/exit logic for each category |
 | `app/calculate-ta/README.md` | Full TA column reference with formulas and parameters |
@@ -56,6 +57,15 @@ All TA columns use the `ta_` prefix. Key columns for each evaluation dimension:
 | **Regime** | `ta_hmm_regime_prob_0`, `ta_hmm_regime_prob_1`, `ta_hmm_regime_prob_2`, `ta_regime_label`, `ta_garch_vol` |
 
 ## Evaluation Methodology
+
+### Token Limit Handling
+
+When writing evaluation report:
+- Write the file in sections using separate write/edit calls
+- Start with the header and executive summary
+- Append step 1, 2, 3, etc. separately
+- Each chunk should be self-contained and no more than ~2000 words
+- Use `edit` to insert sections between existing content, or `write` to overwrite with growing content
 
 ### Step 1: Load & Inspect Data for Evaluation Date
 
@@ -83,7 +93,7 @@ Read the latest values and compute signals:
 7. **Price vs MAs**: Calculate `price / ta_ema20 - 1` — positive = price above EMA20
 
 **Cross-reference with strategy report:**
-- Read the recommended entry/exit rules from the latest strategy file in `data/strategy/{ticker}/`
+- Read the recommended entry/exit rules from the latest strategy file in `data/reports/strategies/{ticker}/`
 - Check if current conditions match the recommended strategy's entry criteria
 - If the best strategy is trend-following, is the trend aligned?
 
@@ -102,7 +112,7 @@ Read the latest values and compute signals:
 **Cross-reference with strategy report:**
 - What RSI thresholds does the best strategy use for entries/exits?
 - Is the current momentum consistent with the strategy's entry conditions?
-- Reference the latest strategy file in `data/strategy/{ticker}/`.
+- Reference the latest strategy file in `data/reports/strategies/{ticker}/`.
 
 **Output:** Momentum score (1–5), key indicator values, overbought/oversold assessment, alignment with best strategy.
 
@@ -123,7 +133,7 @@ Read the latest values and compute signals:
 **Cross-reference with strategy report:**
 - Does the strategy report mention return expectations or holding periods?
 - Is the ticker historically more of a mean-reversion or momentum asset?
-- Reference the latest strategy file in `data/strategy/{ticker}/`.
+- Reference the latest strategy file in `data/reports/strategies/{ticker}/`.
 
 **Output:** Return score (1–5), performance summary, alpha/beta context, alignment with best strategy.
 
@@ -142,7 +152,7 @@ Read the latest values and compute signals:
 **Cross-reference with strategy report:**
 - Does the best strategy use structural signals (BOS, CHoCH, HH/HL)?
 - Are structural conditions currently aligned with entry rules?
-- Reference the latest strategy file in `data/strategy/{ticker}/`.
+- Reference the latest strategy file in `data/reports/strategies/{ticker}/`.
 
 **Output:** Structure score (1–5), swing analysis, S/R levels, alignment with best strategy.
 
@@ -163,7 +173,7 @@ Read the latest values and compute signals:
 - Does the best strategy have volatility-based entries or exits?
 - Is current volatility consistent with the strategy's optimal conditions?
 - Note any ATR-based position sizing mentioned in the strategy.
-- Reference the latest strategy file in `data/strategy/{ticker}/`.
+- Reference the latest strategy file in `data/reports/strategies/{ticker}/`.
 
 **Output:** Volatility score (1-5), current level, trend in volatility, breakout/bounce probability, alignment with best strategy.
 
@@ -181,7 +191,7 @@ Read the latest values and compute signals:
 **Cross-reference with strategy report:**
 - Does the best strategy use volume confirmation (CMF, OBV, OFI)?
 - Is volume currently supporting the price direction?
-- Reference the latest strategy file in `data/strategy/{ticker}/`.
+- Reference the latest strategy file in `data/reports/strategies/{ticker}/`.
 
 **Output:** Volume score (1–5), buying/selling pressure assessment, confirmation/divergence with price, alignment with best strategy.
 
@@ -200,7 +210,7 @@ Read the latest values and compute signals:
 - Does the best strategy include regime-adaptive logic?
 - What regime does the strategy perform best in?
 - If the current regime differs from what the strategy prefers, flag as a concern.
-- Reference the latest strategy file in `data/strategy/{ticker}/`.
+- Reference the latest strategy file in `data/reports/strategies/{ticker}/`.
 
 **Output:** Regime score (1–5), dominant regime, regime stability, alignment with best strategy.
 
@@ -223,7 +233,7 @@ Aggregate all 7 dimension scores:
 2. **Score breakdown**: Table showing each dimension's score and weight
 3. **Key supporting indicators**: Top 3 indicators per dimension that drive the signal
 4. **Key conflicting indicators**: Any indicators that contradict the overall signal
-5. **Strategy alignment**: Does current data match the entry conditions of the recommended strategy from the latest file in `data/strategy/{ticker}/`?
+5. **Strategy alignment**: Does current data match the entry conditions of the recommended strategy from the latest file in `data/reports/strategies/{ticker}/`?
 6. **Confidence level**: High / Medium / Low (based on agreement across dimensions)
 7. **Risk factors**: What could invalidate this signal (e.g., regime shift, volume drying up, structural break)
 8. **Recommended action**: Exact entry conditions to watch for, suggested stop-loss level (using ATR), suggested target (using S/R levels or BB)
@@ -245,7 +255,7 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 **Price:** {close_price}
 **Data Range:** {first_date} to {last_date} ({total_rows} rows)
 **Sector:** {sector}
-**Strategy Reference:** `data/strategy/{ticker}/{latest_strategy_date}.md`
+**Strategy Reference:** `data/reports/strategies/{ticker}/{latest_strategy_date}.md`
 
 ---
 
@@ -706,4 +716,4 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 
 ---
 
-*Report generated: {actual_date} | Data point: {evaluation_date} → `{actual_date}` | Data: `data/analysis-data/{ticker}.csv` ({total_rows} rows) | Strategy: `data/strategy/{ticker}/{latest_strategy_date}.md`*
+*Report generated: {actual_date} | Data point: {evaluation_date} → `{actual_date}` | Data: `data/analysis-data/{ticker}.csv` ({total_rows} rows) | Strategy: `data/reports/strategies/{ticker}/{latest_strategy_date}.md`*
