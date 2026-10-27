@@ -104,19 +104,33 @@ All TA columns use the `ta_` prefix. Key columns (full list in `docs/all_technic
 - Wednesday: monitor for mid-week reversals, tighten trailing stops
 - Thursday: widen stops if weekly options expiry affects the stock
 
+## Pre-flight: Resolve Ticker Identity
+
+**Before any analysis, resolve the ticker to its real company name and sector.**
+
+1. Read `config/ticker_list.csv` (columns: `Ticker`, `Company`, `Major Industry / Sector`)
+2. Look up the exact `{ticker}` string (e.g. `NG.L`, `BP.L`, `HSBA.L`)
+3. Record the `Company` and `Sector` values — these are the **authoritative** identifiers
+4. **NEVER guess** what a ticker represents based on its symbol alone (e.g. `NG.L` is **National Grid**, not "Natural Gas"; `BP.L` is **BP**, not "Bond Pricing")
+5. Use the resolved company name throughout the report instead of the raw ticker symbol where narrative context is needed
+
+**Constraint:** If the ticker is not found in `config/ticker_list.csv`, note this as a data issue and proceed with the ticker symbol only — do not fabricate a company name.
+
 ## Methodology
 
 ### Phase 1: Data Preparation & Understanding
 
 1. Verify the data file exists: `data/analysis-data/{ticker}.csv`
 2. Check data date range, column count, and missing values
-3. Examine forward returns (`ta_ret_5d`, `ta_ret_10d`, `ta_ret_20d`) and past performance (`ta_ret_1m`, `ta_ret_3m`, `ta_ret_6m`, `ta_ret_1y`) to understand the asset's behavior
-4. Look at P/E data for valuation context
-5. Determine asset characteristics from the return data:
+3. **Use the resolved company name** from the Pre-flight step — e.g. "National Grid (NG.L) is a regulated UK utility…" not "NG.L is a commodity…"
+4. Examine forward returns (`ta_ret_5d`, `ta_ret_10d`, `ta_ret_20d`) and past performance (`ta_ret_1m`, `ta_ret_3m`, `ta_ret_6m`, `ta_ret_1y`) to understand the asset's behavior
+5. Look at P/E data for valuation context
+6. Determine asset characteristics from the return data:
    - Is it trending (strong directional moves)? → favor trend-following strategies
    - Is it mean-reverting (oscillates around a range)? → favor mean-reversion strategies
    - Is it volatile with wide swings? → favor volatility-based strategies
    - Is it low-vol with range-bound? → favor conservative mean-reversion
+7. **Contextualize the asset type** using the resolved company name and sector (e.g. "National Grid is a regulated utility, not a commodity — mean-reversion strategies designed for commodities do not directly apply")
 
 ### Phase 2: Baseline Strategy Evaluation
 
@@ -205,10 +219,11 @@ Compile findings into a recommendation:
 Write the output file in chunks to avoid token limits. Structure:
 
 ```markdown
-# Investment Strategy Report: {Ticker}
+# Investment Strategy Report: {Company Name} ({ticker})
 
 ## Executive Summary
-- **Ticker:** {Ticker} ({ticker})
+- **Company:** {Company Name} ({ticker})
+- **Sector:** {Sector from config/ticker_list.csv}
 - **Analysis Period:** {year} years
 - **Best Overall:** {strategy_name} — {return}% return, {sharpe} Sharpe, {drawdown}% drawdown
 - **Highest Return:** {strategy_name} — {return}% return
@@ -218,6 +233,7 @@ Write the output file in chunks to avoid token limits. Structure:
 ## Data Summary
 - Date range: {start_date} to {end_date}
 - Rows: {count}
+- Asset type: {Sector} stock — {brief description based on company name, e.g. "regulated utility" / "pharmaceutical" / "banking"}
 - Asset characteristics: {trending / mean-reverting / volatile / range-bound}
 
 ## Phase 1: Data Analysis
@@ -225,6 +241,7 @@ Write the output file in chunks to avoid token limits. Structure:
 - Past performance summary
 - P/E valuation context
 - Asset behavior classification
+- **Sector-appropriate analysis:** {interpret findings in the context of the company's sector — e.g. "National Grid as a regulated utility has stable cash flows but limited growth upside, making mean-reversion more appropriate than aggressive trend-following"}
 
 ## Phase 2: Baseline Results (All 32 Built-in Strategies)
 | Rank | Strategy | Label | Return% | Sharpe | Max DD% | Profit Factor | Win Rate% | Trades |
@@ -313,14 +330,15 @@ After backtesting, rate strategies on:
 
 ## Execution Steps
 
-1. **Read data** — load `data/analysis-data/{ticker}.csv`, analyze characteristics
-2. **Run baseline** — execute all 32 built-in strategies, collect metrics
-3. **Rank results** — sort by Total Return, then Profit Factor, then Min Drawdown
-4. **Deep dive top 5** — understand why top strategies worked
-5. **Create custom strategies** — if needed, write to `app/backtest/custom/`
-6. **Optimize parameters** — test variants of promising custom strategies
-7. **Compile report** — write findings to `data/reports/strategies/{ticker}/{latest_date}.md` in chunks
-8. **Verify report** — confirm the file was written completely and is well-structured
+1. **Pre-flight** — read `config/ticker_list.csv`, resolve `{ticker}` to `Company` and `Sector`; **NEVER guess** what a ticker represents
+2. **Read data** — load `data/analysis-data/{ticker}.csv`, analyze characteristics using the resolved company name for context
+3. **Run baseline** — execute all 32 built-in strategies, collect metrics
+4. **Rank results** — sort by Total Return, then Profit Factor, then Min Drawdown
+5. **Deep dive top 5** — understand why top strategies worked, considering the company's sector
+6. **Create custom strategies** — if needed, write to `app/backtest/custom/`
+7. **Optimize parameters** — test variants of promising custom strategies
+8. **Compile report** — write findings to `data/reports/strategies/{ticker}/{latest_date}.md` in chunks, using resolved company name throughout
+9. **Verify report** — confirm the file was written completely, is well-structured, and correctly identifies the company (not a hallucinated identity)
 
 ## Token Limit Handling
 
@@ -334,12 +352,13 @@ When writing `data/reports/strategies/{ticker}/{latest_date}.md`:
 ## Constraints & Gotchas
 
 - **Activate venv** before running any Python scripts
-- **TA columns** all have `ta_` prefix — verify column names in `docs/all_technical_analysis.md`
+- **TA columns** all have `ta_ prefix` — verify column names in `docs/all_technical_analysis.md`
 - **Regime module** requires `arch` + `hmmlearn` — strategies using HMM columns will fail if not installed
 - **Default cutoff** is `2016-10-15` (~10 years) — adjust based on `{year}` parameter
 - **Initial capital:** £100,000, **Commission:** 0.1%, **Slippage:** 0.1%
 - **vectorbt** simulates portfolios — signals must return `int` Series (1, 0, -1)
 - **Custom strategy files** must use `@register_custom("name")` decorator and import `from framework.extensions import register_custom`
 - **Strategy function** signature: `def name(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]`
+- **Ticker identity:** Always resolve from `config/ticker_list.csv` before writing any report. Never guess company names from ticker symbols. `NG.L` = **National Grid** (Utilities), not "Natural Gas". This is the #1 source of incorrect reports.
 - **Don't** hardcode to NG.L — this skill must work for any ticker
 - **File naming:** When creating ticker-specific custom configs or scripts, follow the naming convention in `app/backtest/README.md`: `{Ticker}_{function}.py` and `{Ticker}_{function}.yaml`, where `{Ticker}` is the ticker ID **in uppercase** (e.g. `LGEN.L`, `NG.L`, `BP.L`) as it appears in `config/ticker_list.csv`. Place ticker-specific scripts in `app/backtest/custom_scripts/`, custom strategies in `app/backtest/custom/`, and per-ticker YAML configs in `app/backtest/configs/`.

@@ -45,7 +45,19 @@ tail -30 data/analysis-data/{ticker}.csv
 - **Temporal cutoff:** When `{evaluation_date}` is provided, only rows where `Date <= {evaluation_date}` are used. Rolling indicators are read at their values on the evaluation date, reflecting the data available at that time.
 - **Historical data:** The companion script loads ~10 years of market data automatically.
 - **Default behavior:** If `{evaluation_date}` is omitted, the script uses the latest date in the CSV (original behavior).
-- **Company metadata:** The companion script resolves `company_name` and `sector` from `config/ticker_list.csv` — you do not need to manually look these up unless the script returns `null`.
+- **Company metadata:** The companion script resolves `company_name` and `sector` from `config/ticker_list.csv` — you do not need to manually look these up unless the script returns `null`. If the script returns `null`, read `config/ticker_list.csv` yourself to find the company name. **NEVER guess** what a ticker represents based on its symbol alone (e.g. `NG.L` is **National Grid**, not "Natural Gas"; `BP.L` is **BP**, not "Bond Pricing"). Use the resolved company name throughout the report.
+
+## Pre-flight: Resolve Ticker Identity
+
+**Before any evaluation, resolve the ticker to its real company name and sector.**
+
+1. Read `config/ticker_list.csv` (columns: `Ticker`, `Company`, `Major Industry / Sector`)
+2. Look up the exact `{ticker}` string (e.g. `NG.L`, `BP.L`, `HSBA.L`)
+3. Record the `Company` and `Sector` values — these are the **authoritative** identifiers
+4. **NEVER guess** what a ticker represents based on its symbol alone (e.g. `NG.L` is **National Grid**, not "Natural Gas"; `BP.L` is **BP**, not "Bond Pricing")
+5. Use the resolved company name and sector throughout the report for all narrative context, sector-appropriate analysis, and the report header
+
+**Constraint:** If the ticker is not found in `config/ticker_list.csv`, note this as a data issue and proceed with the ticker symbol only — do not fabricate a company name or sector.
 
 ## Prerequisites Check
 
@@ -834,3 +846,16 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 ---
 
 *Report generated: {actual_date} | Data point: {evaluation_date} → `{actual_date}` | Data: `data/analysis-data/{ticker}.csv` ({total_rows} rows) | Strategy: `data/reports/strategies/{ticker}/{latest_strategy_date}.md`*
+
+## Constraints & Gotchas
+
+- **Activate venv** before running any Python scripts
+- **Use `read` for strategy reports** — never write inline Python via `shell` to read strategy markdown files
+- **Never write inline Python** to read the analysis CSV — use the companion script (`get_evaluation_data.py`) instead
+- **TA column names** all use `ta_` prefix — verify names in the TA Column Quick Reference table above; do NOT invent column names
+- **NaN/null handling** — the companion script filters NaN values; missing indicators appear as `null`/`None`; skip null indicators in scoring
+- **Multi-row computations** — always use `recent_context` from the companion script for trend direction, counts, averages, and stability checks before falling back to `tail`
+- **Ticker identity:** Always resolve from `config/ticker_list.csv` before writing any report. Never guess company names from ticker symbols. `NG.L` = **National Grid** (Utilities), not "Natural Gas". This is the #1 source of incorrect reports.
+- **MFI and GARCH appear in multiple dimensions** — score each dimension independently using that dimension's interpretation; do not skip a dimension because the column was used elsewhere
+- **Report depth** — choose report depth based on signal agreement (see Report Depth Guidelines); condense when 5+ agree, expand when <4 agree
+- **Write report in chunks** — start with header + executive summary, then append sections separately to avoid token limit issues
