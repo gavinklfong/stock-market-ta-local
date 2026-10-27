@@ -1,0 +1,14 @@
+# MKS.L Parameter Variants Backtest Config
+custom_dir: ../custom
+trailing_pct: 0.03
+strategies:
+  - module: mks_v1_2x_atr
+  - module: mks_v2_2x_atr_tight
+  - module: mks_v3_3x_atr
+  - module: mks_v4_4x_atr
+  - module: mks_v5_3x_atr_tight
+  - module: mks_v6_3x_atr_loose_vol
+  - module: mks_v7_4x_atr_loose_vol
+  - module: mks_v8_2x_atr_strict_vol
+  - module: mks_v9_3x_atr_strict_vol
+  - module: mks_v10_no_atr_exit
