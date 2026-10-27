@@ -13,14 +13,39 @@ Assess the market situation for `{ticker}` as of `{evaluation_date}` and recomme
 - TA knowledge base: `docs/all_technical_analysis.md`
 - Output: `data/reports/evaluation/{ticker}/{evaluation_date}_evaluation.md` (where `{evaluation_date}` is the specified date or the last date in the CSV)
 
+## Data Loading — Use Direct File Tools (Do NOT Write Inline Python)
+
+These CSV files have **108 columns** and **1,800–3,600 rows** (~7–8 MB each). Never write inline Python via `shell` to read them — it spawns a new Python process each time, takes 15–30s per call, and is fragile.
+
+**Fastest approach — use the companion script (one call, all data):**
+
+```bash
+python app/analyse-market-data/get_evaluation_data.py {ticker} 2025-06-15 --latest-30
+```
+
+This outputs a single JSON with: `latest` row, all `indicators` (100+ TA columns), `52week` range, and `recent_context` (last 30 rows). Parse the JSON to extract values for each dimension.
+
+**Date resolution:** If the specified date does not exist in the CSV (e.g. weekend/holiday), the companion script automatically falls back to the latest available date **on or before** the specified date. If the specified date is after the last row, the script uses the latest available date and notes the discrepancy in `date_range`. The `{actual_date}` field in the output reflects the resolved date. See `{actual_date}` in Step 1 for how to use the resolved date.
+
+**NaN/null handling:** The companion script filters NaN values from the CSV output. Missing indicator values appear as `null`/`None` in the JSON. See Step 1 point 3 ("Handle missing data") for rules on how to score dimensions with null indicators.
+
+**Fallback for columns not in companion script output:** If you need a specific column not present in the `recent_context` or `indicators` JSON output, read the raw CSV:
+```bash
+tail -30 data/analysis-data/{ticker}.csv
+```
+
+**Use `read` for:**
+- Strategy reports in `data/reports/strategies/{ticker}/` — use `read` to read the full markdown file directly (these are text files, not CSVs)
+- The TA reference doc `docs/all_technical_analysis.md` — use `read` with `limit` to get sections you need
+- Any other `.md`, `.csv` (small files), or config file
+
 ## Usage Notes
 
-- **Historical verification:** To test whether this skill would have given correct advice on a past date, pass the date as `{evaluation_date}` (e.g. `2025-06-15`). The evaluation will use only data available up to and including that date — no hindsight.
-- **Temporal cutoff:** When `{evaluation_date}` is provided, the skill **cuts off all data after that date**. Only rows where `Date <= {evaluation_date}` are used. Rolling indicators (RSI, MACD, ATR, etc.) are read at their values on the evaluation date, reflecting the data available at that time.
-- **Historical data:** Load last 10 years market data {evaluation_date} for evaluation 
-- **Date not found:** If the specified date does not exist in the CSV (e.g. weekend/holiday), the skill falls back to the latest available date **on or before** the specified date.
-- **Future date:** If the specified date is after the last row in the CSV, the skill uses the latest available date and notes the discrepancy.
-- **Default behavior:** If `{evaluation_date}` is omitted, the skill uses the latest date in the CSV (original behavior).
+- **Historical verification:** Pass `{evaluation_date}` (e.g. `2025-06-15`) to test whether this skill would have given correct advice on a past date. The evaluation uses only data available up to and including that date — no hindsight.
+- **Temporal cutoff:** When `{evaluation_date}` is provided, only rows where `Date <= {evaluation_date}` are used. Rolling indicators are read at their values on the evaluation date, reflecting the data available at that time.
+- **Historical data:** The companion script loads ~10 years of market data automatically.
+- **Default behavior:** If `{evaluation_date}` is omitted, the script uses the latest date in the CSV (original behavior).
+- **Company metadata:** The companion script resolves `company_name` and `sector` from `config/ticker_list.csv` — you do not need to manually look these up unless the script returns `null`.
 
 ## Prerequisites Check
 
@@ -44,17 +69,35 @@ Assess the market situation for `{ticker}` as of `{evaluation_date}` and recomme
 
 ## TA Column Quick Reference
 
-All TA columns use the `ta_` prefix. Key columns for each evaluation dimension:
+All TA columns use the `ta_` prefix. These are the **actual CSV column names** from `data/analysis-data/{ticker}.csv`. When referencing indicators in the companion script JSON, use the same column name as the `indicators` object key.
 
-| Dimension | Key Columns |
-|-----------|-------------|
-| **Trend** | `ta_ema20`, `ta_ema50`, `ta_ema200`, `ta_supertrend_direction`, `ta_ma20_slope`, `ta_ma50_slope`, `ta_ma200_slope`, `ta_donchian_upper`, `ta_donchian_lower`, `ta_keltner_upper`, `ta_keltner_lower`, `ta_adx`, `ta_di_plus`, `ta_di_minus`, `ta_aroon_up`, `ta_aroon_down`, `ta_trend` |
-| **Momentum** | `ta_rsi14`, `ta_macd_line`, `ta_macd_signal`, `ta_macd_histogram`, `ta_roc20`, `ta_williams_r`, `ta_cci`, `ta_tsi25_13`, `ta_rsi_zscore_14_20`, `ta_rsi_percentile_14_20` |
-| **Return** | `ta_ret_5d`, `ta_ret_10d`, `ta_ret_20d`, `ta_ret_1m`, `ta_ret_3m`, `ta_ret_6m`, `ta_ret_1y`, `ta_alpha20`, `ta_beta20`, `ta_rs_ftse100` |
-| **Structure** | `ta_swing_high`, `ta_swing_low`, `ta_hh`, `ta_hl`, `ta_lh`, `ta_ll`, `ta_bos`, `ta_choch`, `ta_nearest_resistance`, `ta_nearest_support` |
-| **Volatility** | `ta_atr14`, `ta_bband_upper`, `ta_bband_middle`, `ta_bband_lower`, `ta_bband_width`, `ta_pct_b`, `ta_hvol20`, `ta_park_volv`, `ta_garch_vol`, `ta_atr_stop_dist`, `ta_atr_percentile_14_20` |
-| **Volume** | `ta_obv`, `ta_cmf`, `ta_vwap`, `ta_ofi`, `ta_adl`, `ta_mfi14`, `ta_emv14`, `ta_vol_osc_14_28`, `ta_vol_zscore_20`, `ta_vol_percentile_20`, `ta_obv_slope_14`, `ta_obv_slope_7` |
-| **Regime** | `ta_hmm_regime_prob_0`, `ta_hmm_regime_prob_1`, `ta_hmm_regime_prob_2`, `ta_regime_label`, `ta_garch_vol` |
+| Dimension | Key Columns (actual CSV names) |
+|-----------|-------------------------------|
+| **Trend** | `ta_ema20`, `ta_ema50`, `ta_ema200`, `ta_supertrend_direction`, `ta_supertrend`, `ta_supertrend_upper`, `ta_supertrend_lower`, `ta_ma20_slope`, `ta_ma50_slope`, `ta_donchian_upper`, `ta_donchian_lower`, `ta_keltner_upper`, `ta_keltner_lower`, `ta_adx14`, `ta_plus_di14`, `ta_minus_di14`, `ta_aroon_up`, `ta_aroon_down`, `ta_price_dist_ema20`, `ta_price_dist_ema50`, `ta_price_dist_ema200`, `ta_price_ma20_ratio` |
+| **Momentum** | `ta_rsi14`, `ta_macd_line`, `ta_macd_signal`, `ta_macd_histogram`, `ta_roc20`, `ta_stoch_k`, `ta_stoch_d`, `ta_williams_r`, `ta_cci`, `ta_tsi`, `ta_rsi_zscore`, `ta_rsi_percentile`, `ta_mfi14` |
+| **Return** | `ta_return_5d`, `ta_return_10d`, `ta_return_20d`, `ta_performance_1m`, `ta_performance_3m`, `ta_performance_6m`, `ta_performance_1y`, `ta_alpha20`, `ta_beta20`, `ta_rs_ftse100` |
+| **Structure** | `ta_swing_high`, `ta_swing_low`, `ta_swing_high_idx`, `ta_swing_low_idx`, `ta_hh`, `ta_hl`, `ta_lh`, `ta_ll`, `ta_trend`, `ta_bos`, `ta_choch`, `ta_nearest_resistance`, `ta_nearest_support`, `ta_dist_resistance`, `ta_dist_support`, `ta_breakout_strength`, `ta_support_touches` |
+| **Volatility** | `ta_atr14`, `ta_normalized_atr14`, `ta_bband_upper`, `ta_bband_middle`, `ta_bband_lower`, `ta_bband_width`, `ta_bband_pctb`, `ta_hvol20`, `ta_parkinson_vol`, `ta_garch_vol`, `ta_garch_sq`, `ta_atr_stop_dist`, `ta_atr_percentile`, `ta_atr_position`, `ta_rr_ratio` |
+| **Volume** | `ta_obv`, `ta_cmf`, `ta_vwap`, `ta_ofi`, `ta_log_volume`, `ta_adl`, `ta_mfi14`, `ta_emv14`, `ta_volume_osc`, `ta_volume_zscore`, `ta_volume_percentile`, `ta_obv_slope_14`, `ta_obv_slope_7` |
+| **Regime** | `ta_hmm_regime`, `ta_hmm_regime_prob_0`, `ta_hmm_regime_prob_1`, `ta_hmm_regime_prob_2`, `ta_regime_label`, `ta_garch_vol`, `ta_garch_sq` |
+| **Fundamentals** | `ta_eps_ttm`, `ta_pe`, `ta_div_ttm`, `ta_div_yield` |
+
+**Note:** `ta_mfi14` and `ta_garch_vol` / `ta_garch_sq` appear in multiple dimensions (MFI is both momentum and volume; GARCH is both volatility and regime). Score each dimension independently using that dimension's interpretation — do not skip a dimension just because the column was used elsewhere.
+
+**Common column name pitfalls (do NOT use these):**
+
+| ❌ Wrong | ✅ Correct | ❌ Wrong | ✅ Correct |
+|----------|-----------|----------|-----------|
+| `ta_adx` | `ta_adx14` | `ta_ret_5d` | `ta_return_5d` |
+| `ta_di_plus` | `ta_plus_di14` | `ta_ret_1m` | `ta_performance_1m` |
+| `ta_di_minus` | `ta_minus_di14` | `ta_ret_3m` | `ta_performance_3m` |
+| `ta_tsi25_13` | `ta_tsi` | `ta_ret_6m` | `ta_performance_6m` |
+| `ta_rsi_zscore_14_20` | `ta_rsi_zscore` | `ta_ret_1y` | `ta_performance_1y` |
+| `ta_rsi_percentile_14_20` | `ta_rsi_percentile` | `ta_pct_b` | `ta_bband_pctb` |
+| `ta_park_volv` | `ta_parkinson_vol` | `ta_vol_osc_14_28` | `ta_volume_osc` |
+| `ta_atr_percentile_14_20` | `ta_atr_percentile` | `ta_vol_zscore_20` | `ta_volume_zscore` |
+| — | — | `ta_vol_percentile_20` | `ta_volume_percentile` |
+| — | — | `ta_ofi_slope` | `ta_obv_slope_14` (use OBV slope instead) |
 
 ## Evaluation Methodology
 
@@ -67,135 +110,218 @@ When writing evaluation report:
 - Each chunk should be self-contained and no more than ~2000 words
 - Use `edit` to insert sections between existing content, or `write` to overwrite with growing content
 
+### Report Depth Guidelines
+
+Choose report depth based on signal agreement across the 7 dimensions:
+
+| Agreement Level | Condition | Report Structure |
+|----------------|-----------|-----------------|
+| **Full detail** | 5+ dimensions agree AND signal is clear (BUY/SELL) OR signals are mixed | Executive Summary (all tables) + all 7 detailed sections + Signal Synthesis. Use the full template. |
+| **Condensed** | 5+ dimensions agree, signal is clear | Executive Summary (all tables) + **only the 3 most decisive dimensions** detailed + Signal Synthesis. Other 4 dimensions summarized as: "{Dimension}: {Signal} ({score}/100%). See Dimension Overview table." |
+| **Minimal** | 6+ dimensions agree, signal is STRONG BUY/SELL | Executive Summary with full tables + Signal Synthesis only. One-liner per dimension: "**{Dimension}**: {Signal} {score}. {1-sentence rationale}." No detailed sections. |
+| **Expanded** | <4 dimensions agree in either direction (highly mixed) | Full detail + add a "**Divergence Analysis**" subsection under Signal Synthesis explaining why dimensions conflict and which dimensions should take priority. |
+
+**Rule of thumb:** If the executive summary tables alone convey the signal clearly (5+ agree, score >+1.5 or <-1.5), you can condense. If the signal depends on nuanced interpretation or conflicts exist, expand all 7 sections fully.
+
+### Scoring Scale — Unified -3.0 to +3.0
+
+All 7 dimensions use the **same weighted scoring system**: each factor is rated from **-1.0 to +1.0**, weighted by importance (weights per dimension sum to 100%). The weighted sum is scaled to produce a final score from **-3.0 to +3.0**.
+
+**How to compute per-dimension scores:**
+
+1. Identify 3–5 key factors for the dimension (e.g., for Trend: MA alignment, SuperTrend, MA slopes, ADX strength)
+2. Rate each factor: **+1.0** = strongly bullish, **+0.5** = mildly bullish, **0.0** = neutral, **-0.5** = mildly bearish, **-1.0** = strongly bearish
+3. Assign weights that sum to 100% (e.g., MA alignment 40%, SuperTrend 30%, ADX 30%)
+4. Compute weighted score = Σ(factor_rating × weight) × (3 ÷ number_of_factors)
+   - The scaling factor `(3 ÷ number_of_factors)` ensures the range is -3.0 to +3.0 when all factors agree
+   - Example: 3 factors rated +1.0 each, weights 40/30/30 → (0.4 + 0.3 + 0.3) × (3 ÷ 3) = **+1.0** → scale up to **+3.0**
+   - Simpler shortcut: compute the average of factor ratings × number_of_factors × 3
+5. The total will be between **-3.0** (all factors strongly bearish) and **+3.0** (all factors strongly bullish)
+
+**Per-dimension interpretation:**
+
+| Score | Signal | Meaning |
+|-------|--------|---------|
+| +2.0 to +3.0 | Strong Bullish | All indicators aligned — bullish conviction |
+| +0.5 to +1.9 | Mildly Bullish | Bias toward longs, but not all indicators agree |
+| -0.5 to +0.4 | Neutral | Mixed signals, no clear directional bias |
+| -0.5 to -1.9 | Mildly Bearish | Bias against longs, monitor for reversal |
+| -2.0 to -3.0 | Strong Bearish | All indicators negative — avoid longs |
+
+**Per-dimension confidence:**
+- **High**: 4+ indicators agree, <1 null
+- **Medium**: 2–3 indicators agree, or 1–2 null
+- **Low**: Conflicting indicators, or >3 null values in this dimension's key columns
+
+**Aggregate score**: Sum of all 7 weighted dimension scores. The aggregate determines the final signal (see Step 9).
+
 ### Step 1: Load & Inspect Data for Evaluation Date
 
-1. Load `data/analysis-data/{ticker}.csv`
-2. **Determine evaluation date:**
-   - If `{evaluation_date}` is provided and exists in the CSV, use it.
-   - If `{evaluation_date}` is not provided or not found, use `df["Date"].max()` (the latest date).
-   - If the specified date is not in the CSV, find the closest date **on or before** the specified date (i.e., the latest available data point at or before that date).
-   - Record the actual date used as `{actual_date}`.
-3. **CUT OFF FUTURE DATA:** If `{evaluation_date}` was explicitly provided (i.e., not the default latest date), slice the DataFrame to include only rows where `Date <= {actual_date}`. This ensures the evaluation uses only data that was actually available as of that date — no hindsight. The date range for all indicator readings should be from the earliest available date up to `{actual_date}`.
-4. Read the row matching `{actual_date}` (the evaluation date) and the preceding ~20 rows for context from the sliced data
-5. Record: current price on evaluation date, date range (up to `{actual_date}`), total rows (within the cutoff), column count
-6. Check for any NaN values in key columns
+1. **Run the companion script** to get all data in one call:
+   ```bash
+   python app/analyse-market-data/get_evaluation_data.py {ticker} {evaluation_date} --latest-30
+   ```
+   The script handles date resolution internally — use `{actual_date}` (extracted in Step 1.2) as the effective evaluation date for all scoring.
 
-### Step 2: Evaluate Trend (Score: 1–5)
+2. **Extract the following from the JSON:**
+   - `{actual_date}` = `date_range.end` — the effective evaluation date (see Data Loading section for date resolution rules)
+   - `{price}` = `latest.close` — current price on the evaluation date
+   - `{data_range_start}` = `date_range.start` — earliest date in the dataset
+   - `{total_rows}` = `total_rows` — total rows in the file (for reporting; historical cutoff count is not tracked by the script)
+   - `{high_52w}` = `52week.high_52w`, `{low_52w}` = `52week.low_52w`
+   - `{indicators}` = the `indicators` object — all 81+ TA column values as key-value pairs
+   - `{recent_context}` = the `recent_context` array — last 30 rows for regime/volatility trend checks
+
+3. **Handle missing data:**
+   - If any indicator value is `null`/`None`, **skip that indicator** in scoring
+   - If >3 indicators in a dimension are null, mark that dimension's confidence as **Low**
+   - The companion script already filters NaN values from the CSV output
+
+4. **Multi-row computations — General rule:** Whenever a step asks for trend direction, rising/falling assessment, counts, averages, or recent behavior (e.g., "is volatility rising?", "note recent flips", "compute average", "check for BOS signals"), use the following approach:
+
+    **Primary: `recent_context` from companion script (already fetched in Step 1.1)**
+    - `recent_context` is the JSON array of the last 30 rows — iterate it to compute:
+      - **Directional trend** (rising/falling): Compare entry index 0 (oldest) vs index -1 (newest). `newest > oldest × 1.05` = rising; `newest < oldest × 0.95` = falling
+      - **Counts** (e.g., number of HH, HL, BOS, CHoCH in recent window): Sum/count boolean or integer values across all entries
+      - **Averages** (e.g., average forward return): Sum values and divide by count
+      - **Stability** (e.g., regime changes): Count unique values across all entries. >2 = unstable
+      - **Recent flips** (e.g., SuperTrend direction changes): Count transitions between +1/-1 between consecutive entries
+    - Example (conceptual): iterate `recent_context` array, collect `ta_regime_label` values, count unique → `len(set(entry["ta_regime_label"] for entry in recent_context))`
+
+    **Fallback: `tail` when companion script data is insufficient**
+    - If `recent_context` doesn't contain a needed column, fall back to reading raw CSV:
+      ```bash
+      tail -30 data/analysis-data/{ticker}.csv
+      ```
+    - Parse the last 30 data rows (skip header) and compute the same pattern: directional = first vs last, counts = sum across rows, averages = mean across rows
+    - For column names, refer to the TA Column Quick Reference table above
+
+    **When to use which:**
+    - `recent_context` has `date`, `close`, and regime columns (`ta_regime_label`, `ta_hmm_regime`, `ta_hmm_regime_prob_*`)
+    - `tail -30` on the full CSV has ALL columns including volume, Bollinger Bands, MACD, OBV, swing points, BOS/CHoCH, etc.
+    - Use `recent_context` first (it's already prepared); use `tail -30` as fallback for columns not included in `recent_context`
+
+5. **For company name and sector** (needed in the report header):
+   - Read `config/ticker_list.csv` using `read` to find the row matching `{ticker}`
+   - Extract the company name and sector columns
+
+6. **Extract strategy data ONCE** (read the strategy report here, reference in Steps 2–8):
+    - Read the latest strategy file from `data/reports/strategies/{ticker}/` (path recorded in Prerequisites Check) using `read`
+    - Extract the following into a structured summary for use in all subsequent steps:
+
+    ```
+    Strategy Data (from Step 1):
+    - Best strategy name: {name}
+    - Strategy type: {trend-following / mean-reversion / breakout / volatility / other}
+    - Entry conditions:
+      a) {condition 1} → Current: {value} → Match: ✅/❌
+      b) {condition 2} → Current: {value} → Match: ✅/❌
+      c) {condition 3} → Current: {value} → Match: ✅/❌
+    - Exit/stop conditions: {summary}
+    - Preferred regime: {bull/bear/neutral/all}
+    - Preferred volatility: {low/medium/high}
+    - Volume requirements: {confirmation needed? / no volume filter / etc.}
+    - Holding period: {short-term/medium/long-term}
+    ```
+
+    **Use this Strategy Data block throughout Steps 2–8.** Do NOT re-read the strategy file. For each dimension, check whether the current state matches the strategy's entry/exit/regime requirements. Use the format: "Strategy Data → {condition}: Current {value} → Match ✅/❌". Each dimension step below has a specific question to answer.
+
+### Step 2: Evaluate Trend (Score: -3.0 to +3.0)
 
 Read the latest values and compute signals:
 
 1. **EMA alignment**: Is `ta_ema20 > ta_ema50 > ta_ema200`? (bullish) or reversed? (bearish)
-2. **SuperTrend**: `ta_supertrend_direction` — +1 = bullish, -1 = bearish. Note recent flips.
+2. **SuperTrend**: `ta_supertrend_direction` — +1 = bullish, -1 = bearish. Note recent flips: use `recent_context` array or `tail -30` on the CSV to count how many times `ta_supertrend_direction` flipped between +1 and -1 in the last 30 rows.
 3. **MA slopes**: `ta_ma20_slope`, `ta_ma50_slope` — positive = uptrend, negative = downtrend
-4. **ADX/DI**: `ta_adx` > 25 = strong trend. `ta_di_plus > ta_di_minus` = bullish trend, reversed = bearish
+4. **ADX/DI**: `ta_adx14` > 25 = strong trend. `ta_plus_di14 > ta_minus_di14` = bullish trend, reversed = bearish
 5. **Donchian**: Is price near `ta_donchian_upper` (breakout) or `ta_donchian_lower` (breakdown)?
 6. **Keltner**: Is price above/below the Keltner bands?
 7. **Price vs MAs**: Calculate `price / ta_ema20 - 1` — positive = price above EMA20
 
-**Cross-reference with strategy report:**
-- Read the recommended entry/exit rules from the latest strategy file in `data/reports/strategies/{ticker}/`
-- Check if current conditions match the recommended strategy's entry criteria
-- If the best strategy is trend-following, is the trend aligned?
+**Strategy Alignment:** Check if the current trend ({bullish/bearish/neutral}) matches the strategy's trend-following entry criteria. See Strategy Data note above.
 
-**Output:** Trend score (1–5), key indicator values, alignment with best strategy.
+**Output:** Trend score (-3.0 to +3.0), key indicator values, alignment with best strategy.
 
-### Step 3: Evaluate Momentum (Score: 1–5)
+### Step 3: Evaluate Momentum (Score: -3.0 to +3.0)
 
-1. **RSI(14)**: `<30` oversold, `30–50` weak, `50–70` normal, `>70` overbought. Also check `ta_rsi_zscore_14_20` and `ta_rsi_percentile_14_20` for statistical context.
-2. **MACD**: `ta_macd_line > ta_macd_signal` = bullish. Check histogram direction (`ta_macd_histogram` rising/falling). Note any bullish/bearish crosses.
+1. **RSI(14)**: `<30` oversold, `30–50` weak, `50–70` normal, `>70` overbought. Also check `ta_rsi_zscore` and `ta_rsi_percentile` for statistical context.
+2. **MACD**: `ta_macd_line > ta_macd_signal` = bullish. Check histogram direction (`ta_macd_histogram` rising/falling): use `recent_context` or `tail -30` to compare the last 5–10 histogram values — if newest > oldest × 1.05 = rising momentum, newest < oldest × 0.95 = falling momentum.
 3. **ROC(20)**: `ta_roc20 > 0` = positive momentum
 4. **Williams %R**: `ta_williams_r > -20` overbought, `< -80` oversold
 5. **CCI**: `ta_cci > 100` overbought, `< -100` oversold
-6. **TSI**: Check sign and slope of `ta_tsi25_13`
+6. **TSI**: Check sign and slope of `ta_tsi`
 7. **MFI(14)**: `ta_mfi14 > 80` overbought, `< 20` oversold (volume-weighted RSI)
 
-**Cross-reference with strategy report:**
-- What RSI thresholds does the best strategy use for entries/exits?
-- Is the current momentum consistent with the strategy's entry conditions?
-- Reference the latest strategy file in `data/reports/strategies/{ticker}/`.
+**Strategy Alignment:** Check if current momentum ({bullish/bearish/neutral}) is consistent with the strategy's momentum-based entry conditions. See Strategy Data note above.
 
-**Output:** Momentum score (1–5), key indicator values, overbought/oversold assessment, alignment with best strategy.
+**Output:** Momentum score (-3.0 to +3.0), key indicator values, overbought/oversold assessment, alignment with best strategy.
 
-### Step 4: Evaluate Return (Score: 1–5)
+### Step 4: Evaluate Return (Score: -3.0 to +3.0)
 
-1. **Recent performance**: `ta_ret_1m`, `ta_ret_3m`, `ta_ret_6m`, `ta_ret_1y`
+1. **Recent performance**: `ta_performance_1m`, `ta_performance_3m`, `ta_performance_6m`, `ta_performance_1y`
    - Strong positive = momentum continues, watch for exhaustion
    - Strong negative = potential reversal opportunity or continued downtrend
-2. **Forward returns (context)**: `ta_ret_5d`, `ta_ret_10d`, `ta_ret_20d`
-   - These are historical forward returns — compute average for recent periods
+2. **Forward returns (context)**: `ta_return_5d`, `ta_return_10d`, `ta_return_20d`
+   - These are historical forward returns — compute average across recent periods using `recent_context` (iterate the array, sum the `ta_return_*` values, divide by count) or `tail -30` on the CSV as fallback
    - If most recent 5d/10d/20d forward returns have been positive, trend may continue
 3. **Alpha/Beta**: `ta_alpha20`, `ta_beta20` vs ^FTSE
    - Positive alpha = outperforming benchmark
    - Beta > 1 = more volatile than market; Beta < 1 = less volatile
 4. **Relative strength**: `ta_rs_ftse100`
-   - Rising = outperforming FTSE 100; Falling = underperforming
+   - Rising = outperforming FTSE 100; Falling = underperforming. Check trend using `recent_context` or `tail -30`: compare RS values across the last 10–20 rows (directional trend = newest vs oldest, `newest > oldest × 1.05` = rising).
 
-**Cross-reference with strategy report:**
-- Does the strategy report mention return expectations or holding periods?
-- Is the ticker historically more of a mean-reversion or momentum asset?
-- Reference the latest strategy file in `data/reports/strategies/{ticker}/`.
+**Strategy Alignment:** Check if current return characteristics match the strategy's preferred holding period ({short-term/medium/long-term}) and style ({mean-reversion/momentum}). See Strategy Data note above.
 
-**Output:** Return score (1–5), performance summary, alpha/beta context, alignment with best strategy.
+**Output:** Return score (-3.0 to +3.0), performance summary, alpha/beta context, alignment with best strategy.
 
-### Step 5: Evaluate Structure (Score: 1–5)
+### Step 5: Evaluate Structure (Score: -3.0 to +3.0)
 
-1. **Swing points**: Check `ta_swing_high` and `ta_swing_low` for recent swings
+1. **Swing points**: Check `ta_swing_high` and `ta_swing_low` for recent swings. Use `recent_context` or `tail -30` to count how many swing highs/lows occurred in the last 30 rows.
 2. **HH/HL vs LH/LL**:
-   - `ta_hh` and `ta_hl` = bullish structure
-   - `ta_lh` and `ta_ll` = bearish structure
-3. **Break of Structure (BOS)**: `ta_bos` — bullish break above previous high, or bearish break below previous low
-4. **Change of Character (CHoCH)**: `ta_choch` — signals trend reversal
+   - `ta_hh` and `ta_hl` = bullish structure; `ta_lh` and `ta_ll` = bearish structure. Count occurrences across the last 30 rows using `recent_context` or `tail -30` (sum boolean/integer values across entries).
+3. **Break of Structure (BOS)**: `ta_bos` — bullish break above previous high, or bearish break below previous low. Count recent BOS events using `recent_context` or `tail -30`.
+4. **Change of Character (CHoCH)**: `ta_choch` — signals trend reversal. Count recent CHoCH events using `recent_context` or `tail -30`.
 5. **Support/Resistance**: `ta_nearest_support`, `ta_nearest_resistance`
    - Current price proximity to these levels
 6. **Trend label**: `ta_trend` — if available, direct trend classification
 
-**Cross-reference with strategy report:**
-- Does the best strategy use structural signals (BOS, CHoCH, HH/HL)?
-- Are structural conditions currently aligned with entry rules?
-- Reference the latest strategy file in `data/reports/strategies/{ticker}/`.
+**Strategy Alignment:** Check if current structural conditions ({bullish/bearish/range}) align with the strategy's structural entry rules (BOS, CHoCH, HH/HL). See Strategy Data note above.
 
-**Output:** Structure score (1–5), swing analysis, S/R levels, alignment with best strategy.
+**Output:** Structure score (-3.0 to +3.0), swing analysis, S/R levels, alignment with best strategy.
 
-### Step 6: Evaluate Volatility (Score: 1–5)
+### Step 6: Evaluate Volatility (Score: -3.0 to +3.0)
 
-1. **ATR(14)**: `ta_atr14` — absolute volatility level. Compare to historical percentile `ta_atr_percentile_14_20`
+1. **ATR(14)**: `ta_atr14` — absolute volatility level. Compare to historical percentile `ta_atr_percentile`
 2. **Bollinger Bands**:
-   - `ta_pct_b` — position within bands (0 = lower band, 1 = upper band)
+   - `ta_bband_pctb` — position within bands (0 = lower band, 1 = upper band)
    - `ta_bband_width` — band width contraction = potential breakout; expansion = trend acceleration
    - Price near lower band = potential bounce; near upper = potential pullback
-3. **Historical Volatility**: `ta_hvol20` — rising or falling?
-4. **Parkinson Volatility**: `ta_park_volv` — range-based volatility estimate
+3. **Historical Volatility**: `ta_hvol20` — rising or falling? Check using `recent_context` or `tail -30`: compare hvol20 values across the last 10–20 rows (directional trend = newest vs oldest, `newest > oldest × 1.1` = rising vol, `newest < oldest × 0.9` = falling vol).
+4. **Parkinson Volatility**: `ta_parkinson_vol` — range-based volatility estimate
 5. **GARCH forecast**: `ta_garch_vol` — predicted future volatility
 6. **ATR Stop Distance**: `ta_atr_stop_dist` — suggested stop distance
-7. **ATR Percentile**: `ta_atr_percentile_14_20` — where current ATR sits historically
+7. **ATR Percentile**: `ta_atr_percentile` — where current ATR sits historically
 
-**Cross-reference with strategy report:**
-- Does the best strategy have volatility-based entries or exits?
-- Is current volatility consistent with the strategy's optimal conditions?
-- Note any ATR-based position sizing mentioned in the strategy.
-- Reference the latest strategy file in `data/reports/strategies/{ticker}/`.
+**Strategy Alignment:** Check if current volatility conditions ({low/normal/high}) match the strategy's preferred volatility regime. See Strategy Data note above.
 
-**Output:** Volatility score (1-5), current level, trend in volatility, breakout/bounce probability, alignment with best strategy.
+**Output:** Volatility score (-3.0 to +3.0), current level, trend in volatility, breakout/bounce probability, alignment with best strategy.
 
-### Step 7: Evaluate Volume (Score: 1–5)
+### Step 7: Evaluate Volume (Score: -3.0 to +3.0)
 
-1. **OBV**: `ta_obv` — rising OBV confirms price trend, falling OBV warns of divergence
+1. **OBV**: `ta_obv` — rising OBV confirms price trend, falling OBV warns of divergence. Check trend using `recent_context` or `tail -30`: compare OBV values across the last 10–20 rows (directional trend = newest vs oldest, `newest > oldest × 1.05` = rising OBV).
 2. **CMF(20)**: `ta_cmf` — `>0` = buying pressure, `<0` = selling pressure. Strength proportional to magnitude.
 3. **VWAP**: `ta_vwap` — price above VWAP = bullish intraday trend
-4. **OFI**: `ta_ofi` — `>0` = order flow imbalance favoring buyers. Check `ta_ofi_slope` (OBV slope).
+4. **OFI**: `ta_ofi` — `>0` = order flow imbalance favoring buyers. Check `ta_obv_slope_14` (OBV slope).
 5. **ADL**: `ta_adl` — accumulating/distributing pressure
 6. **MFI(14)**: `ta_mfi14` — volume-weighted RSI, `>80` overbought, `<20` oversold
-7. **Volume metrics**: `ta_vol_zscore_20`, `ta_vol_percentile_20` — is current volume above/below average?
+7. **Volume metrics**: `ta_volume_zscore`, `ta_volume_percentile` — is current volume above/below average?
 8. **EMV(14)**: `ta_emv14` — ease of movement, positive = price rising with little effort
 
-**Cross-reference with strategy report:**
-- Does the best strategy use volume confirmation (CMF, OBV, OFI)?
-- Is volume currently supporting the price direction?
-- Reference the latest strategy file in `data/reports/strategies/{ticker}/`.
+**Strategy Alignment:** Check if current volume conditions ({bullish/mixed/bearish}) support the price direction, per the strategy's volume confirmation requirements. See Strategy Data note above.
 
-**Output:** Volume score (1–5), buying/selling pressure assessment, confirmation/divergence with price, alignment with best strategy.
+**Output:** Volume score (-3.0 to +3.0), buying/selling pressure assessment, confirmation/divergence with price, alignment with best strategy.
 
-### Step 8: Evaluate Regime (Score: 1–5)
+### Step 8: Evaluate Regime (Score: -3.0 to +3.0)
 
 1. **HMM Regime Probabilities**:
    - `ta_hmm_regime_prob_0` — probability of state 0 (typically bullish)
@@ -204,15 +330,11 @@ Read the latest values and compute signals:
    - Highest probability = dominant regime
 2. **Regime label**: `ta_regime_label` — if available, direct classification
 3. **GARCH vol trend**: Rising GARCH vol in bear regime = high risk; falling = stabilization
-4. **Regime stability**: Check if regime has changed recently (scan last ~30 days)
+4. **Regime stability**: Check if regime has changed recently (scan the last ~30 rows). Use `recent_context` to count unique values of `ta_regime_label` or `ta_hmm_regime` across the 30-row array (>2 unique = unstable regime). If `recent_context` lacks regime columns, fall back to `tail -30 data/analysis-data/{ticker}.csv`.
 
-**Cross-reference with strategy report:**
-- Does the best strategy include regime-adaptive logic?
-- What regime does the strategy perform best in?
-- If the current regime differs from what the strategy prefers, flag as a concern.
-- Reference the latest strategy file in `data/reports/strategies/{ticker}/`.
+**Strategy Alignment:** Check if the current regime ({bull/bear/neutral}) matches the regime where the strategy performs best. See Strategy Data note above.
 
-**Output:** Regime score (1–5), dominant regime, regime stability, alignment with best strategy.
+**Output:** Regime score (-3.0 to +3.0), dominant regime, regime stability, alignment with best strategy.
 
 ### Step 9: Signal Synthesis — Buy / Sell / Hold
 
@@ -233,7 +355,7 @@ Aggregate all 7 dimension scores:
 2. **Score breakdown**: Table showing each dimension's score and weight
 3. **Key supporting indicators**: Top 3 indicators per dimension that drive the signal
 4. **Key conflicting indicators**: Any indicators that contradict the overall signal
-5. **Strategy alignment**: Does current data match the entry conditions of the recommended strategy from the latest file in `data/reports/strategies/{ticker}/`?
+5. **Strategy alignment**: Does current data match the entry conditions from the Strategy Data extracted in Step 1?
 6. **Confidence level**: High / Medium / Low (based on agreement across dimensions)
 7. **Risk factors**: What could invalidate this signal (e.g., regime shift, volume drying up, structural break)
 8. **Recommended action**: Exact entry conditions to watch for, suggested stop-loss level (using ATR), suggested target (using S/R levels or BB)
@@ -297,7 +419,7 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 | {Strategy entry condition 3} | {current value} | ✅ MET / ❌ NOT MET |
 | {Key strategy observation} | {context} | ✅ CONFIRMED / ⚠️ CAUTION / ❌ NOT MET |
 
-**Strategy Verdict:** {1-2 sentences: whether current conditions match the recommended strategy's entry criteria}
+**Strategy Verdict:** {1-2 sentences: whether current conditions match the entry criteria from the Strategy Data extracted in Step 1}
 
 ### Signal Summary
 
@@ -345,12 +467,12 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 | {Factor 3} | +/-{n} | {n}% | +/−{value} |
 | {Factor 4} | +/-{n} | {n}% | +/−{value} |
 | {Factor 5} | +/-{n} | {n}% | +/−{value} |
-| **Trend Score** | | **100%** | **+/−{total} / 3.0** |
+| **Trend Score** | | **100%** | **+/−{total}** (range: -3.0 to +3.0) |
 
 **Trend Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{1-2 sentences: Do current trend conditions match the recommended strategy's entry criteria from the strategy report?}
+{1-2 sentences: Check if the current trend matches the strategy's trend-following entry criteria. Use format: "Strategy Data → {condition}: Current {value} → Match ✅/❌"}
 
 ---
 
@@ -388,12 +510,12 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 | {Factor 3} | +/-{n} | {n}% | +/−{value} |
 | {Factor 4} | +/-{n} | {n}% | +/−{value} |
 | {Factor 5} | +/-{n} | {n}% | +/−{value} |
-| **Momentum Score** | | **100%** | **+/−{total} / 3.0** |
+| **Momentum Score** | | **100%** | **+/−{total}** (range: -3.0 to +3.0) |
 
 **Momentum Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{1-2 sentences: Do current momentum conditions match the recommended strategy's entry criteria?}
+{1-2 sentences: Check if current momentum conditions are consistent with the strategy's entry conditions. Use format: "Strategy Data → {condition}: Current {value} → Match ✅/❌"}
 
 ---
 
@@ -405,10 +527,10 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 
 | Period | Return | Assessment |
 |--------|--------|------------|
-| 1 Month | {ta_ret_1m}% | {assessment} |
-| 3 Months | {ta_ret_3m}% | {assessment} |
-| 6 Months | {ta_ret_6m}% | {assessment} |
-| 1 Year | {ta_ret_1y}% | {assessment} |
+| 1 Month | {ta_performance_1m}% | {assessment} |
+| 3 Months | {ta_performance_3m}% | {assessment} |
+| 6 Months | {ta_performance_6m}% | {assessment} |
+| 1 Year | {ta_performance_1y}% | {assessment} |
 
 ### Risk-Adjusted Metrics
 
@@ -426,6 +548,8 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 | 10 days | {mean}% | {std}% | {assessment} |
 | 20 days | {mean}% | {std}% | {assessment} |
 
+*Compute mean and std dev by iterating `recent_context` array: collect all `ta_return_5d` values → mean = sum/count, std = sqrt(mean((x - mean)^2)). Repeat for 10d and 20d columns.*
+
 ### Return Assessment
 - **Short-term trend:** {1m/3m direction}
 - **Medium-term trend:** {6m/1y direction}
@@ -440,12 +564,12 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 | {Factor 2} | +/-{n} | {n}% | +/−{value} |
 | {Factor 3} | +/-{n} | {n}% | +/−{value} |
 | {Factor 4} | +/-{n} | {n}% | +/−{value} |
-| **Return Score** | | **100%** | **+/−{total} / 3.0** |
+| **Return Score** | | **100%** | **+/−{total}** (range: -3.0 to +3.0) |
 
 **Return Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{1-2 sentences: Does the strategy indicate this ticker is more mean-reversion or momentum-driven?}
+{1-2 sentences: Check if current return characteristics match the strategy's preferred holding period ({short-term/medium/long-term}) and style ({mean-reversion/momentum}). Use format: "Strategy Data → {condition}: Current {value} → Match ✅/❌"}
 
 ---
 
@@ -458,8 +582,8 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 | Level | Value | Distance from Current | Significance |
 |-------|-------|----------------------|--------------|
 | **Resistance** | {value} | {+pct}% | {e.g., Donchian upper, 52-week high} |
+| Nearest Resistance | {ta_nearest_resistance} | {+pct}% | {closest resistance level} |
 | **Support** | {value} | {−pct}% | {e.g., SuperTrend trail, BB lower} |
-| Support | {value} | {−pct}% | {e.g., Structural support} |
 | Nearest Support | {ta_nearest_support} | {−pct}% | {closest support level} |
 
 ### Structure Signals
@@ -488,12 +612,12 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 | {Factor 2} | +/-{n} | {n}% | +/−{value} |
 | {Factor 3} | +/-{n} | {n}% | +/−{value} |
 | {Factor 4} | +/-{n} | {n}% | +/−{value} |
-| **Structure Score** | | **100%** | **+/−{total} / 3.0** |
+| **Structure Score** | | **100%** | **+/−{total}** (range: -3.0 to +3.0) |
 
 **Structure Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{1-2 sentences: Does the recommended strategy rely on structural signals? Are they aligned?}
+{1-2 sentences: Check if current structural conditions align with the strategy's structural entry rules. Use format: "Strategy Data → {condition}: Current {value} → Match ✅/❌"}
 
 ---
 
@@ -531,12 +655,12 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 | {Factor 2} | +/-{n} | {n}% | +/−{value} |
 | {Factor 3} | +/-{n} | {n}% | +/−{value} |
 | {Factor 4} | +/-{n} | {n}% | +/−{value} |
-| **Volatility Score** | | **100%** | **+/−{total} / 3.0** |
+| **Volatility Score** | | **100%** | **+/−{total}** (range: -3.0 to +3.0) |
 
 **Volatility Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{1-2 sentences: Does the strategy use volatility-based entries/exits? Is current volatility favorable?}
+{1-2 sentences: Check if current volatility conditions match the strategy's preferred volatility regime. Use format: "Strategy Data → {condition}: Current {value} → Match ✅/❌"}
 
 ---
 
@@ -573,12 +697,12 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 | {Factor 2} | +/-{n} | {n}% | +/−{value} |
 | {Factor 3} | +/-{n} | {n}% | +/−{value} |
 | {Factor 4} | +/-{n} | {n}% | +/−{value} |
-| **Volume Score** | | **100%** | **+/−{total} / 3.0** |
+| **Volume Score** | | **100%** | **+/−{total}** (range: -3.0 to +3.0) |
 
 **Volume Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{1-2 sentences: Does the recommended strategy use volume confirmation? Is volume supporting the price action?}
+{1-2 sentences: Check if current volume conditions support the price direction per the strategy's volume requirements. Use format: "Strategy Data → {condition}: Current {value} → Match ✅/❌"}
 
 ---
 
@@ -596,7 +720,7 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 
 ### Regime Assessment
 - **Dominant Regime:** {Highest probability state and what it means}
-- **Regime Stability:** {Has the regime changed in the last ~30 days? How long has it been in current state?}
+- **Regime Stability:** {Has the regime changed in the last ~30 rows? How long has it been in the current state?}
 - **GARCH Context:** {Volatility trend within current regime}
 - **Trend vs Regime Divergence:** {Any conflict between trend indicators and regime model?}
 
@@ -607,12 +731,12 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 | {Factor 1} | +/-{n} | {n}% | +/−{value} |
 | {Factor 2} | +/-{n} | {n}% | +/−{value} |
 | {Factor 3} | +/-{n} | {n}% | +/−{value} |
-| **Regime Score** | | **100%** | **+/−{total} / 3.0** |
+| **Regime Score** | | **100%** | **+/−{total}** (range: -3.0 to +3.0) |
 
 **Regime Verdict:** {1-sentence summary}
 
 ### Strategy Alignment
-{1-2 sentences: What regime does the recommended strategy perform best in? Is the current regime aligned?}
+{1-2 sentences: Check if the current regime ({bull/bear/neutral}) matches the regime where the strategy performs best. Use format: "Strategy Data → {condition}: Current {value} → Match ✅/❌"}
 
 ---
 
@@ -620,7 +744,7 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 
 ### Aggregate Score Summary
 
-| # | Dimension | Signal | Score (/3.0) | Weight | Weighted |
+| # | Dimension | Signal | Score (-3.0 to +3.0) | Weight | Weighted |
 |---|-----------|--------|-------------|--------|----------|
 | 1 | **Trend** | {Signal} | {+/−val} | {n}% | {+/−val} |
 | 2 | **Momentum** | {Signal} | {+/−val} | {n}% | {+/−val} |
@@ -647,7 +771,7 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 
 ### Signal Determination
 - **Overall Signal:** BUY / SELL / HOLD / WAIT
-- **Strength:** Strong / Normal / Weak
+- **Strength:** Strong (|score| > 2.0) / Normal (0.5 < |score| ≤ 2.0) / Weak (|score| ≤ 0.5)
 - **Confidence:** High / Medium / Low
 
 ### Supporting Indicators (Top 3 per Dimension)
@@ -710,7 +834,7 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 - **{Action item 1}:** {e.g., "Monitor for pullback to support at ~X"}
 - **{Action item 2}:** {e.g., "Watch MACD histogram for reversal"}
 - **{Re-evaluation trigger}:** {e.g., "Re-run evaluation if close below EMA20 or above resistance"}
-- **{Strategy note}:** {e.g., "If entering, use {strategy_name} entry rules from strategy report"}
+- **{Strategy note}:** {e.g., "If entering, use entry rules from the Strategy Data extracted in Step 1"}
 - **{Long-term note}:** {e.g., "Consider as long-term hold if applicable"}
 - **{Alerts}:** {e.g., "Set alerts at support X and resistance Y"}
 
