@@ -367,7 +367,7 @@ Aggregate all 7 dimension scores:
 
 ### Step 10: Generate Report
 
-Write the evaluation report to `data/reports/evaluation/{ticker}/{actual_date}_evaluation.md` using the standardized template below, broken into chunks.
+Write the evaluation report to `data/reports/evaluation/{ticker}/{actual_date}_evaluation.md` using the standardized template below, broken into chunks where {actual_date}_evaluation.md should be in YYYMMDD format. e.g. data/reports/evaluation/NG.L/20261231_evaluation.md
 
 ## Standardized Output Report Template
 
@@ -417,6 +417,7 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 
 ### Strategy Alignment Summary
 
+#### Entry conditions
 | Strategy Element | Current State | Alignment |
 |-----------------|---------------|-----------|
 | {Strategy entry condition 1} | {current value} | ✅ MET / ❌ NOT MET |
@@ -424,7 +425,17 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 | {Strategy entry condition 3} | {current value} | ✅ MET / ❌ NOT MET |
 | {Key strategy observation} | {context} | ✅ CONFIRMED / ⚠️ CAUTION / ❌ NOT MET |
 
-**Strategy Verdict:** {1-2 sentences: whether current conditions match the entry criteria from the Strategy Data extracted in Step 1}
+**Strategy Verdict:** {1–2 sentences on whether current conditions match entry criteria}
+
+#### Exit conditions
+| Strategy Element | Current State | Alignment |
+|-----------------|---------------|-----------|
+| {Strategy exit condition 1} | {current value} | ✅ MET / ❌ NOT MET |
+| {Strategy exit condition 2} | {current value} | ✅ MET / ❌ NOT MET |
+| {Strategy exit condition 3} | {current value} | ✅ MET / ❌ NOT MET |
+| {Key strategy observation} | {context} | ✅ CONFIRMED / ⚠️ CAUTION / ❌ NOT MET |
+
+**Strategy Verdict:** {1–2 sentences on whether current conditions match exit criteria}
 
 ### Signal Summary
 
