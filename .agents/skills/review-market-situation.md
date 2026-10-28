@@ -13,11 +13,11 @@ Assess the market situation for `{ticker}` as of `{evaluation_date}` and recomme
 - TA knowledge base: `docs/all_technical_analysis.md`
 - Output: `data/reports/evaluation/{ticker}/{evaluation_date}_evaluation.md` (where `{evaluation_date}` is the specified date or the last date in the CSV)
 
-## Data Loading — Use Direct File Tools (Do NOT Write Inline Python)
+## Data Loading
 
-These CSV files have **108 columns** and **1,800–3,600 rows** (~7–8 MB each). Never write inline Python via `shell` to read them — it spawns a new Python process each time, takes 15–30s per call, and is fragile.
+These CSV files have **108 columns** and **1,800–3,600 rows** (~7–8 MB each). Never use inline Python via `shell` — it spawns a new process each time and is fragile.
 
-**Fastest approach — use the companion script (one call, all data):**
+**Use the companion script (one call, all data):**
 
 ```bash
 python app/analyse-market-data/get_evaluation_data.py {ticker} 2025-06-15 --latest-30
@@ -862,7 +862,6 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 
 - **Activate venv** before running any Python scripts
 - **Use `read` for strategy reports** — never write inline Python via `shell` to read strategy markdown files
-- **Never write inline Python** to read the analysis CSV — use the companion script (`get_evaluation_data.py`) instead
 - **TA column names** all use `ta_` prefix — verify names in the TA Column Quick Reference table above; do NOT invent column names
 - **NaN/null handling** — the companion script filters NaN values; missing indicators appear as `null`/`None`; skip null indicators in scoring
 - **Multi-row computations** — always use `recent_context` from the companion script for trend direction, counts, averages, and stability checks before falling back to `tail`

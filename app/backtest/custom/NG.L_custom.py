@@ -49,7 +49,7 @@ def ng_bb_squeeze(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     Uses ta_bband_lower, ta_bband_middle, ta_bband_upper, ta_rsi14.
     """
     bb_width = df["ta_bband_upper"] - df["ta_bband_lower"]
-    bb_pct = bb_width.rolling(50).pctrank()
+    bb_pct = bb_width.rolling(50).rank(pct=True)
     squeeze = bb_pct < 20  # Width in bottom 20% of last 50 days
 
     rsi = df["ta_rsi14"]

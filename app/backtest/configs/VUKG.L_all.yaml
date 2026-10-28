@@ -1,0 +1,50 @@
+# VUKG.L — Full backtest: all 32 built-in + 9 custom strategies
+custom_dir: ../custom
+
+strategies:
+  # Individual strategies
+  - module: golden_cross
+  - module: ema_pullback
+  - module: supertrend_plus
+  - module: donchian
+  - module: bb_breakout
+  - module: bb_meanrev
+  - module: rsi_macd_rev
+  - module: institutional
+  - module: vwap
+  - module: ofi
+  - module: marketstruct
+  - module: bos_breakout
+  - module: choch
+  - module: vol_expansion
+  - module: hmm_regime
+  - module: momentum_comp
+  - module: highprob_multi
+  # Combinations
+  - module: trend_momentum
+  - module: vol_structure
+  - module: score80
+  # Improved
+  - module: bb_meanrev_upper
+  - module: bb_meanrev_atr
+  - module: vol_filtered_meanrev
+  - module: regime_adaptive
+  - module: short_meanrev
+  - module: vol_breakout_rev
+  - module: ema_pullback_vol
+  - module: multiscore60
+  - module: dual_exit_meanrev
+  - module: macd_divergence_rev
+  # NG.L Optimized
+  - module: bb_meanrev_optimized
+  - module: bb_meanrev_entry2
+  # Custom VUKG strategies
+  - module: vukg_robust_trend
+  - module: vukg_supertrend_atr
+  - module: vukg_bband_range
+  - module: vukg_dual_ema
+  - module: vukg_ema20_ride
+  - module: vukg_crisis_guard
+  - module: vukg_ma_slope_trend
+  - module: vukg_seasonal
+  - module: vukg_macd_trend

@@ -7,11 +7,11 @@ Assess the market situation for `{ticker}` as of `{evaluation_date}` and output 
 ## Parameters
 
 - `{ticker}` — Ticker symbol (e.g. `NG.L`, `BP.L`, `HSBA.L`)
-- `{evaluation_date}` — Evaluation date (format: `YYYY-MM-DD`). Defaults to latest CSV date.
+- `{evaluation_date}` — Evaluation date (format: `YYYY-MM-DD`, e.g. `2025-06-15`). Defaults to latest CSV date.
 - `{strategy_name}` — (Optional) Specific strategy name to evaluate against (e.g. `MA_Crossover_Bullish`). If not specified, use the **recommended strategy** from the latest strategy file.
 - Data source: `data/analysis-data/{ticker}.csv`
 - Strategy reference: `data/reports/strategies/{ticker}/` — most recent `.md` file (must exist before running)
-- Output: `data/reports/evaluation/{ticker}/{evaluation_date}_evaluation.md`.  where {evaluation_date} of the file name shuold be YYYYMMDD format such as 20261027_evaluation.md
+- Output filename: `data/reports/evaluation/{ticker}/YYYYMMDD_evaluation.md` (date format in filename is `YYYYMMDD`, e.g. `20261027_evaluation.md`)
 
 ## Data Loading
 
@@ -32,13 +32,7 @@ tail -30 data/analysis-data/{ticker}.csv
 
 **Use `read` for:** Strategy reports and config files (text files, not CSVs).
 
-## Pre-flight: Resolve Ticker Identity
-
-1. Read `config/ticker_list.csv` and look up `{ticker}`
-2. Record `Company` and `Sector` — these are the **authoritative** identifiers
-3. **NEVER guess** what a ticker represents (e.g. `NG.L` = **National Grid**, not "Natural Gas"; `BP.L` = **BP**, not "Bond Pricing")
-
-If the ticker is not found, proceed with the ticker symbol only — do not fabricate a company name.
+**Company metadata:** The companion script resolves `company_name` and `sector` from `config/ticker_list.csv` — extract them from the JSON output. If the script returns `null`, use `read` to look up `{ticker}` in `config/ticker_list.csv` manually. **Never guess** what a ticker represents from its symbol alone (e.g. `NG.L` = **National Grid**, not "Natural Gas"; `BP.L` = **BP**, not "Bond Pricing").
 
 ## Prerequisites Check
 
@@ -46,25 +40,7 @@ Verify that the most recent strategy file exists in `data/reports/strategies/{ti
 
 - List all `.md` files, select the most recent one.
 - If the directory is empty or does NOT exist, advise the user to run the investment strategy skill first and **exit** until the strategy report is available.
-- Record the strategy file path for use in the report.
-- **Resolve the strategy name:**
-  - If `{strategy_name}` is **provided**: Read the strategy file and search for this exact strategy name. If it does **not** exist in the file, tell the user: `"Strategy '{strategy_name}' not found in the latest strategy report for {ticker}. Available strategies: {list available strategies}. Aborting."` and **stop**.
-  - If `{strategy_name}` is **not provided** (empty or omitted): Extract the **recommended strategy** name from the latest strategy file (usually listed as the top-performing or recommended strategy). Use this as the target strategy.
-- Record the resolved strategy name as `{target_strategy}` — use this throughout the report.
-
-## Scoring Scale — -3.0 to +3.0
-
-Each of the 7 dimensions is scored from **-3.0 (strong bearish)** to **+3.0 (strong bullish)**:
-
-| Score | Signal |
-|-------|--------|
-| +2.0 to +3.0 | Strong Bullish |
-| +0.5 to +1.9 | Mildly Bullish |
-| -0.4 to +0.4 | Neutral |
-| -1.9 to -0.5 | Mildly Bearish |
-| -3.0 to -2.0 | Strong Bearish |
-
-**Per-dimension confidence:** High (4+ indicators agree), Medium (2–3 agree or 1–2 null), Low (conflicting or >3 null).
+- Record the strategy file path for use in Step 1.
 
 ## Evaluation Steps
 
@@ -73,14 +49,18 @@ Each of the 7 dimensions is scored from **-3.0 (strong bearish)** to **+3.0 (str
 Run the companion script and extract from the JSON:
 - `{actual_date}` = `date_range.end`
 - `{price}` = `latest.close`
+- `{company_name}`, `{sector}` = company name and sector (from companion script; fallback: `read` `config/ticker_list.csv`)
 - `{indicators}` = all TA column values
 - `{recent_context}` = last 30 rows
 - `{high_52w}`, `{low_52w}` = 52-week range
+- `{pe_ttm}` = `indicators.ta_pe`, `{yield}` = `indicators.ta_div_yield`
 
-**Strategy resolution (add to Step 1):**
-- If `{strategy_name}` was provided → search the strategy file for this exact name. Record `{target_strategy}` = the matching strategy.
-- If `{strategy_name}` was **not provided** → extract the **recommended strategy** name from the file. Record `{target_strategy}` = recommended strategy name.
-- Read the strategy file (using `read`) and extract the entry conditions and exit conditions **for `{target_strategy}` specifically**:
+**Strategy name resolution (do this before reading conditions):**
+- If `{strategy_name}` is **provided**: search the strategy file (from Prerequisites) for this exact name. If it does **not** exist, tell the user: `"Strategy '{strategy_name}' not found in the latest strategy report for {ticker}. Available strategies: {list available strategies}. Aborting."` and **stop**.
+- If `{strategy_name}` is **not provided** (empty or omitted): extract the **recommended strategy** name from the file.
+- Record the resolved strategy name as `{target_strategy}` — use this throughout the report.
+
+**Read the strategy file** (the path recorded in Prerequisites, using `read`) and extract the entry conditions and exit conditions **for `{target_strategy}` specifically**:
 
 ```
 Target Strategy Data ({target_strategy}):
@@ -102,7 +82,7 @@ Handle missing data: skip null indicators; if >3 indicators in a dimension are n
 
 ### Step 2: Evaluate Each Dimension (7 total)
 
-Score each dimension from -3.0 to +3.0 using its key indicators:
+Evaluate each dimension using its key indicators:
 
 | Dimension | Key Indicators |
 |-----------|---------------|
@@ -113,8 +93,6 @@ Score each dimension from -3.0 to +3.0 using its key indicators:
 | **Volatility** | ATR(14), ATR percentile, BB width/position, HV(20), Parkinson vol, GARCH vol, ATR stop distance |
 | **Volume** | OBV, CMF, VWAP, OFI, ADL, MFI(14), volume z-score/percentile, EMV(14) |
 | **Regime** | HMM regime probabilities (state 0/1/2), regime label, GARCH vol trend, regime stability |
-
-**Strategy Alignment per dimension:** Check if current conditions match the strategy's entry/regime/volatility requirements. Format: "Strategy Data → {condition}: Current {value} → Match ✅/❌"
 
 ### Step 3: Signal Synthesis
 
@@ -138,8 +116,7 @@ Write the report using this template:
 ```markdown
 # Market Situation Evaluation: {company_name} ({Ticker})
 
-**Evaluation Date:** {evaluation_date}
-**Actual Date Used:** {actual_date}
+**Date Used:** {actual_date}
 **Ticker:** {Ticker} ({company_name})
 **Price:** {close_price}
 **Data Range:** {first_date} to {last_date} ({total_rows} rows)
@@ -200,26 +177,22 @@ Write the report using this template:
 
 **Strategy Exit Verdict:** {1–2 sentences on whether current conditions match `{target_strategy}` exit criteria}
 
-### Signal Summary
-
-**Current Signal: {SIGNAL} / {STRENGTH}**
-
 {2–3 sentence narrative explaining the overall signal, who should act, and for whom}
 
 ---
 
 ### Aggregate Score
 
-| # | Dimension | Signal | Score (-3.0 to +3.0) | Weight | Weighted |
-|---|-----------|--------|-------------|--------|----------|
-| 1 | **Trend** | {Signal} | {+/−val} | {n}% | {+/−val} |
-| 2 | **Momentum** | {Signal} | {+/−val} | {n}% | {+/−val} |
-| 3 | **Return** | {Signal} | {+/−val} | {n}% | {+/−val} |
-| 4 | **Structure** | {Signal} | {+/−val} | {n}% | {+/−val} |
-| 5 | **Volatility** | {Signal} | {+/−val} | {n}% | {+/−val} |
-| 6 | **Volume** | {Signal} | {+/−val} | {n}% | {+/−val} |
-| 7 | **Regime** | {Signal} | {+/−val} | {n}% | {+/−val} |
-| | **AGGREGATE** | | | **100%** | **+/−{total}** |
+| # | Dimension | Signal | Score |
+|---|-----------|--------|-------|
+| 1 | **Trend** | {Signal} | {+/−val} |
+| 2 | **Momentum** | {Signal} | {+/−val} |
+| 3 | **Return** | {Signal} | {+/−val} |
+| 4 | **Structure** | {Signal} | {+/−val} |
+| 5 | **Volatility** | {Signal} | {+/−val} |
+| 6 | **Volume** | {Signal} | {+/−val} |
+| 7 | **Regime** | {Signal} | {+/−val} |
+| | **AGGREGATE** | | **+/−{total}** |
 
 **Aggregate Score: {+/−val} — {SIGNAL}**
 
@@ -249,16 +222,3 @@ Write the report using this template:
 
 *Report generated: {actual_date} | Data point: {evaluation_date} → `{actual_date}` | Data: `data/analysis-data/{ticker}.csv` ({total_rows} rows) | Strategy: `data/reports/strategies/{ticker}/{latest_strategy_date}.md` → Target: `{target_strategy}`*
 ```
-
-## Constraints & Gotchas
-
-- **Activate venv** before running any Python scripts
-- **Never write inline Python** to read CSVs — use the companion script
-- **TA column names** all use `ta_` prefix — verify names in the TA Column Quick Reference table in the full skill
-- **NaN/null handling** — skip null indicators; mark confidence as Low if >3 null in a dimension
-- **Ticker identity:** Always resolve from `config/ticker_list.csv`. Never guess company names.
-- **Report file path:** Use YYYYMMDD format, e.g. `data/reports/evaluation/NG.L/20261231_evaluation.md`
-- **MFI and GARCH appear in multiple dimensions** — score each dimension independently
-- **Strategy report must exist** before running — exit with a helpful message if missing
-- **Strategy name validation:** If `{strategy_name}` is provided, it **must** exist in the latest strategy file. If not, abort immediately with the list of available strategies. If not provided, auto-select the recommended strategy.
-- **Always use `{target_strategy}`'s conditions** in the Strategy Alignment Summary — never mix conditions from different strategies
