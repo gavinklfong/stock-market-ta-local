@@ -625,11 +625,16 @@ Write the report to `data/reports/strategies/{ticker}/{latest_date}.md`. Structu
 - **Suggested improvements:** {ideas for further refinement}
 
 ## Year-by-Year Performance
-Compare Buy-and-Hold benchmark against the top 5 strategies by Total Return (ranked from Phase 2 / Phase 4 results). Get the buy-and-hold baseline via:
+Compare Buy-and-Hold benchmark against the top 5 strategies using per-strategy yearly performance data. Get ALL strategy yearly returns in one call:
+```bash
+python app/backtest/run_strategy_backtest.py {ticker} --yearly --cutoff YYYY-MM-DD --json --no-report
+```
+This returns JSON with `yearly_performance` — an array of per-strategy objects, each containing `strategy` name and a `years` array with `year`, `start_date`, `end_date`, `start_net_value`, `end_net_value`, and `return_pct`. Strategies are sorted by last year's return descending.
+
+For buy-and-hold baseline only, use:
 ```bash
 python app/analyse-market-data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD --yearly
 ```
-Then run each top strategy with `--cutoff` and compare. The `--yearly` flag returns `{"year": 2020, "return_pct": 12.3, ...}` for each year.
 
 | Year | Buy & Hold | {strategy_1} | {strategy_2} | {strategy_3} | {strategy_4} | {strategy_5} |
 |------|------------|--------------|--------------|--------------|--------------|--------------|

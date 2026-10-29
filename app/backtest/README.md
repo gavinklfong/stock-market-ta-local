@@ -274,6 +274,9 @@ python app/backtest/run_strategy_backtest.py NG.L --custom ba_defense_meanrev ba
 # JSON output for programmatic consumption
 python app/backtest/run_strategy_backtest.py NG.L --cutoff YYYY-MM-DD --json --no-report
 
+# Per-strategy yearly performance (portfolio P&L tracking)
+python app/backtest/run_strategy_backtest.py NG.L --yearly --cutoff YYYY-MM-DD --json --no-report
+
 # Skip HTML report generation
 python app/backtest/run_strategy_backtest.py NG.L --no-report
 

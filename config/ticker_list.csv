@@ -17,7 +17,6 @@ PRU.L,Prudential,Insurance
 RR.L,Rolls-Royce Holdings,Aerospace & Defence
 SBRY.L,Sainsbury,Retail
 SDP.L,Schroders,Asset Management
-SGE.L,Sage Group,Software
 SHEL.L,Shell,Energy
 SSE.L,SSE,Utilities
 STAN.L,Standard Chartered,Financial Services
@@ -25,6 +24,7 @@ SVT.L,Severn Trent,Utilities
 TSCO.L,Tesco,Retail
 UU.L,United Utilities,Utilities
 VOD.L,Vodafone Group,Telecommunications
+LMP.L,LondonMetric Property Plc,Real Estate
 ^FTSE,FTSE 100 Index,Index
 ISF.L,iShares Core FTSE 100 UCITS ETF (Dist),ETF
 CUKX.L,iShares Core FTSE 100 UCITS ETF (Acc),ETF

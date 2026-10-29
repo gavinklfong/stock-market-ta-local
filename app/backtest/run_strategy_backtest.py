@@ -33,6 +33,12 @@ Usage:
     # Verbose per-strategy details
     python app/backtest/run_strategy_backtest.py NG.L --verbose --no-report
 
+    # Per-strategy yearly performance (portfolio P&L tracking)
+    python app/backtest/run_strategy_backtest.py NG.L --yearly --json --no-report
+
+    # Single strategy yearly performance
+    python app/backtest/run_strategy_backtest.py NG.L --yearly --custom NG.L_custom --json --no-report
+
 Exit codes: 0 = success, 1 = error
 """
 
@@ -53,7 +59,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 import pandas as pd  # noqa: E402
 
-from framework.engine import BacktestEngine, DEFAULT_CUTOFF  # noqa: E402
+from framework.engine import BacktestEngine, DEFAULT_CUTOFF, INITIAL_CAPITAL  # noqa: E402
 from framework.extensions import load_custom_strategies  # noqa: E402
 from framework.metrics import summarize_table  # noqa: E402
 from strategies.builtins import STRATEGIES, STRATEGY_LABELS  # noqa: E402
@@ -110,6 +116,11 @@ def parse_args() -> argparse.Namespace:
         "--verbose",
         action="store_true",
         help="Print detailed output (strategy-by-strategy)",
+    )
+    parser.add_argument(
+        "--yearly",
+        action="store_true",
+        help="Output per-strategy yearly performance (portfolio P&L tracking)",
     )
     return parser.parse_args()
 
@@ -234,6 +245,68 @@ def main() -> None:
     # Run backtest
     engine = BacktestEngine(data_path=str(data_path), cutoff_date=cutoff)
     results = engine.run_batch(signal_fns=strategies)
+
+    # --- Yearly performance mode ---
+    if args.yearly:
+        # Compute per-strategy yearly performance from portfolio P&L
+        yearly_output = {
+            "ticker": args.ticker,
+            "cutoff": str(cutoff.date()) if cutoff else None,
+            "data_start": str(df["Date"].iloc[0].date()),
+            "data_end": str(df["Date"].iloc[-1].date()),
+            "strategies_run": len(results),
+            "yearly_performance": [],
+        }
+
+        for result in results:
+            strategy_name = result["Strategy"]
+            portfolio = result.get("Portfolio")
+            if portfolio is None:
+                continue
+
+            # Get portfolio net value over time
+            try:
+                net_values = portfolio.net_value()
+                nv_df = pd.DataFrame({"Date": net_values.index, "NetValue": net_values.values})
+            except Exception:
+                # Fallback: use daily returns to reconstruct net value
+                daily_ret = portfolio.daily_returns().dropna()
+                nv_series = (1 + daily_ret).cumprod() * INITIAL_CAPITAL
+                nv_df = pd.DataFrame({"Date": nv_series.index, "NetValue": nv_series.values})
+
+            # Group by year and compute yearly returns
+            nv_df["Year"] = nv_df["Date"].dt.year
+            strategy_years = []
+            for year in sorted(nv_df["Year"].unique()):
+                year_data = nv_df[nv_df["Year"] == year]
+                if len(year_data) < 2:
+                    continue
+                start_nv = year_data.iloc[0]["NetValue"]
+                end_nv = year_data.iloc[-1]["NetValue"]
+                ret = (end_nv - start_nv) / start_nv * 100 if start_nv != 0 else None
+                strategy_years.append({
+                    "year": int(year),
+                    "start_date": str(year_data.iloc[0]["Date"].date()),
+                    "end_date": str(year_data.iloc[-1]["Date"].date()),
+                    "start_net_value": round(float(start_nv), 2),
+                    "end_net_value": round(float(end_nv), 2),
+                    "return_pct": round(float(ret), 2) if ret is not None else None,
+                })
+
+            if strategy_years:
+                yearly_output["yearly_performance"].append({
+                    "strategy": strategy_name,
+                    "years": strategy_years,
+                })
+
+        # Sort strategies by their overall performance (use last year's return as tiebreaker)
+        yearly_output["yearly_performance"].sort(
+            key=lambda x: x["years"][-1]["return_pct"] if x["years"] and x["years"][-1]["return_pct"] is not None else -999,
+            reverse=True,
+        )
+
+        print(json.dumps(yearly_output, indent=2))
+        return
 
     # Format results
     df_results = pd.DataFrame(results).set_index("Strategy")
