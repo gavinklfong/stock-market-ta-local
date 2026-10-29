@@ -4,7 +4,7 @@ This skill defines a structured approach to formulating, investigating, evaluati
 
 ## Objective
 
-Investigate and recommend the best investment strategy (maximum return / minimum drawdown) for `{ticker}` based on `{year}` of market data. Create and evaluate custom strategies when built-in ones are insufficient. Output findings to `data/reports/strategies/{ticker}/{latest_date}.md`, where `{latest_date}` is the last date in the market data CSV (formatted `YYYY-MM-DD`).
+Investigate and recommend the best investment strategy (maximum return / minimum drawdown) for `{ticker}` based on `{year}` of market data. **Always create and evaluate custom strategies — even when built-in strategies perform well.** Built-ins serve as a baseline; custom strategies target the specific regime of each ticker. Output findings to `data/reports/strategies/{ticker}/{latest_date}.md`, where `{latest_date}` is the last date in the market data CSV (formatted `YYYY-MM-DD`).
 
 ## Parameters
 
@@ -419,21 +419,36 @@ Select the top 5 strategies by performance (balanced: return + risk). For each:
 4. Check which TA columns they use — verify those indicators are relevant for this ticker
 5. Note edge cases (e.g., strategies that use HMM regime but that ticker may not have regime data)
 
-### Phase 4: Custom Strategy Creation (if needed)
+### Phase 4: Custom Strategy Creation — **MANDATORY**
 
-If no built-in strategy achieves satisfactory results, or if a specific pattern is evident from the data:
+**You MUST create and evaluate at least one custom strategy for every ticker, regardless of how well built-in strategies performed.** Built-in strategies are generic templates; a custom strategy tailored to the specific regime, volatility profile, and oscillation range of `{ticker}` will often outperform them. Treat Phase 4 as a required step, not optional.
 
-1. First, discover which custom strategies already exist for your ticker:
+**Step 1 — Evaluate existing custom strategies for this ticker (discovery):**
    ```bash
    python app/analyse-market-data/get_evaluation_data.py {ticker} --custom-strategies
    ```
-   This returns a JSON with `custom_strategies` grouped by ticker — e.g. `"BA.L": ["ba_defense_meanrev", "ba_regime_filter_meanrev", ...]`.
-2. Copy `app/backtest/custom/template_strategy.py` to `app/backtest/custom/{ticker}/{custom_name}.py` (create the ticker subdirectory if needed)
-3. Create a new signal function with `@register_custom("custom_name")` decorator
-4. Function signature: `def custom_name(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]`
-5. Return entries (int 1s) and exits (int -1s)
-6. Reference TA columns via `df["ta_column_name"]`
-7. Test with `--list` on `run_strategy_backtest.py` to verify loading, then full backtest
+   This returns a JSON with `custom_strategies` grouped by ticker. If the ticker has existing custom strategies, evaluate them first:
+   ```bash
+   python app/backtest/run_strategy_backtest.py {ticker} --cutoff YYYY-MM-DD --custom {module1} {module2} --json --no-report
+   ```
+
+**Step 2 — If no existing custom strategies, or if you want to go beyond them: CREATE a new one.**
+   1. Copy `app/backtest/custom/template_strategy.py` to `app/backtest/custom/{ticker}/{custom_name}.py` (create the ticker subdirectory if needed). **Always create the ticker subdirectory — do NOT put custom strategies in the root `custom/` directory.**
+   2. Design the strategy based on Phase 1 asset classification and Phase 3 top strategy analysis.
+   3. Create a new signal function with `@register_custom("custom_name")` decorator.
+   4. Function signature: `def custom_name(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]`
+   5. Return entries (int 1s) and exits (int -1s).
+   6. Reference TA columns via `df["ta_column_name"]`.
+   7. Write the file, then verify it loads: `python app/backtest/run_strategy_backtest.py {ticker} --list --custom {custom_name}`
+   8. Run the backtest: `python app/backtest/run_strategy_backtest.py {ticker} --cutoff YYYY-MM-DD --custom {custom_name} --json --no-report`
+
+**Design guidance for the custom strategy (choose ONE approach based on asset type):**
+
+- **Mean-reverting / range-bound assets** (most REITs, mature stocks): Build on the best-performing built-in mean-reversion strategy. Add a volatility filter (GARCH not rising) and a volume confirmation (CMF > threshold) to avoid catching falling knives and capitulation. Use an ATR trailing stop exit instead of a fixed band exit to capture extended bounces.
+- **Trending / momentum assets**: Build on the best-performing built-in trend strategy. Add a regime filter (HMM bull prob > 0.6) to only take trend entries during confirmed bull regimes. Add a volume confirmation (OBV rising, CMF > 0) to avoid false breakouts.
+- **Volatile / wide-swing assets**: Build on a volatility-based entry. Use ATR to set dynamic entry/exit thresholds (e.g., entry when price is 2×ATR below recent high, exit when price recovers to 1×ATR below). Add a time stop (exit after N days if not profitable).
+
+**After creating the custom strategy file, you MUST run the backtest and record the results.** Do NOT skip this step. The custom strategy results go into the Phase 4 report section.
 
 **Loading custom strategies programmatically:**
 
@@ -484,9 +499,9 @@ custom = load_custom_strategies(
 - **ATR-based trailing exit:** Use ATR multiples for dynamic exit instead of fixed band/indicator exits
 - **Dual-exit strategy:** Combine indicator-based exit with ATR trailing stop for better risk management
 
-### Phase 5: Parameter Optimization
+### Phase 5: Parameter Optimization — **MANDATORY for custom strategies**
 
-For promising custom strategies, test multiple parameter variants. Load data via `get_evaluation_data.py` (or use `BacktestEngine` which reads the same file):
+**If you created a custom strategy in Phase 4, you MUST optimize its parameters.** Test multiple parameter variants to find the best configuration for `{ticker}`'s specific regime. Even if built-in strategies were strong, a custom strategy should go through parameter optimization to prove it can beat them.
 
 ```python
 import subprocess, json
@@ -609,7 +624,8 @@ Write the report to `data/reports/strategies/{ticker}/{latest_date}.md`. Structu
 - **Logic:** {description}
 - **Entry/Exit rules:** {bullet list}
 - **Results:** {metrics}
-- **Improvements over built-ins:** {analysis}
+- **Comparison to best built-in:** {how much better or worse — e.g. "Returned 72% vs bb_meanrev_atr's 58.68% — a 13.3p pt improvement"}
+- **If no custom was created (should not happen):** State the reason. This is a skill violation.
 
 ## Phase 5: Parameter Optimization
 ### {custom_strategy_name} — Variant Analysis
@@ -617,9 +633,12 @@ Write the report to `data/reports/strategies/{ticker}/{latest_date}.md`. Structu
 |---------|---------|--------|---------|-------|
 
 ## Phase 6: Final Recommendation
-- **Best overall:** {strategy} with rationale
-- **Entry rules:** {exact conditions}
-- **Exit rules:** {exact conditions}
+- **Best overall:** {strategy — custom or built-in} with rationale. **Always compare the best custom strategy against the best built-in and pick whichever wins on Sharpe/Calmar.**
+- **Highest return:** {strategy} — with caveat about drawdown
+- **Lowest drawdown:** {strategy} — with caveat about return
+- **Best custom strategy:** {name, if it beat built-ins — otherwise state "No custom strategy outperformed built-ins, but it was created as a tailored attempt for {ticker}'s regime"}
+- **Entry rules:** {exact conditions for the recommended strategy}
+- **Exit rules:** {exact conditions for the recommended strategy}
 - **Risk management:** {position sizing, stop loss, max holding period}
 - **When it fails:** {market conditions where this strategy underperforms}
 - **Suggested improvements:** {ideas for further refinement}
@@ -738,12 +757,12 @@ Use these thresholds to guide whether a strategy is worth pursuing (adjust per t
 1. **Pre-flight** — Resolve ticker identity (see Pre-flight section above).
 2. **Phase 1** — Load and analyze data characteristics.
 3. **Phase 2** — Run all 32 built-in strategies, collect metrics.
-4. **Phase 3** — Deep dive into top 5 strategies.
-5. **Phase 4** — Create custom strategies if needed.
-6. **Phase 5** — Optimize parameters for promising custom strategies.
-7. **Phase 6** — Compile final recommendation.
+4. **Phase 3** — Deep dive into top 5 strategies (built-in).
+5. **Phase 4 — MANDATORY** — Create and evaluate at least one custom strategy. Do NOT skip. Even if built-ins performed well, a custom strategy tailored to the ticker's regime is required.
+6. **Phase 5 — MANDATORY for custom strategies** — Optimize parameters for any custom strategy created in Phase 4.
+7. **Phase 6** — Compile final recommendation, comparing custom vs built-in.
 8. **Write report** — Output to `data/reports/strategies/{ticker}/{latest_date}.md` in chunks (see Output Report Format above).
-9. **Verify** — Confirm the file was written completely, is well-structured, and correctly identifies the company.
+9. **Verify** — Confirm the file was written completely, is well-structured, includes a Phase 4 custom strategy section with actual backtest results, and correctly identifies the company.
 
 ## Constraints & Gotchas
 
