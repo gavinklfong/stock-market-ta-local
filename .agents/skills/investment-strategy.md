@@ -12,6 +12,230 @@ Investigate and recommend the best investment strategy (maximum return / minimum
 - `{year}` — Number of years of lookback data. Default: 10. Set cutoff date as `pd.Timestamp("YYYY-MM-DD")` where YYYY-MM-DD is `{current_date}` minus `{year}` years.
 - `{latest_date}` — The last date in `data/analysis-data/{ticker}.csv` (`df["Date"].max()`), formatted `YYYY-MM-DD`. Used as the date component in the output filename.
 
+## Running Python Code
+
+**All code blocks in this skill are reference examples.** To execute any Python code, use the **`shell` tool** — never the `execute` (Code Mode) tool, as Code Mode does not support `import` statements.
+
+### Preferred approach: Use `run_backtest_analysis.py` (primary) or `run_strategy_backtest.py` (backtest-only)
+
+**Two portable helper scripts handle all path resolution and work from any working directory (including `/tmp/`). Avoid writing ad-hoc Python scripts with relative imports.**
+
+#### Primary: `run_backtest_analysis.py` — All-in-one analysis
+
+This is the **recommended entry point** for Phase 2 analysis. It combines data snapshot, indicators, forward returns, yearly performance, AND backtest results in a single JSON output:
+
+```bash
+# Full analysis: data snapshot + all built-in strategies (recommended for Phase 2)
+python app/backtest/run_backtest_analysis.py {ticker} --cutoff YYYY-MM-DD --json --no-report
+
+# Data snapshot only (no backtest) — fast, for Phase 1
+python app/backtest/run_backtest_analysis.py {ticker} --no-backtest --json
+
+# Forward returns stats only
+python app/backtest/run_backtest_analysis.py {ticker} --forward-returns
+
+# Yearly performance only
+python app/backtest/run_backtest_analysis.py {ticker} --yearly
+
+# Include custom strategies
+python app/backtest/run_backtest_analysis.py {ticker} --cutoff YYYY-MM-DD --custom NG.L_custom --json --no-report
+
+# Only a specific strategy group
+python app/backtest/run_backtest_analysis.py {ticker} --group mean-reversion --json --no-report
+```
+
+> **Why prefer this script?** It replaces separate calls to `get_evaluation_data.py` + `run_strategy_backtest.py` — giving you metadata, indicators, forward returns, yearly performance, AND backtest results in one JSON output.
+>
+> **⚠️ `--dry-run` does NOT exist on this script.** To preview strategies without running backtests, use `--list` on `run_strategy_backtest.py` or `--no-backtest` on `run_backtest_analysis.py` for data-only output.
+
+#### Secondary: `run_strategy_backtest.py` — Backtest-only
+
+For focused backtest runs without the data snapshot overhead:
+
+```bash
+# List available strategies WITHOUT running a backtest (NEW — use this first!)
+python app/backtest/run_strategy_backtest.py {ticker} --list
+python app/backtest/run_strategy_backtest.py {ticker} --list --custom ba_defense_meanrev
+
+# All built-in strategies
+python app/backtest/run_strategy_backtest.py {ticker}
+
+# With custom cutoff
+python app/backtest/run_strategy_backtest.py {ticker} --cutoff YYYY-MM-DD
+
+# With specific custom strategies (by module file name — NOT strategy name, NOT truncated)
+python app/backtest/run_strategy_backtest.py {ticker} --custom ba_defense_meanrev
+
+# Multiple custom modules
+python app/backtest/run_strategy_backtest.py {ticker} --custom ba_defense_meanrev ba_regime_filter
+
+# Combine built-ins + custom
+python app/backtest/run_strategy_backtest.py {ticker} --custom ba_defense_meanrev --cutoff 2016-10-26
+
+# JSON output for programmatic consumption
+python app/backtest/run_strategy_backtest.py {ticker} --cutoff YYYY-MM-DD --json
+
+# Skip HTML report generation
+python app/backtest/run_strategy_backtest.py {ticker} --no-report
+
+# Only built-in strategies (no custom)
+python app/backtest/run_strategy_backtest.py {ticker} --builtins-only
+
+# Only strategies matching a group name
+python app/backtest/run_strategy_backtest.py {ticker} --group mean-reversion
+```
+
+> **⚠️ IMPORTANT — `--custom` takes module file names, not strategy names:**
+> - File: `ba_defense_meanrev.py` → CLI: `--custom ba_defense_meanrev` (NOT `--custom ba_defense`, NOT `--custom signal_ba_defense_meanrev`)
+> - Use `--list` before running to verify the module names are correct
+> - `--dry-run` does **NOT** exist on this script — use `--list` instead
+
+> **Why use the helpers?** Both scripts resolve all import paths from their own location, so they work whether you run them from the project root, `/tmp/`, or anywhere else. No `sys.path` hacks needed. The `_NumpyEncoder` in `run_backtest_analysis.py` ensures numpy int64/floating values serialize correctly to JSON.
+
+### When you must write custom Python code
+
+If you need more control than the CLI provides, use one of these patterns:
+
+```bash
+# Option A: Inline with python -c (short scripts)
+python -c "
+import pandas as pd
+from app.backtest.framework.engine import BacktestEngine
+engine = BacktestEngine('data/analysis-data/NG.L.csv', cutoff_date=pd.Timestamp('2016-10-26'))
+results = engine.run_batch(signal_fns={'golden_cross': golden_cross})
+print(len(results), 'strategies ran')
+"
+
+# Option B: Write a script and run it (recommended for longer code)
+# 1. Use the `write` tool to create a temporary script, e.g. /tmp/_run_backtest.py
+# 2. Use the `shell` tool: python /tmp/_run_backtest.py
+# 3. Delete the script after: rm /tmp/_run_backtest.py
+```
+
+When writing ad-hoc scripts, **always** add these path imports at the top:
+```python
+import sys
+from pathlib import Path
+
+# Resolve project root from script location — works from any CWD
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_PROJECT_ROOT = _SCRIPT_DIR  # or parent of project root if script is nested
+sys.path.insert(0, str(_PROJECT_ROOT))
+
+# NOW imports work
+from app.backtest.framework.engine import BacktestEngine
+from app.backtest.strategies.builtins import STRATEGIES
+```
+
+### What NOT to do
+
+- **Do NOT** try to run Python code blocks directly in Code Mode (`execute`) — it will fail with `SyntaxError: Imports and exports aren't supported`
+- **Do NOT** use `execute` for any code containing `import`, `from ... import`, or `open()`
+- **Do NOT** use `execute` for code that imports `pandas`, `vectorbt`, `numpy`, or any project module
+- **Do NOT** write ad-hoc scripts that rely on relative imports without adding project root to `sys.path` — always use the helper script when possible
+
+---
+
+## Data Retrieval with `get_evaluation_data.py`
+
+All data retrieval for this skill should use the helper script:
+```bash
+python app/analyse-market-data/get_evaluation_data.py {ticker} [date] [options]
+```
+
+### Essential commands
+
+| Command | Purpose |
+|---------|---------|
+| `get_evaluation_data.py {ticker}` | Latest snapshot: OHLCV, all indicators, metadata (52w range, company name) |
+| `get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD` | Same but truncated to cutoff date (for backtest alignment) |
+| `get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD --latest-30` | Snapshot + last 30 rows context (regime changes, recent price action) |
+| `get_evaluation_data.py {ticker} --full-df --cutoff YYYY-MM-DD` | Full DataFrame as JSON rows (for programmatic use in Python) |
+| `get_evaluation_data.py {ticker} --ohlcv --cutoff YYYY-MM-DD` | OHLCV rows as list of dicts (for VectorBT portfolio creation) |
+| `get_evaluation_data.py {ticker} --forward-returns` | Forward return statistics (5d/10d/20d) for Phase 1 asset classification |
+| `get_evaluation_data.py {ticker} --yearly --cutoff YYYY-MM-DD` | Year-by-year buy-and-hold performance for Phase 6 |
+| `get_evaluation_data.py {ticker} --list-columns` | All available columns grouped by category |
+| `get_evaluation_data.py {ticker} --custom-strategies` | **Discover custom strategies for this ticker** — returns JSON with relevant module names |
+
+### Typical usage in Python (Phase 1 data loading)
+
+```python
+import subprocess, json
+
+result = subprocess.run([
+    "python", "app/analyse-market-data/get_evaluation_data.py",
+    "NG.L", "--cutoff", "2016-10-26"
+], capture_output=True, text=True)
+data = json.loads(result.stdout)
+
+# Metadata
+company = data["company_name"]       # "National Grid"
+sector = data["sector"]              # "Utilities"
+date_range = data["date_range"]      # {"start": "...", "end": "..."}
+
+# Latest indicators (at cutoff date)
+indicators = data["indicators"]      # {ta_rsi14: 45.2, ta_ema20: 1150.3, ...}
+latest = data["latest"]              # {date: "...", close: 1150.0, ...}
+
+# Full DataFrame for backtesting
+result = subprocess.run([
+    "python", "app/analyse-market-data/get_evaluation_data.py",
+    "NG.L", "--cutoff", "2016-10-26", "--full-df"
+], capture_output=True, text=True)
+full_data = json.loads(result.stdout)
+df = pd.DataFrame(full_data["data"])
+```
+
+### Typical usage in Python (Phase 5: custom strategy backtest)
+
+```python
+import subprocess, json
+import pandas as pd
+import vectorbt as vbt
+from app.backtest.framework.engine import INITIAL_CAPITAL, COMMISSION, SLIPPAGE
+from vectorbt.portfolio.enums import SizeType
+
+# Get OHLCV data for VectorBT
+result = subprocess.run([
+    "python", "app/analyse-market-data/get_evaluation_data.py",
+    "NG.L", "--cutoff", "2016-10-26", "--ohlcv"
+], capture_output=True, text=True)
+ohlcv = json.loads(result.stdout)
+
+# Build Series for VectorBT
+close = pd.Series(
+    [d["close"] for d in ohlcv["ohlcv"]],
+    index=pd.to_datetime([d["date"] for d in ohlcv["ohlcv"]]),
+)
+
+# Apply custom strategy signals
+entry = (close < close.rolling(20).mean() * 0.98) & (close.pct_change().shift(1) < -0.03)
+exit_ = (close > close.rolling(20).mean() * 1.02) | (close.pct_change().shift(1) > 0.05)
+
+pf = vbt.Portfolio.from_signals(
+    close=close,
+    entries=entry.astype(int),
+    exits=exit_.astype(int) * -1,
+    init_cash=INITIAL_CAPITAL,
+    freq="1D",
+    slippage=SLIPPAGE,
+    size=1.0,
+    size_type=SizeType.Percent,
+    fees=COMMISSION,
+)
+```
+
+### Typical usage in Python (Phase 6: year-by-year comparison)
+
+```python
+result = subprocess.run([
+    "python", "app/analyse-market-data/get_evaluation_data.py",
+    "NG.L", "--cutoff", "2026-10-28", "--yearly"
+], capture_output=True, text=True)
+yearly = json.loads(result.stdout)["yearly_performance"]
+# yearly is a list of dicts: [{"year": 2020, "return_pct": 12.3, ...}, ...]
+```
+
 ## Strategy Types
 
 Trend following · Mean reversion · Momentum · Contrarian · Dividend income · Breakout
@@ -20,12 +244,14 @@ Trend following · Mean reversion · Momentum · Contrarian · Dividend income �
 
 **Before any analysis, resolve the ticker to its real company name and sector.**
 
-1. Read `config/ticker_list.csv` (columns: `Ticker`, `Company`, `Major Industry / Sector`)
-2. Look up the exact `{ticker}` string (e.g. `NG.L`, `BP.L`, `HSBA.L`)
-3. Record the `Company` and `Sector` values — these are the **authoritative** identifiers
-4. **NEVER guess** what a ticker represents based on its symbol alone (e.g. `NG.L` is **National Grid**, not "Natural Gas"; `BP.L` is **BP**, not "Bond Pricing")
-5. Use the resolved company name throughout the report instead of the raw ticker symbol where narrative context is needed
-6. **Constraint:** If the ticker is not found in `config/ticker_list.csv`, note this as a data issue and proceed with the ticker symbol only — do not fabricate a company name.
+1. Run `get_evaluation_data.py` which auto-resolves from `config/ticker_list.csv`:
+   ```bash
+   python app/analyse-market-data/get_evaluation_data.py {ticker}
+   ```
+   The output includes `company_name` and `sector` — these are the **authoritative** identifiers.
+2. **NEVER guess** what a ticker represents based on its symbol alone (e.g. `NG.L` is **National Grid**, not "Natural Gas"; `BP.L` is **BP**, not "Bond Pricing")
+3. Use the resolved company name throughout the report instead of the raw ticker symbol where narrative context is needed
+4. **Constraint:** If `company_name` is `null` in the output, the ticker is not found in `config/ticker_list.csv` — note this as a data issue and proceed with the ticker symbol only — do not fabricate a company name.
 
 ## Directory Quick Reference
 
@@ -46,6 +272,8 @@ Trend following · Mean reversion · Momentum · Contrarian · Dividend income �
 | `app/backtest/framework/report.py` | `generate_report()` — creates HTML backtest reports |
 | `app/backtest/strategies/builtins.py` | 32 built-in strategies across 4 groups, `STRATEGIES` registry, `STRATEGY_LABELS`, `STRATEGY_GROUPS` |
 | `app/backtest/run_backtest.py` | CLI entry point (`python app/backtest/run_backtest.py {ticker} --cutoff YYYY-MM-DD`) |
+| `app/backtest/run_backtest_analysis.py` | **Primary helper — works from ANY directory** — combines data snapshot, indicators, forward returns, yearly performance, AND backtest results in one JSON. Recommended for Phase 2. |
+| `app/backtest/run_strategy_backtest.py` | **Portable backtest-only helper** — handles all path resolution, outputs JSON. Use for focused backtest runs. |
 | `app/backtest/custom/template_strategy.py` | Template for custom strategies |
 | `app/backtest/custom_scripts/NG.L_backtest.py` | NG.L-focused reference (32 strategies, optimization notes) |
 | `docs/all_technical_analysis.md` | Complete TA indicator reference (all 12 sections, 1268 lines) |
@@ -60,17 +288,18 @@ Trend following · Mean reversion · Momentum · Contrarian · Dividend income �
 
 ## TA Column Reference
 
-All TA columns use the `ta_` prefix. Key columns (full list in `docs/all_technical_analysis.md`):
+All TA columns use the `ta_` prefix. **Always verify columns with** `get_evaluation_data.py {ticker} --list-columns` **before referencing them.** Key columns (full list in `docs/all_technical_analysis.md`):
 
 | Category | Key Columns |
 |----------|-------------|
-| Trend | `ta_ema20`, `ta_ema50`, `ta_ema200`, `ta_supertrend_direction`, `ta_ma20_slope`, `ta_ma50_slope`, `ta_ma200_slope`, `ta_donchian_upper/lower`, `ta_keltner_upper/lower` |
-| Momentum | `ta_rsi14`, `ta_macd_line`, `ta_macd_signal`, `ta_macd_histogram`, `ta_roc20`, `ta_williams_r`, `ta_cci`, `ta_tsi25_13`, `ta_rsi_zscore`, `ta_rsi_percentile` |
-| Volume | `ta_obv`, `ta_cmf`, `ta_vwap`, `ta_ofi`, `ta_adl`, `ta_mfi14`, `ta_emv14`, `ta_vol_osc`, `ta_vol_zscore`, `ta_vol_percentile` |
-| Volatility | `ta_atr14`, `ta_bband_upper`, `ta_bband_middle`, `ta_bband_lower`, `ta_bband_width`, `ta_pct_b`, `ta_hvol20`, `ta_park_volv`, `ta_garch_vol`, `ta_atr_stop_dist`, `ta_atr_percentile` |
-| Regime | `ta_hmm_regime_prob_0`, `ta_hmm_regime_prob_1`, `ta_hmm_regime_prob_2`, `ta_regime_label` |
-| Structure | `ta_swing_high`, `ta_swing_low`, `ta_hh`, `ta_hl`, `ta_lh`, `ta_ll`, `ta_bos`, `ta_choch`, `ta_nearest_resistance`, `ta_nearest_support`, `ta_trend` |
-| Return | `ta_ret_5d`, `ta_ret_10d`, `ta_ret_20d`, `ta_ret_1m`, `ta_ret_3m`, `ta_ret_6m`, `ta_ret_1y`, `ta_alpha20`, `ta_beta20`, `ta_rs_ftse100` |
+| Trend | `ta_ema20`, `ta_ema50`, `ta_ema200`, `ta_supertrend_direction`, `ta_ma20_slope`, `ta_ma50_slope`, `ta_ma200_slope`, `ta_donchian_upper/lower`, `ta_keltner_upper/lower`, `ta_adx14`, `ta_aroon_up/down` |
+| Momentum | `ta_rsi14`, `ta_macd_line`, `ta_macd_signal`, `ta_macd_histogram`, `ta_roc20`, `ta_williams_r`, `ta_cci`, `ta_tsi`, `ta_rsi_zscore`, `ta_rsi_percentile`, `ta_mfi14`, `ta_stoch_k/d` |
+| Volume | `ta_obv`, `ta_cmf`, `ta_vwap`, `ta_ofi`, `ta_adl`, `ta_emv14`, `ta_volume_osc`, `ta_volume_zscore`, `ta_volume_percentile`, `ta_log_volume` |
+| Volatility | `ta_atr14`, `ta_normalized_atr14`, `ta_bband_upper/middle/lower`, `ta_bband_width`, `ta_bband_pctb`, `ta_hvol20`, `ta_parkinson_vol`, `ta_garch_vol`, `ta_atr_stop_dist`, `ta_atr_percentile` |
+| Regime | `ta_hmm_regime_prob_0/1/2`, `ta_hmm_regime`, `ta_regime_label` |
+| Structure | `ta_swing_high/low`, `ta_hh`, `ta_hl`, `ta_lh`, `ta_ll`, `ta_bos`, `ta_choch`, `ta_nearest_resistance/support`, `ta_trend` |
+| Return | `ta_return_5d/10d/20d`, `ta_performance_1m/3m/6m/1y`, `ta_alpha20`, `ta_beta20`, `ta_rs_ftse100` |
+| Fundamentals | `ta_pe`, `ta_eps_ttm`, `ta_div_ttm`, `ta_div_yield` |
 | Time | `weekday` |
 
 ### Weekday Effect (day-of-week)
@@ -90,54 +319,85 @@ All TA columns use the `ta_` prefix. Key columns (full list in `docs/all_technic
 
 ### Phase 1: Data Preparation & Understanding
 
-1. Verify the data file exists: `data/analysis-data/{ticker}.csv`
-2. Check data date range, column count, and missing values
-3. **Use the resolved company name** from the Pre-flight step — e.g. "National Grid (NG.L) is a regulated UK utility…" not "NG.L is a commodity…"
-4. Examine forward returns (`ta_ret_5d`, `ta_ret_10d`, `ta_ret_20d`) and past performance (`ta_ret_1m`, `ta_ret_3m`, `ta_ret_6m`, `ta_ret_1y`) to understand the asset's behavior
-5. Look at P/E data for valuation context
-6. Determine asset characteristics from the return data:
+1. Get the full data snapshot via `get_evaluation_data.py`:
+   ```bash
+   python app/analyse-market-data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD
+   ```
+   This gives you: company name, sector, date range, row count, OHLCV, all indicators, and 52-week range.
+2. Check forward returns statistics:
+   ```bash
+   python app/analyse-market-data/get_evaluation_data.py {ticker} --forward-returns
+   ```
+3. Verify available columns:
+   ```bash
+   python app/analyse-market-data/get_evaluation_data.py {ticker} --list-columns
+   ```
+4. **Use the resolved company name** from the Pre-flight step — e.g. "National Grid (NG.L) is a regulated UK utility…" not "NG.L is a commodity…"
+5. Examine forward returns (`ta_return_5d`, `ta_return_10d`, `ta_return_20d`) and past performance (`ta_performance_1m`, `ta_performance_3m`, `ta_performance_6m`, `ta_performance_1y`) to understand the asset's behavior
+6. Look at P/E data for valuation context (check if `ta_pe`, `ta_eps_ttm` are populated)
+7. Determine asset characteristics from the return data:
    - Is it trending (strong directional moves)? → favor trend-following strategies
    - Is it mean-reverting (oscillates around a range)? → favor mean-reversion strategies
    - Is it volatile with wide swings? → favor volatility-based strategies
    - Is it low-vol with range-bound? → favor conservative mean-reversion
-7. **Contextualize the asset type** using the resolved company name and sector (e.g. "National Grid is a regulated utility, not a commodity — mean-reversion strategies designed for commodities do not directly apply")
+8. **Contextualize the asset type** using the resolved company name and sector (e.g. "National Grid is a regulated utility, not a commodity — mean-reversion strategies designed for commodities do not directly apply")
 
 ### Phase 2: Baseline Strategy Evaluation
 
-Run all 32 built-in strategies via the CLI or framework:
+Run all 32 built-in strategies. **Use `run_backtest_analysis.py` as the primary entry point** — it returns data snapshot + backtest results in one JSON output:
 
 ```bash
-# Run all built-in strategies with custom cutoff
-python app/backtest/run_backtest.py {ticker} --cutoff YYYY-MM-DD
+# Primary: data snapshot + backtest results (recommended for Phase 2)
+python app/backtest/run_backtest_analysis.py {ticker} --cutoff YYYY-MM-DD --json --no-report
 
-# Or run a focused subset (e.g. mean-reversion first)
-python app/backtest/run_backtest.py {ticker} --cutoff YYYY-MM-DD --dry-run
+# Alternative: backtest-only (faster, no data snapshot)
+python app/backtest/run_strategy_backtest.py {ticker} --cutoff YYYY-MM-DD --json --no-report
+
+# Specific group only
+python app/backtest/run_strategy_backtest.py {ticker} --cutoff YYYY-MM-DD --group mean-reversion --json --no-report
 ```
 
-Alternatively, run the framework programmatically (preferred for collecting metrics):
+Or use the original CLI:
+```bash
+python app/backtest/run_backtest.py {ticker} --cutoff YYYY-MM-DD
+```
+
+Alternatively, run the framework programmatically (preferred for collecting metrics). Load data via `get_evaluation_data.py` and pass the file path to the engine:
 
 ```python
+import subprocess, json, pandas as pd
+
+# Get the data file path via the helper script
+result = subprocess.run([
+    "python", "app/analyse-market-data/get_evaluation_data.py",
+    "{ticker}", "--cutoff", "2016-10-26"
+], capture_output=True, text=True)
+data = json.loads(result.stdout)
+
 from app.backtest.framework.engine import BacktestEngine
 from app.backtest.framework.metrics import summarize_table
 from app.backtest.strategies.builtins import STRATEGIES, STRATEGY_LABELS
-import pandas as pd
 
+# BacktestEngine reads the CSV internally — pass file path and cutoff_date to __init__
 engine = BacktestEngine(
-    "data/analysis-data/MKS.L.csv",    # file path, NOT a DataFrame
+    "data/analysis-data/{ticker}.csv",   # file path string (NOT a DataFrame)
     cutoff_date=pd.Timestamp("2016-10-26")
 )
 
-results = engine.run_batch(
-    tickers=["MKS.L"],
-    strategies=STRATEGIES,
-    cutoff=pd.Timestamp("2016-10-26"),
-    ticker_names={"MKS.L": "MKS.L"}
-)
-print(summarize_table(results, "MKS.L"))
+# run_batch() takes a dict[str, Callable] mapping strategy name → signal function
+# STRATEGIES is already a dict[str, Callable] from builtins.py
+results = engine.run_batch(signal_fns=STRATEGIES)
+
+# summarize_table() uses the DataFrame index for strategy names — set 'Strategy' column as index
+df_results = pd.DataFrame(results).set_index('Strategy')
+print(summarize_table(df_results))
 ```
 
-> **Important:** `BacktestEngine` takes a **file path string** (`str` or `Path`), not a DataFrame.
-> It loads the CSV internally. Pass `cutoff_date` to `__init__`, not as a separate step.
+> **Important:**
+> - `BacktestEngine` takes a **file path string** (`str` or `Path`), not a DataFrame. It loads the CSV internally.
+> - Pass `cutoff_date` to `__init__`, not as a separate argument.
+> - `run_batch(signal_fns=...)` takes a **single dict** mapping strategy name → signal function. There are no `tickers`, `cutoff`, or `ticker_names` parameters. The engine already knows which ticker data to use from `data_path`.
+> - `summarize_table(df)` uses the **DataFrame index** for strategy names. Always call `pd.DataFrame(results).set_index('Strategy')` first — the results dict has a "Strategy" column but a default integer index.
 
 **Record results in `data/reports/strategies/{ticker}/{latest_date}.md`:**
 
@@ -152,24 +412,32 @@ For each strategy, capture:
 Select the top 5 strategies by performance (balanced: return + risk). For each:
 
 1. Read the source code in `app/backtest/strategies/builtins.py` to understand the logic
-2. Analyze entry/exit conditions and their rationale
-3. Check which TA columns they use — verify those indicators are relevant for this ticker
-4. Note edge cases (e.g., strategies that use HMM regime but that ticker may not have regime data)
+2. **Strategy functions use `signal_` prefix:** The function names are `signal_bb_meanrev`, `signal_golden_cross`, etc. — **NOT** bare names like `bb_meanrev` or `golden_cross`. Use `grep "def signal_bb_meanrev"` or `grep "^def signal_"` to find them.
+3. Analyze entry/exit conditions and their rationale
+4. Check which TA columns they use — verify those indicators are relevant for this ticker
+5. Note edge cases (e.g., strategies that use HMM regime but that ticker may not have regime data)
 
 ### Phase 4: Custom Strategy Creation (if needed)
 
 If no built-in strategy achieves satisfactory results, or if a specific pattern is evident from the data:
 
-1. Copy `app/backtest/custom/template_strategy.py` to `app/backtest/custom/{custom_name}.py`
-2. Create a new signal function with `@register_custom("custom_name")` decorator
-3. Function signature: `def custom_name(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]`
-4. Return entries (int 1s) and exits (int -1s)
-5. Reference TA columns via `df["ta_column_name"]`
-6. Test with `--dry-run` first, then full backtest
+1. First, discover which custom strategies already exist for your ticker:
+   ```bash
+   python app/analyse-market-data/get_evaluation_data.py {ticker} --custom-strategies
+   ```
+   This returns a JSON with `custom_strategies` grouped by ticker — e.g. `"BA.L": ["ba_defense_meanrev", "ba_regime_filter_meanrev", ...]`.
+2. Copy `app/backtest/custom/template_strategy.py` to `app/backtest/custom/{custom_name}.py`
+3. Create a new signal function with `@register_custom("custom_name")` decorator
+4. Function signature: `def custom_name(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]`
+5. Return entries (int 1s) and exits (int -1s)
+6. Reference TA columns via `df["ta_column_name"]`
+7. Test with `--list` on `run_strategy_backtest.py` to verify loading, then full backtest
 
 **Loading custom strategies programmatically:**
 
 ```python
+# The load_custom_strategies function is now portable — works from any CWD.
+# No sys.path manipulation needed.
 from app.backtest.framework.extensions import load_custom_strategies
 
 # CORRECT: pass a DIRECTORY path, not a file path
@@ -182,6 +450,19 @@ custom = load_custom_strategies(
     module_names=["sbry_bb"]   # only loads sbry_bb.py
 )
 ```
+
+> **IMPORTANT — `load_custom_strategies` is now portable:**
+> - The internal `_resolve_framework_import()` function finds the project root from `__file__`, so it works from any working directory (including `/tmp/`).
+> - No need to add project root to `sys.path` before calling it.
+> - The shared `_custom_registry` is correctly linked across all import paths.
+
+> **CRITICAL — Do NOT load all custom strategies at once:**
+> - There are 20+ custom strategy files covering 10+ different tickers. Loading them all produces 100+ irrelevant strategies.
+> - **Always load only strategies relevant to the target ticker.**
+> - **Step 1:** Discover relevant custom strategies: `python app/analyse-market-data/get_evaluation_data.py {ticker} --custom-strategies`
+> - **Step 2:** Use the discovered module names with `--list` to verify: `python app/backtest/run_strategy_backtest.py {ticker} --list --custom {module1} {module2}`
+> - **Step 3:** Pass those module file names via `module_names=["ba_defense_meanrev", "ba_regime_filter"]` to `load_custom_strategies()`.
+> - Generic strategies (not ticker-specific) can be loaded separately if needed.
 
 > **IMPORTANT — `load_custom_strategies` gotcha:**
 > - **Always pass a directory path**, never a file path. The function globs for `*.py` files inside the directory.
@@ -201,17 +482,33 @@ custom = load_custom_strategies(
 
 ### Phase 5: Parameter Optimization
 
-For promising custom strategies, test multiple parameter variants:
+For promising custom strategies, test multiple parameter variants. Load data via `get_evaluation_data.py` (or use `BacktestEngine` which reads the same file):
 
 ```python
-from app.backtest.framework.engine import BacktestEngine, INITIAL_CAPITAL, COMMISSION, SLIPPAGE
-from vectorbt.portfolio.enums import SizeType
+import subprocess, json
 import pandas as pd
 import vectorbt as vbt
+from app.backtest.framework.engine import INITIAL_CAPITAL, COMMISSION, SLIPPAGE
+from vectorbt.portfolio.enums import SizeType
+
+# Option A: Use BacktestEngine (preferred — reads the same CSV)
+from app.backtest.framework.engine import BacktestEngine
 
 engine = BacktestEngine("data/analysis-data/NG.L.csv", cutoff_date=pd.Timestamp("2016-10-26"))
 df = engine.load_data()
 
+# Option B: Use get_evaluation_data.py output directly
+result = subprocess.run([
+    "python", "app/analyse-market-data/get_evaluation_data.py",
+    "NG.L", "--cutoff", "2016-10-26", "--ohlcv"
+], capture_output=True, text=True)
+ohlcv_data = json.loads(result.stdout)
+close = pd.Series(
+    [d["close"] for d in ohlcv_data["ohlcv"]],
+    index=pd.to_datetime([d["date"] for d in ohlcv_data["ohlcv"]]),
+)
+
+# Apply signals and backtest
 for atr_mult in [2.0, 3.0, 4.0, 5.0]:
     highest_close = df["Close"].rolling(5).max()
     atr_trail = highest_close - atr_mult * df["ta_atr14"]
@@ -324,7 +621,11 @@ Write the report to `data/reports/strategies/{ticker}/{latest_date}.md`. Structu
 - **Suggested improvements:** {ideas for further refinement}
 
 ## Year-by-Year Performance
-Compare Buy-and-Hold benchmark against the top 5 strategies by Total Return (ranked from Phase 2 / Phase 4 results):
+Compare Buy-and-Hold benchmark against the top 5 strategies by Total Return (ranked from Phase 2 / Phase 4 results). Get the buy-and-hold baseline via:
+```bash
+python app/analyse-market-data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD --yearly
+```
+Then run each top strategy with `--cutoff` and compare. The `--yearly` flag returns `{"year": 2020, "return_pct": 12.3, ...}` for each year.
 
 | Year | Buy & Hold | {strategy_1} | {strategy_2} | {strategy_3} | {strategy_4} | {strategy_5} |
 |------|------------|--------------|--------------|--------------|--------------|--------------|
@@ -438,15 +739,26 @@ Use these thresholds to guide whether a strategy is worth pursuing (adjust per t
 ## Constraints & Gotchas
 
 - **Activate venv** before running any Python scripts
-- **TA columns** all have the `ta_` prefix — verify column names in `docs/all_technical_analysis.md`
+- **Data retrieval:** Use `get_evaluation_data.py` for all data loading. It provides metadata, indicators, OHLCV, forward returns, yearly performance, column listings, and custom strategy discovery (`--custom-strategies`)
+- **TA columns** all have the `ta_` prefix — verify column names with `get_evaluation_data.py {ticker} --list-columns` or `docs/all_technical_analysis.md`
 - **Regime module** requires `arch` + `hmmlearn` — strategies using HMM columns will fail if not installed
 - **Default cutoff** is `2016-10-15` (~10 years) — adjust based on `{year}` parameter
 - **Initial capital:** £100,000, **Commission:** 0.1%, **Slippage:** 0.1% (from `app.backtest.framework.engine`)
 - **vectorbt** simulates portfolios — signals must return `int` Series (1, 0, -1)
 - **Custom strategies** in `app/backtest/custom/` must use `@register_custom("name")` decorator and import `from framework.extensions import register_custom`
 - **Strategy function** signature: `def name(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]`
-- **Ticker identity:** Always resolve from `config/ticker_list.csv` before writing any report. Never guess company names from ticker symbols. `NG.L` = **National Grid** (Utilities), not "Natural Gas".
+- **Built-in strategy functions** use `signal_` prefix: `signal_bb_meanrev`, `signal_golden_cross`, etc. Use `grep "def signal_"` to find them, NOT `grep "def bb_meanrev"`.
+- **Ticker identity:** Always resolve via `get_evaluation_data.py` (reads `config/ticker_list.csv`). Never guess company names from ticker symbols. `NG.L` = **National Grid** (Utilities), not "Natural Gas".
 - **Don't** hardcode to NG.L — this skill must work for any ticker
+
+### Custom Strategy CLI Gotchas
+
+| Mistake | Correct |
+|---------|---------|
+| `--custom ba_defense` (truncated) | `--custom ba_defense_meanrev` (exact module stem) |
+| `--custom signal_bb_meanrev` (strategy name) | `--custom bb_meanrev` (module file name without `.py`) |
+| `--dry-run` on `run_strategy_backtest.py` | `--list` to preview, or `--dry-run` on `run_backtest.py` only |
+| Loading all 20+ custom files | Use `--custom-strategies` to discover relevant ones first |
 
 ### VectorBT API Reference
 
@@ -470,7 +782,33 @@ When creating portfolios or reading trade metrics:
 
 ### Custom Strategy Loading
 
+#### `--custom` flag on CLI helpers
+
+- `--custom` on `run_strategy_backtest.py` and `run_backtest_analysis.py` takes **module file names WITHOUT `.py`** — NOT individual strategy names, NOT truncated names.
+  - **Correct:** `--custom ba_defense_meanrev` (loads all strategies from `ba_defense_meanrev.py`)
+  - **Wrong:** `--custom ba_defense` (truncated — file not found)
+  - **Wrong:** `--custom ba_defense_meanrev signal_bb_meanrev` (strategy name, not module name)
+  - **Multiple modules:** `--custom ba_defense_meanrev ba_regime_filter` (space-separated, no `.py`)
+- The script globs for `{module_name}.py` inside the custom directory. The **exact** stem must match.
+
+#### `--list` flag (NEW — use this before running)
+
+- `run_strategy_backtest.py` now supports `--list` to show which custom strategies would load without running a backtest:
+  ```bash
+  python app/backtest/run_strategy_backtest.py BA.L --list
+  python app/backtest/run_strategy_backtest.py BA.L --list --custom ba_defense_meanrev
+  ```
+- This is the **safe way to verify** your module names are correct before running expensive backtests.
+
+#### `--dry-run` does NOT exist on `run_strategy_backtest.py`
+
+- `--dry-run` exists ONLY on `run_backtest.py` (the original CLI).
+- On `run_strategy_backtest.py` and `run_backtest_analysis.py`, use `--list` instead to preview what would run.
+
+#### `load_custom_strategies()` programmatically
+
 - `load_custom_strategies("app/backtest/custom")` takes a **directory**, not a file path.
 - It clears the registry then globs `*.py` files — all files in the directory are loaded.
 - Only functions decorated with `@register_custom("name")` appear in the returned dict.
+- To load specific modules only: `load_custom_strategies("app/backtest/custom", module_names=["ba_defense_meanrev", "ba_regime_filter"])`
 - If a custom strategy doesn't show up, verify: (1) file is in the custom/ directory, (2) has `@register_custom("name")`, (3) imports `register_custom` from `framework.extensions`, (4) the decorator name matches the intended strategy key.

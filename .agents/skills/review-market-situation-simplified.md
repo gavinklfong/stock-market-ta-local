@@ -21,14 +21,19 @@ Assess the market situation for `{ticker}` as of `{evaluation_date}` and output 
 python app/analyse-market-data/get_evaluation_data.py {ticker} {evaluation_date} --latest-30
 ```
 
-This outputs a single JSON with: `latest` row, all `indicators` (100+ TA columns), `52week` range, and `recent_context` (last 30 rows).
+This outputs a single JSON with: `latest` row (OHLCV), all `indicators` (90+ TA columns across 8 categories), `52week` range, and `recent_context` (last 30 rows with regime + volume + volatility data).
+
+**Filter by category:** If you only need indicators for a specific dimension, use `--category`:
+
+```bash
+python app/analyse-market-data/get_evaluation_data.py {ticker} --category trend
+python app/analyse-market-data/get_evaluation_data.py {ticker} --category structure
+python app/analyse-market-data/get_evaluation_data.py {ticker} --category trend volume
+```
+
+Valid categories: `trend`, `momentum`, `return`, `structure`, `volatility`, `volume`, `regime`, `fundamentals`.
 
 **Date resolution:** If the specified date does not exist (weekend/holiday), the script falls back to the latest available date on or before the specified date. Use `{actual_date}` = `date_range.end` as the effective evaluation date.
-
-**Fallback:** If you need a column not in the companion output, read the raw CSV:
-```bash
-tail -30 data/analysis-data/{ticker}.csv
-```
 
 **Use `read` for:** Strategy reports and config files (text files, not CSVs).
 
@@ -51,7 +56,7 @@ Run the companion script and extract from the JSON:
 - `{price}` = `latest.close`
 - `{company_name}`, `{sector}` = company name and sector (from companion script; fallback: `read` `config/ticker_list.csv`)
 - `{indicators}` = all TA column values
-- `{recent_context}` = last 30 rows
+- `{recent_context}` = last 30 rows with `date`, `close`, regime columns (`ta_regime_label`, `ta_hmm_regime_prob_0/1/2`), volume columns (`ta_obv`, `ta_cmf`, `ta_vwap`, `ta_adl`), volatility columns (`ta_atr14`, `ta_atr_percentile`, `ta_bband_upper`/`middle`/`lower`/`pctb`), and volume intensity columns (`ta_volume_zscore`, `ta_volume_percentile`) — use for multi-row trend/average/stability computations.
 - `{high_52w}`, `{low_52w}` = 52-week range
 - `{pe_ttm}` = `indicators.ta_pe`, `{yield}` = `indicators.ta_div_yield`
 

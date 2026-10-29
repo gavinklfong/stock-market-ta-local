@@ -16,6 +16,8 @@ The framework evaluates trading strategies, extracts performance metrics, and ge
 ```
 app/backtest/
 ├── run_backtest.py              # CLI entry point — single ticker
+├── run_backtest_analysis.py     # All-in-one helper — data + indicators + backtest results
+├── run_strategy_backtest.py     # Portable backtest-only helper — works from ANY directory
 ├── backtest_all.py              # Batch runner — all tickers from ticker_list.csv
 ├── framework/                   # Core reusable modules
 │   ├── __init__.py              # Public API exports
@@ -60,6 +62,8 @@ data/analysis-data/{ticker}.csv  (OHLCV + TA columns prefixed ta_)
 
 ## Framework Components
 
+> **Note for AI agents:** All code examples in this README are reference snippets. To run them, use the `shell` tool with `python -c "..."` or write a script file — **never** use Code Mode (`execute`) for Python code with imports.
+
 ### BacktestEngine
 
 The core engine that runs strategies via vectorbt:
@@ -76,7 +80,8 @@ engine = BacktestEngine(
     trailing_pct=0.05,                       # Optional trailing stop
 )
 
-results = engine.run_batch(strategies)  # dict[name: signal_fn]
+# Pass a dict[str, Callable] mapping strategy name → signal function
+results = engine.run_batch(signal_fns={"golden_cross": golden_cross})
 ```
 
 **Key parameters:**
@@ -89,6 +94,32 @@ results = engine.run_batch(strategies)  # dict[name: signal_fn]
 | `commission` | `0.001` | Round-trip commission rate |
 | `slippage` | `0.001` | Slippage rate per trade |
 | `trailing_pct` | `None` | If set, uses `TrailingStopPortfolio` with this percentage |
+
+### `BacktestEngine` Method Reference
+
+| Method | Signature | Description |
+|--------|-----------|-------------|
+| `__init__` | `BacktestEngine(data_path, cutoff_date=…, initial_capital=100000, commission=0.001, slippage=0.001, trailing_pct=None)` | Construct engine with file path and config. Loads CSV lazily via `.df` or `.load_data()`. |
+| `load_data` | `.load_data() → pd.DataFrame` | Load and clean the CSV (sort by Date, drop NaN Close/High/Low, apply cutoff). |
+| `run` | `.run(signal_fn) → vbt.Portfolio` | Run a **single** strategy, return vectorbt Portfolio object. |
+| `run_and_metrics` | `.run_and_metrics(signal_fn) → (Portfolio, dict)` | Run one strategy and return (portfolio, metrics_dict). |
+| `run_batch` | `.run_batch(signal_fns: dict[str, Callable]) → list[dict]` | Run **multiple** strategies. Each key→callable pair is tested. Returns list of metric dicts (each with a "Strategy" key). |
+| `get_signals` | `.get_signals(signal_fn) → (pd.Series, pd.Series)` | Resolve a signal function to (entries, exits) int Series. |
+| `get_benchmark_returns` | `.get_benchmark_returns() → pd.Series` | Buy-and-hold daily returns of the ticker. |
+| `get_strategy_returns` | `.get_strategy_returns(signal_fn) → pd.Series` | Daily returns from running a single strategy. |
+| `aligned_returns` | `.aligned_returns(strategy_ret) → (pd.Series, pd.Series)` | Align strategy and benchmark returns to common index. |
+
+> **Critical `run_batch()` gotcha:** It only accepts `signal_fns` — a dict mapping strategy name strings to callable signal functions. There are **no** `tickers`, `cutoff`, or `ticker_names` parameters. The ticker data is already determined by `data_path` in `__init__`.
+
+### `calculate_metrics`
+
+```python
+from framework.metrics import calculate_metrics, pick_best, rank_strategies
+
+metrics = calculate_metrics(portfolio)        # dict of 6 key metrics
+best = pick_best(results)                      # best result dict from run_batch() output
+ranked = rank_strategies(results, sort_by="Total Return (%)")  # sorted list
+```
 
 ### Metrics
 
@@ -129,11 +160,25 @@ class MyStrategy(SignalBase):
 Discovers and loads custom strategy Python files from a directory:
 
 ```python
+# The extensions module is now portable — works from any working directory.
+# No sys.path manipulation needed.
 from framework.extensions import register_custom, load_custom_strategies
 
-# Loading all .py files from a directory
+# Loading all .py files from a directory (20+ files → 100+ strategies)
 custom_strategies = load_custom_strategies("app/backtest/custom/")
+
+# Loading only specific module files (recommended — avoids loading irrelevant strategies)
+custom_strategies = load_custom_strategies(
+    "app/backtest/custom",
+    module_names=["ba_defense_meanrev", "ba_regime_filter_meanrev"]
+)
 ```
+
+> **⚠️ Do NOT load all custom strategies for a single-ticker backtest.** There are 20+ files covering 10+ different tickers, producing 100+ strategies. Most are irrelevant. Use `python app/analyse-market-data/get_evaluation_data.py {ticker} --custom-strategies` to discover relevant ones, then load only those via `module_names`.
+
+> **Note:** The `load_custom_strategies()` function internally resolves the project root from its own file location (`Path(__file__).parents[3]`), so it works correctly even when called from scripts in `/tmp/` or any other directory. The `_resolve_framework_import()` function pre-populates `sys.modules` to ensure a single `_custom_registry` across all import paths.
+
+> **JSON serialization:** The `run_backtest_analysis.py` helper includes a `_NumpyEncoder` class that handles numpy int64/floating types (e.g., `ta_supertrend_direction`) so they serialize correctly to JSON. All `json.dumps()` calls in the script use `cls=_NumpyEncoder`.
 
 ### Report Generator
 
@@ -155,7 +200,77 @@ report_path = generate_report(
 
 ## Running Backtests
 
-### Single Ticker
+### Quick Start — Primary Helper: `run_backtest_analysis.py`
+
+**Recommended entry point for investment-strategy Phase 2.** Combines data snapshot, indicators, forward returns, yearly performance, and backtest results in one JSON output. Works from any working directory.
+
+```bash
+# Full analysis: data snapshot + all built-in strategies (recommended)
+python app/backtest/run_backtest_analysis.py NG.L --cutoff YYYY-MM-DD --json --no-report
+
+# Data snapshot only (no backtest) — fast, for Phase 1
+python app/backtest/run_backtest_analysis.py NG.L --no-backtest --json
+
+# Forward returns stats only
+python app/backtest/run_backtest_analysis.py NG.L --forward-returns
+
+# Yearly performance only
+python app/backtest/run_backtest_analysis.py NG.L --yearly
+
+# With custom strategies
+python app/backtest/run_backtest_analysis.py NG.L --cutoff YYYY-MM-DD --custom NG.L_custom --json --no-report
+
+# Only a specific group
+python app/backtest/run_backtest_analysis.py NG.L --group mean-reversion --json --no-report
+
+# Verbose per-strategy details (human-readable)
+python app/backtest/run_backtest_analysis.py NG.L --cutoff YYYY-MM-DD --verbose --no-report
+```
+
+### Quick Start — Portable Backtest Helper: `run_strategy_backtest.py`
+
+For focused backtest runs without the data snapshot overhead. **Works from any directory.**
+
+```bash
+# List available strategies WITHOUT running a backtest (use this first!)
+python app/backtest/run_strategy_backtest.py NG.L --list
+python app/backtest/run_strategy_backtest.py NG.L --list --custom NG.L_custom
+
+# All built-in strategies
+python app/backtest/run_strategy_backtest.py NG.L
+
+# With custom cutoff
+python app/backtest/run_strategy_backtest.py NG.L --cutoff YYYY-MM-DD
+
+# With custom strategies (by module file name WITHOUT .py)
+python app/backtest/run_strategy_backtest.py NG.L --custom NG.L_custom
+
+# Multiple custom modules
+python app/backtest/run_strategy_backtest.py NG.L --custom ba_defense_meanrev ba_regime_filter
+
+# JSON output for programmatic consumption
+python app/backtest/run_strategy_backtest.py NG.L --cutoff YYYY-MM-DD --json --no-report
+
+# Skip HTML report generation
+python app/backtest/run_strategy_backtest.py NG.L --no-report
+
+# Built-ins only (no custom)
+python app/backtest/run_strategy_backtest.py NG.L --builtins-only
+
+# Filter by group name
+python app/backtest/run_strategy_backtest.py NG.L --group mean-reversion
+
+# Verbose: print per-strategy details
+python app/backtest/run_strategy_backtest.py NG.L --verbose --no-report
+```
+
+> **⚠️ IMPORTANT — `--custom` takes module file names, NOT strategy names:**
+> - File: `ba_defense_meanrev.py` → CLI: `--custom ba_defense_meanrev`
+> - Wrong: `--custom ba_defense` (truncated) or `--custom signal_ba_defense_meanrev` (strategy name)
+> - Use `--list` before running to verify your module names are correct
+> - `--dry-run` does **NOT** exist on this script — use `--list` instead
+
+### Single Ticker (Original CLI)
 
 ```bash
 # Default config (all 32 strategies)

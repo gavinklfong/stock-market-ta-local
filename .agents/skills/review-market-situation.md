@@ -20,10 +20,20 @@ These CSV files have **108 columns** and **1,800–3,600 rows** (~7–8 MB each)
 **Use the companion script (one call, all data):**
 
 ```bash
-python app/analyse-market-data/get_evaluation_data.py {ticker} 2025-06-15 --latest-30
+python app/analyse-market-data/get_evaluation_data.py {ticker} {evaluation_date} --latest-30
 ```
 
-This outputs a single JSON with: `latest` row, all `indicators` (100+ TA columns), `52week` range, and `recent_context` (last 30 rows). Parse the JSON to extract values for each dimension.
+This outputs a single JSON with: `latest` row, all `indicators` (90+ TA columns across 8 categories), `52week` range, and `recent_context` (last 30 rows with regime + volume + volatility data). Parse the JSON to extract values for each dimension.
+
+**Filter by category:** If you only need indicators for a specific dimension, use `--category`:
+
+```bash
+python app/analyse-market-data/get_evaluation_data.py {ticker} --category trend
+python app/analyse-market-data/get_evaluation_data.py {ticker} --category structure
+python app/analyse-market-data/get_evaluation_data.py {ticker} --category trend volume
+```
+
+Valid categories: `trend`, `momentum`, `return`, `structure`, `volatility`, `volume`, `regime`, `fundamentals`.
 
 **Date resolution:** If the specified date does not exist in the CSV (e.g. weekend/holiday), the companion script automatically falls back to the latest available date **on or before** the specified date. If the specified date is after the last row, the script uses the latest available date and notes the discrepancy in `date_range`. The `{actual_date}` field in the output reflects the resolved date. See `{actual_date}` in Step 1 for how to use the resolved date.
 
@@ -182,8 +192,8 @@ All 7 dimensions use the **same weighted scoring system**: each factor is rated 
    - `{data_range_start}` = `date_range.start` — earliest date in the dataset
    - `{total_rows}` = `total_rows` — total rows in the file (for reporting; historical cutoff count is not tracked by the script)
    - `{high_52w}` = `52week.high_52w`, `{low_52w}` = `52week.low_52w`
-   - `{indicators}` = the `indicators` object — all 81+ TA column values as key-value pairs
-   - `{recent_context}` = the `recent_context` array — last 30 rows for regime/volatility trend checks
+   - `{indicators}` = the `indicators` object — all 90+ TA column values (across 8 categories: trend, momentum, return, structure, volatility, volume, regime, fundamentals) as key-value pairs
+   - `{recent_context}` = the `recent_context` array — last 30 rows with `date`, `close`, regime columns (`ta_regime_label`, `ta_hmm_regime_prob_0/1/2`), volume columns (`ta_obv`, `ta_cmf`, `ta_vwap`, `ta_adl`), volatility columns (`ta_atr14`, `ta_atr_percentile`, `ta_bband_upper`/`middle`/`lower`/`pctb`), and volume intensity columns (`ta_volume_zscore`, `ta_volume_percentile`). Use for multi-row computations.
 
 3. **Handle missing data:**
    - If any indicator value is `null`/`None`, **skip that indicator** in scoring
@@ -200,6 +210,7 @@ All 7 dimensions use the **same weighted scoring system**: each factor is rated 
       - **Stability** (e.g., regime changes): Count unique values across all entries. >2 = unstable
       - **Recent flips** (e.g., SuperTrend direction changes): Count transitions between +1/-1 between consecutive entries
     - Example (conceptual): iterate `recent_context` array, collect `ta_regime_label` values, count unique → `len(set(entry["ta_regime_label"] for entry in recent_context))`
+    - The expanded `recent_context` now includes volume columns (`ta_obv`, `ta_cmf`, `ta_vwap`, `ta_adl`), volatility columns (`ta_atr14`, `ta_atr_percentile`, `ta_bband_*`), and volume intensity columns (`ta_volume_zscore`, `ta_volume_percentile`) — all available for multi-row trend/average/stability computations without falling back to `tail`.
 
     **Fallback: `tail` when companion script data is insufficient**
     - If `recent_context` doesn't contain a needed column, use `tail -30 data/analysis-data/{ticker}.csv` as fallback

@@ -30,6 +30,66 @@ def register_custom(name: str):
     return wrapper
 
 
+def _resolve_framework_import():
+    """Resolve the framework package for aliasing, working from any CWD.
+
+    The custom strategy files use ``from framework.extensions import register_custom``.
+    This must resolve to the same ``_custom_registry`` that this module defines.
+
+    Strategy:
+    1. Find the project root from this file's own location.
+    2. Add it to ``sys.path`` so ``app.backtest.framework`` resolves.
+    3. Pre-populate ``sys.modules['app.backtest.framework.extensions']`` with
+       the ALREADY-LOADED ``framework.extensions`` module so the relative
+       import inside ``framework/__init__.py`` reuses it instead of creating
+       a second copy.
+    4. Import the package, then alias bare names for convenience.
+
+    Returns
+    -------
+    tuple[module, module]
+        (framework_pkg, extensions_mod) — both from the project root import.
+    """
+    # Path to this file:  .../stock-market-ta-local/app/backtest/framework/extensions.py
+    _this_file = Path(__file__).resolve()
+    # parents[0]=framework, [1]=backtest, [2]=app, [3]=project root
+    _project_root = _this_file.parents[3]
+
+    # Add the PROJECT ROOT so "app" is importable.
+    _root_str = str(_project_root)
+    if _root_str not in sys.path:
+        sys.path.insert(0, _root_str)
+
+    # CRITICAL: Before importing the package, pre-register the already-loaded
+    # ``framework.extensions`` module under the dotted name.  When
+    # ``framework/__init__.py`` does ``from .extensions import ...``, Python
+    # checks ``sys.modules`` first and finds our entry, reusing the SAME
+    # module object (and therefore the same ``_custom_registry``).
+    _existing_ext = sys.modules.get("framework.extensions")
+    if _existing_ext is not None:
+        sys.modules["app.backtest.framework.extensions"] = _existing_ext
+
+    # Now import — the relative import inside __init__.py will find our
+    # pre-populated entry and reuse the same module object.
+    _fw = importlib.import_module("app.backtest.framework")
+
+    # Retrieve extensions via sys.modules (not as package attribute, since
+    # __init__.py does ``from .extensions import ...`` not ``import .extensions``)
+    _imported_ext = sys.modules["app.backtest.framework.extensions"]
+
+    # Safety check (fail fast if our assumption broke)
+    assert _imported_ext is _existing_ext, (
+        f"Module mismatch! _imported_ext={id(_imported_ext)} != "
+        f"_existing_ext={id(_existing_ext)}"
+    )
+
+    # Alias bare names so ``import framework`` works everywhere.
+    sys.modules["framework"] = _fw
+    sys.modules["framework.extensions"] = _imported_ext
+
+    return _fw, _imported_ext
+
+
 def load_custom_strategies(
     custom_dir: str | Path,
     module_names: list[str] | None = None,
@@ -52,6 +112,10 @@ def load_custom_strategies(
     custom_dir = Path(custom_dir)
     _custom_registry.clear()
 
+    # Ensure `from framework.extensions import register_custom` in custom modules
+    # resolves to THIS module object, not a duplicate loaded via sys.path.
+    _fw, _ext = _resolve_framework_import()
+
     files = list(custom_dir.glob("*.py"))
     files = [f for f in files if f.name != "__init__.py"]
 
@@ -61,8 +125,6 @@ def load_custom_strategies(
         spec = importlib.util.spec_from_file_location(fp.stem, fp)
         if spec and spec.loader:
             mod = importlib.util.module_from_spec(spec)
-            # Make the backtest framework discoverable
-            sys.path.insert(0, str(custom_dir.parent))
             spec.loader.exec_module(mod)
 
     return dict(_custom_registry)
