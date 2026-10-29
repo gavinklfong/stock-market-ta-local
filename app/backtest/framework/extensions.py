@@ -1,4 +1,15 @@
-"""Custom strategy loader — discovers and validates per-ticker custom strategies."""
+"""Custom strategy loader — discovers and validates per-ticker custom strategies.
+
+Directory layout (per-ticker subdirectories):
+
+    custom/
+    ├── BA.L/
+    │   └── ba_defense_meanrev.py
+    ├── NG.L/
+    │   └── NG.L_custom.py
+    ├── template_strategy.py   ← stays at top level
+    └── …
+"""
 
 from __future__ import annotations
 
@@ -77,11 +88,14 @@ def _resolve_framework_import():
     # __init__.py does ``from .extensions import ...`` not ``import .extensions``)
     _imported_ext = sys.modules["app.backtest.framework.extensions"]
 
-    # Safety check (fail fast if our assumption broke)
-    assert _imported_ext is _existing_ext, (
-        f"Module mismatch! _imported_ext={id(_imported_ext)} != "
-        f"_existing_ext={id(_existing_ext)}"
-    )
+    # Safety check (fail fast if our assumption broke):
+    # When _existing_ext is None (fresh import), _imported_ext IS the canonical
+    # module — no mismatch possible.
+    if _existing_ext is not None:
+        assert _imported_ext is _existing_ext, (
+            f"Module mismatch! _imported_ext={id(_imported_ext)} != "
+            f"_existing_ext={id(_existing_ext)}"
+        )
 
     # Alias bare names so ``import framework`` works everywhere.
     sys.modules["framework"] = _fw
@@ -90,19 +104,52 @@ def _resolve_framework_import():
     return _fw, _imported_ext
 
 
+def _ticker_matches(ticker: str, stem: str) -> bool:
+    """Check whether a module stem belongs to *ticker*.
+
+    Matching rules (case-insensitive):
+      1. stem starts with the full ticker (e.g. "NG.L_custom" → "NG.L")
+      2. stem starts with the ticker base + underscore
+         (e.g. "ba_defense_meanrev" → "BA.L" base "BA")
+    """
+    ticker_lower = ticker.lower()
+    stem_lower = stem.lower()
+    ticker_base = ticker.split(".")[0].lower()
+
+    if stem_lower.startswith(ticker_lower):
+        return True
+    if stem_lower.startswith(ticker_base + "_"):
+        return True
+    return False
+
+
 def load_custom_strategies(
     custom_dir: str | Path,
     module_names: list[str] | None = None,
+    ticker: str | None = None,
 ) -> dict[str, Callable]:
     """Discover and load custom strategy Python files from *custom_dir*.
+
+    Directories are explored recursively; custom strategies are stored in
+    per-ticker subdirectories::
+
+        custom/
+        ├── BA.L/ba_defense_meanrev.py
+        ├── NG.L/NG.L_custom.py
+        └── template_strategy.py
 
     Parameters
     ----------
     custom_dir : str | Path
-        Directory containing ``*.py`` files with @register_custom strategies.
+        Root directory containing per-ticker subdirectories.
     module_names : list[str] | None
         If given, only load modules with these names (without .py suffix).
-        Pass None to load every ``*.py`` file in the directory.
+        Pass None to load every ``*.py`` file in the directory (excluding
+        ``template_strategy.py`` and ``__init__.py``).
+    ticker : str | None
+        If given, only load modules whose filename starts with this ticker
+        (case-insensitive).  E.g. ``ticker="NG.L"`` matches
+        ``NG.L_custom.py`` inside the ``NG.L/`` subdirectory.
 
     Returns
     -------
@@ -116,12 +163,20 @@ def load_custom_strategies(
     # resolves to THIS module object, not a duplicate loaded via sys.path.
     _fw, _ext = _resolve_framework_import()
 
-    files = list(custom_dir.glob("*.py"))
-    files = [f for f in files if f.name != "__init__.py"]
+    # Recursive glob: find all .py files in subdirectories (and top level).
+    files = sorted(custom_dir.rglob("*.py"))
+    files = [f for f in files if f.name not in ("__init__.py", "template_strategy.py")]
 
     for fp in files:
+        # ticker filter: only load modules relevant to the queried ticker
+        if ticker is not None:
+            if not _ticker_matches(ticker, fp.stem):
+                continue
+
+        # module_names filter: only load explicitly requested modules
         if module_names is not None and fp.stem not in module_names:
             continue
+
         spec = importlib.util.spec_from_file_location(fp.stem, fp)
         if spec and spec.loader:
             mod = importlib.util.module_from_spec(spec)

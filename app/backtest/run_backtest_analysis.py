@@ -411,7 +411,9 @@ def main() -> None:
     # Custom strategies
     if not args.builtins_only and args.custom:
         custom_dir = args.custom_dir or str(_PROJECT_ROOT / "app" / "backtest" / "custom")
-        custom = load_custom_strategies(custom_dir, module_names=args.custom)
+        custom = load_custom_strategies(
+            custom_dir, module_names=args.custom, ticker=args.ticker,
+        )
         strategies.update(custom)
         labels.update({k: k for k in custom})
         print(f"Custom strategies loaded: {list(custom.keys())}", file=sys.stderr)

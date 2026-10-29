@@ -143,6 +143,8 @@ All data retrieval for this skill should use the helper script:
 python app/analyse-market-data/get_evaluation_data.py {ticker} [date] [options]
 ```
 
+> **Note:** `get_evaluation_data.py` **outputs JSON by default** — no `--json` flag needed. The `--json` flag is accepted as a no-op alias for compatibility with other backtest scripts (e.g. `run_backtest_analysis.py`, `run_strategy_backtest.py`). Similarly, `--no-report` is a no-op since no HTML is generated.
+
 ### Essential commands
 
 | Command | Purpose |
@@ -257,7 +259,7 @@ Trend following · Mean reversion · Momentum · Contrarian · Dividend income �
 
 | Directory | Purpose | Naming convention | Example |
 |-----------|---------|-------------------|---------|
-| `app/backtest/custom/` | Strategy module files (registered with `@register_custom`) | `{custom_name}.py` | `my_strategy.py` |
+| `app/backtest/custom/{ticker}/` | Strategy module files (registered with `@register_custom`) — per-ticker subdirectories | `{function}.py` | `meanrev.py` |
 | `app/backtest/custom_scripts/` | One-off analysis / backtest scripts | `{Ticker}_{function}.py` | `NG.L_backtest.py` |
 | `app/backtest/configs/` | Per-ticker YAML configs | `{Ticker}_{function}.yaml` | `NG_L_optimized.yaml` |
 
@@ -274,7 +276,7 @@ Trend following · Mean reversion · Momentum · Contrarian · Dividend income �
 | `app/backtest/run_backtest.py` | CLI entry point (`python app/backtest/run_backtest.py {ticker} --cutoff YYYY-MM-DD`) |
 | `app/backtest/run_backtest_analysis.py` | **Primary helper — works from ANY directory** — combines data snapshot, indicators, forward returns, yearly performance, AND backtest results in one JSON. Recommended for Phase 2. |
 | `app/backtest/run_strategy_backtest.py` | **Portable backtest-only helper** — handles all path resolution, outputs JSON. Use for focused backtest runs. |
-| `app/backtest/custom/template_strategy.py` | Template for custom strategies |
+| `app/backtest/custom/template_strategy.py` | Template for custom strategies (copy into ticker subdirectory) |
 | `app/backtest/custom_scripts/NG.L_backtest.py` | NG.L-focused reference (32 strategies, optimization notes) |
 | `docs/all_technical_analysis.md` | Complete TA indicator reference (all 12 sections, 1268 lines) |
 | `data/analysis-data/{ticker}.csv` | Input data: OHLCV + all `ta_` prefixed columns + P/E data |
@@ -426,7 +428,7 @@ If no built-in strategy achieves satisfactory results, or if a specific pattern 
    python app/analyse-market-data/get_evaluation_data.py {ticker} --custom-strategies
    ```
    This returns a JSON with `custom_strategies` grouped by ticker — e.g. `"BA.L": ["ba_defense_meanrev", "ba_regime_filter_meanrev", ...]`.
-2. Copy `app/backtest/custom/template_strategy.py` to `app/backtest/custom/{custom_name}.py`
+2. Copy `app/backtest/custom/template_strategy.py` to `app/backtest/custom/{ticker}/{custom_name}.py` (create the ticker subdirectory if needed)
 3. Create a new signal function with `@register_custom("custom_name")` decorator
 4. Function signature: `def custom_name(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]`
 5. Return entries (int 1s) and exits (int -1s)
@@ -441,13 +443,15 @@ If no built-in strategy achieves satisfactory results, or if a specific pattern 
 from app.backtest.framework.extensions import load_custom_strategies
 
 # CORRECT: pass a DIRECTORY path, not a file path
-custom = load_custom_strategies("app/backtest/custom")
+# The ticker parameter filters to modules for the given ticker (case-insensitive)
+custom = load_custom_strategies("app/backtest/custom", ticker="NG.L")
 print("Loaded strategies:", list(custom.keys()))
 
 # To load only specific module files:
 custom = load_custom_strategies(
     "app/backtest/custom",
-    module_names=["sbry_bb"]   # only loads sbry_bb.py
+    module_names=["sbry_bb"],
+    ticker="SBRY.L"   # also filters by ticker prefix
 )
 ```
 
@@ -745,7 +749,7 @@ Use these thresholds to guide whether a strategy is worth pursuing (adjust per t
 - **Default cutoff** is `2016-10-15` (~10 years) — adjust based on `{year}` parameter
 - **Initial capital:** £100,000, **Commission:** 0.1%, **Slippage:** 0.1% (from `app.backtest.framework.engine`)
 - **vectorbt** simulates portfolios — signals must return `int` Series (1, 0, -1)
-- **Custom strategies** in `app/backtest/custom/` must use `@register_custom("name")` decorator and import `from framework.extensions import register_custom`
+- **Custom strategies** in `app/backtest/custom/{ticker}/` (per-ticker subdirectories) must use `@register_custom("name")` decorator and import `from framework.extensions import register_custom`
 - **Strategy function** signature: `def name(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]`
 - **Built-in strategy functions** use `signal_` prefix: `signal_bb_meanrev`, `signal_golden_cross`, etc. Use `grep "def signal_"` to find them, NOT `grep "def bb_meanrev"`.
 - **Ticker identity:** Always resolve via `get_evaluation_data.py` (reads `config/ticker_list.csv`). Never guess company names from ticker symbols. `NG.L` = **National Grid** (Utilities), not "Natural Gas".
@@ -808,7 +812,8 @@ When creating portfolios or reading trade metrics:
 #### `load_custom_strategies()` programmatically
 
 - `load_custom_strategies("app/backtest/custom")` takes a **directory**, not a file path.
-- It clears the registry then globs `*.py` files — all files in the directory are loaded.
+- It clears the registry then uses `rglob("*.py")` — discovers all `.py` files recursively in per-ticker subdirectories.
 - Only functions decorated with `@register_custom("name")` appear in the returned dict.
-- To load specific modules only: `load_custom_strategies("app/backtest/custom", module_names=["ba_defense_meanrev", "ba_regime_filter"])`
-- If a custom strategy doesn't show up, verify: (1) file is in the custom/ directory, (2) has `@register_custom("name")`, (3) imports `register_custom` from `framework.extensions`, (4) the decorator name matches the intended strategy key.
+- To load only strategies for a specific ticker: `load_custom_strategies("app/backtest/custom", ticker="NG.L")` (case-insensitive prefix match).
+- To load specific modules only: `load_custom_strategies("app/backtest/custom", module_names=["NG.L_custom", "NG.L_variants"], ticker="NG.L")`
+- If a custom strategy doesn't show up, verify: (1) file is in the correct `{ticker}/` subdirectory, (2) has `@register_custom("name")`, (3) imports `register_custom` from `framework.extensions`, (4) the decorator name matches the intended strategy key.

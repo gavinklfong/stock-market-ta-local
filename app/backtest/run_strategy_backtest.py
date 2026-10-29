@@ -158,7 +158,9 @@ def main() -> None:
 
     # Custom strategies
     if not args.builtins_only and args.custom:
-        custom = load_custom_strategies(custom_dir, module_names=args.custom)
+        custom = load_custom_strategies(
+            custom_dir, module_names=args.custom, ticker=args.ticker,
+        )
         strategies.update(custom)
         labels.update({k: k for k in custom})
         print(f"Custom strategies loaded: {list(custom.keys())}", file=sys.stderr)
@@ -184,18 +186,48 @@ def main() -> None:
             is_custom = name not in STRATEGIES
             marker = " [CUSTOM]" if is_custom else ""
             print(f"  {label}{marker}", file=sys.stderr)
-        print(f"\nCustom module files in {custom_dir}:", file=sys.stderr)
-        for pyfile in sorted(Path(custom_dir).glob("*.py")):
-            if pyfile.name == "template_strategy.py":
+
+        # List custom modules grouped by ticker subdirectory
+        print(f"\nCustom modules (grouped by ticker):", file=sys.stderr)
+        custom_path = Path(custom_dir)
+        # Walk ticker subdirectories
+        for subdir in sorted(custom_path.iterdir()):
+            if not subdir.is_dir():
+                continue
+            ticker_dir_name = subdir.name
+            ticker_files = sorted(subdir.glob("*.py"))
+            ticker_files = [f for f in ticker_files
+                            if f.name not in ("__init__.py", "template_strategy.py")]
+            for pyfile in ticker_files:
+                stem = pyfile.stem
+                in_requested = stem in (args.custom or [])
+                prefix = "  >>> " if in_requested else "      "
+                print(f"{prefix}{stem}  ({ticker_dir_name}/)", file=sys.stderr)
+        # Also list top-level .py files (excluding template)
+        for pyfile in sorted(custom_path.glob("*.py")):
+            if pyfile.name in ("__init__.py", "template_strategy.py"):
                 continue
             stem = pyfile.stem
             in_requested = stem in (args.custom or [])
             prefix = "  >>> " if in_requested else "      "
-            print(f"{prefix}{stem} ({pyfile.name})", file=sys.stderr)
+            print(f"{prefix}{stem}  (top-level)", file=sys.stderr)
+
         if args.custom:
+            # Verify requested modules exist in the new nested structure
             for mod in args.custom:
-                if not Path(custom_dir).joinpath(f"{mod}.py").exists():
-                    print(f"  WARNING: {mod}.py NOT FOUND in {custom_dir}", file=sys.stderr)
+                found = False
+                # Check ticker subdirectories
+                for subdir in custom_path.iterdir():
+                    if subdir.is_dir() and (subdir / f"{mod}.py").exists():
+                        found = True
+                        break
+                # Check top-level
+                if not found and (custom_path / f"{mod}.py").exists():
+                    found = True
+                if not found:
+                    print(f"  WARNING: {mod}.py NOT FOUND — check --custom module names",
+                          file=sys.stderr)
+
         print(f"\nUse --custom {sorted(args.custom)[0] if args.custom else '<module_name>'} to run with custom strategies.", file=sys.stderr)
         return
 

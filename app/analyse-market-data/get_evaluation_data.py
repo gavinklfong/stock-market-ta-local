@@ -455,6 +455,9 @@ def main():
                         help="Only include indicators from these categories (e.g. trend momentum)")
     parser.add_argument("--custom-strategies", action="store_true",
                         help="List available custom strategies grouped by ticker")
+    # No-op aliases for compatibility with other backtest scripts (AI models commonly add these)
+    parser.add_argument("--json", action="store_true", help="Output as JSON (default — this flag is a no-op)")
+    parser.add_argument("--no-report", action="store_true", help="Skip report generation (no-op — no HTML generated here)")
     args = parser.parse_args()
 
     df = load_data(args.ticker, args.date)
@@ -558,6 +561,8 @@ def main():
 def _list_custom_strategies(custom_dir: Path, ticker: str) -> dict:
     """List all custom strategies grouped by ticker, with their registered names.
 
+    Scans per-ticker subdirectories under *custom_dir* recursively.
+
     Returns a dict mapping ticker -> list of strategy names found in that ticker's files.
     Only lists strategies relevant to the queried ticker plus a 'generic' group for
     ticker-agnostic strategies.
@@ -569,19 +574,22 @@ def _list_custom_strategies(custom_dir: Path, ticker: str) -> dict:
 
     ticker_base = ticker.split(".")[0]
 
-    for pyfile in sorted(custom_dir.glob("*.py")):
-        if pyfile.name == "template_strategy.py":
+    # Recursive glob: walk ticker subdirectories
+    for pyfile in sorted(custom_dir.rglob("*.py")):
+        if pyfile.name in ("__init__.py", "template_strategy.py"):
             continue
 
-        # Determine which ticker this file belongs to
         fname = pyfile.stem  # e.g. "NG.L_custom" or "ba_defense_meanrev"
 
-        # Check if filename starts with the ticker base (e.g. "NG.L_custom" starts with "NG")
-        # or the full ticker (e.g. "NG.L_custom" starts with "NG.L")
-        ticker_prefix = ticker.replace(".", "_")
-        file_ticker = "generic"
+        # Determine which ticker this file belongs to
+        ticker_lower = ticker.lower()
+        ticker_base_lower = ticker_base.lower()
+        fname_lower = fname.lower()
 
-        if fname.startswith(ticker) or fname.startswith(ticker_prefix) or fname == ticker.replace(".", ""):
+        file_ticker = "generic"
+        if fname_lower.startswith(ticker_lower):
+            file_ticker = ticker
+        elif fname_lower.startswith(ticker_base_lower + "_"):
             file_ticker = ticker
 
         # Try to extract @register_custom names from the file

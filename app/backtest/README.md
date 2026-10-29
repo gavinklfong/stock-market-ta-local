@@ -33,9 +33,17 @@ app/backtest/
 │   ├── NG.L_optimized.yaml        # NG.L optimized (10 mean-reversion strategies). Ticker-specific config — use `{Ticker}_{function}.yaml`
 │   └── trend_stock.yaml         # Trend-following for stock tickers
 └── custom/
-    ├── template_strategy.py     # Starter template
-    └── NG.L_custom.py             # Example custom strategies. Ticker-specific scripts — use `{Ticker}_{function}.py`
-└── custom_scripts/              # Ticker-specific scripts — use `{Ticker}_{function}.py`
+    ├── BA.L/ba_defense_meanrev.py
+    ├── BARC.L/BARC.L_custom.py
+    ├── LGEN.L/LGEN.L_strategies.py       # ... 6 files total
+    ├── LSEG.L/LSEG.L_vwap_regime.py
+    ├── MKS/mks_strategies.py             # ... 4 files total
+    ├── NG.L/NG.L_custom.py
+    ├── SBRY.L/sbry_bb.py                 # ... 2 files total
+    ├── STAN.L/STAN.L_custom.py
+    ├── SVT.L/SVT.L_range_reversion.py    # ... 4 files total
+    ├── VUKG/vukg_strategies.py
+    └── template_strategy.py              # Starter template (top-level)
 ```
 
 ### Data Flow
@@ -157,24 +165,25 @@ class MyStrategy(SignalBase):
 
 ### Extensions (Custom Strategy Loader)
 
-Discovers and loads custom strategy Python files from a directory:
+Discovers and loads custom strategy Python files from a directory with **per-ticker subdirectories**:
 
 ```python
 # The extensions module is now portable — works from any working directory.
 # No sys.path manipulation needed.
 from framework.extensions import register_custom, load_custom_strategies
 
-# Loading all .py files from a directory (20+ files → 100+ strategies)
-custom_strategies = load_custom_strategies("app/backtest/custom/")
-
-# Loading only specific module files (recommended — avoids loading irrelevant strategies)
+# Loading only specific module files for a ticker (recommended)
 custom_strategies = load_custom_strategies(
     "app/backtest/custom",
-    module_names=["ba_defense_meanrev", "ba_regime_filter_meanrev"]
+    module_names=["NG.L_custom"],
+    ticker="NG.L"           # also filters by ticker prefix
 )
+
+# Loading all custom strategies (across all tickers)
+custom_strategies = load_custom_strategies("app/backtest/custom/")
 ```
 
-> **⚠️ Do NOT load all custom strategies for a single-ticker backtest.** There are 20+ files covering 10+ different tickers, producing 100+ strategies. Most are irrelevant. Use `python app/analyse-market-data/get_evaluation_data.py {ticker} --custom-strategies` to discover relevant ones, then load only those via `module_names`.
+> **⚠️ Do NOT load all custom strategies for a single-ticker backtest.** There are 20+ files covering 10+ different tickers, producing 100+ strategies. Most are irrelevant. Use `python app/analyse-market-data/get_evaluation_data.py {ticker} --custom-strategies` or `python app/backtest/run_strategy_backtest.py {ticker} --list` to discover relevant ones, then load only those via `module_names`.
 
 > **Note:** The `load_custom_strategies()` function internally resolves the project root from its own file location (`Path(__file__).parents[3]`), so it works correctly even when called from scripts in `/tmp/` or any other directory. The `_resolve_framework_import()` function pre-populates `sys.modules` to ensure a single `_custom_registry` across all import paths.
 
@@ -199,6 +208,20 @@ report_path = generate_report(
 ```
 
 ## Running Backtests
+
+### Pre-flight: Get Data with `get_evaluation_data.py`
+
+Before running backtests, get the data snapshot (company name, sector, indicators, OHLCV):
+```bash
+# Basic snapshot (outputs JSON by default)
+python app/analyse-market-data/get_evaluation_data.py {ticker}
+
+# With cutoff date for backtest alignment
+python app/analyse-market-data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD
+
+# The --json and --no-report flags are accepted as no-op aliases (for compatibility with other backtest scripts)
+python app/analyse-market-data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD --json --no-report
+```
 
 ### Quick Start — Primary Helper: `run_backtest_analysis.py`
 
@@ -349,11 +372,23 @@ trailing_pct: 0.05
 
 ## Custom Strategies
 
+### Directory Layout
+
+Custom strategies live in per-ticker subdirectories under `app/backtest/custom/`:
+
+```
+app/backtest/custom/
+├── BA.L/ba_defense_meanrev.py
+├── NG.L/NG.L_custom.py
+├── LGEN.L/LGEN.L_strategies.py
+└── template_strategy.py   ← stays at top level
+```
+
 ### Quick Start
 
-1. **Copy the template** and rename it:
+1. **Copy the template** into the appropriate ticker subdirectory:
    ```bash
-   cp app/backtest/custom/template_strategy.py app/backtest/custom/my_strategy.py
+   cp app/backtest/custom/template_strategy.py app/backtest/custom/NG.L/my_strategy.py
    ```
 
 2. **Implement your strategy function** using the `@register_custom` decorator:
@@ -368,18 +403,9 @@ trailing_pct: 0.05
        return entries.astype(int), exits.astype(int)
    ```
 
-3. **Reference it in your YAML config**:
-   ```yaml
-   strategies:
-     - module: my_strategy
-       label: "My Oversold/Overbought"
-
-   custom_dir: ../custom
-   ```
-
-4. **Run the backtest**:
+3. **Run the backtest** (CLI resolves the module by name):
    ```bash
-   python app/backtest/run_backtest.py NG.L -c my_config.yaml
+   python app/backtest/run_strategy_backtest.py NG.L --custom my_strategy
    ```
 
 ### Strategy Function Signature
@@ -461,37 +487,39 @@ def multi_indicator_long(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
 
 ### File Naming Convention
 
-When a file (strategy, config, or custom script) is specific to a particular ticker, its name must follow this pattern:
+When a file (strategy or config) is specific to a particular ticker, place it in the **ticker's subdirectory** under `app/backtest/custom/`:
 
 ```
-{ticker}_{function}.py    # Python strategy or script
-{ticker}_{function}.yaml  # YAML config file
+app/backtest/custom/
+├── {ticker}/              # Subdirectory named after the ticker
+│   └── {function}.py      # Strategy file (no ticker prefix needed in filename)
+├── template_strategy.py   ← stays at top level
+└── ...
 ```
 
 **Rules:**
 
-1. **`{ticker}`** — The ticker ID **in uppercase**, as it appears in `config/ticker_list.csv` and `data/analysis-data/`. For example: `LGEN.L`, `NG.L`, `BP.L`, `AZN.L`.
-   - **Correct:** `LGEN.L_crash_protected.py`, `NG.L_backtest.py`
-   - **Incorrect:** `lgen_crash_protected.py`, `ng_backtest.py`, `Lgen.L_strategy.py`
-2. **`{function}`** — A short descriptive name of the file's purpose (lowercase, underscore-separated).
-   - Examples: `backtest`, `optimized`, `crash_protected`, `exit_analysis`, `deep_analysis`
-3. **Location:** Place ticker-specific scripts in `app/backtest/custom_scripts/`. Place ticker-specific custom strategies in `app/backtest/custom/`. Place ticker-specific YAML configs in `app/backtest/configs/`.
+1. **Ticker subdirectory** — Named after the ticker as it appears in `config/ticker_list.csv`. For example: `LGEN.L`, `NG.L`, `BA.L`, `MKS`.
+   - **Correct:** `app/backtest/custom/LGEN.L/meanrev.py`, `app/backtest/custom/NG.L/custom.py`
+2. **`{function}`** — A short descriptive name of the file's purpose (lowercase, underscore-separated). No ticker prefix needed in the filename.
+   - Examples: `meanrev`, `custom`, `vwap_regime`, `range_reversion`
+3. **Location:** Place ticker-specific custom strategies in the corresponding ticker subdirectory under `app/backtest/custom/`. Place ticker-specific YAML configs in `app/backtest/configs/`.
 
-| File | Purpose | Correct Name |
+| File | Purpose | Correct Path |
 |------|---------|-------------|
-| Custom strategy for LGEN.L | Crash-protected mean reversion | `app/backtest/custom/LGEN.L_crash_protected.py` |
-| Custom backtest script | Deep dive into LGEN.L exits | `app/backtest/custom_scripts/LGEN.L_exit_analysis.py` |
+| Custom strategy for LGEN.L | Crash-protected mean reversion | `app/backtest/custom/LGEN.L/meanrev.py` |
 | YAML config | NG.L mean-reversion focused | `app/backtest/configs/NG.L_meanrev.yaml` |
-| Custom script | AZN.L optimized parameters | `app/backtest/custom_scripts/AZN.L_optimized.py` |
 
-**Note:** Built-in strategies (in `strategies/builtins.py`) are **ticker-agnostic** — they are not named with a ticker prefix. Only files that are **specific to a single ticker** (custom strategies, one-off scripts, per-ticker configs) should follow this naming convention.
+**Note:** Built-in strategies (in `strategies/builtins.py`) are **ticker-agnostic** — they are not named with a ticker prefix. Only files that are **specific to a single ticker** (custom strategies, per-ticker configs) should follow this naming convention.
 
 ### File Organization
 
-- Custom strategies live in any directory specified by `custom_dir` in the YAML config or `--custom-dir` CLI flag
+- Custom strategies live in per-ticker subdirectories under `app/backtest/custom/`
+- The `template_strategy.py` file stays at the top level of `app/backtest/custom/` for reference
 - Each `.py` file is imported once and its `@register_custom`-decorated functions are collected
 - File names and function names are independent — only the decorator name matters for lookups
 - Multiple files can register strategies with the same name; the last-loaded one wins
+- The `load_custom_strategies()` function supports `ticker` and `module_names` filters to load only relevant strategies
 
 ## Built-in Strategy Groups
 
