@@ -2,11 +2,11 @@
 """
 Orchestrate the full stock-data pipeline with Prefect:
 
-  1. Download OHLCV market data        (download-market-data/download_tickers.py)
-  2. Download P/E ratio data           (download-market-data/download_stock_info.py)
-  3. Run TA indicator calculations     (calculate-ta/run_calculation.py)
+  1. Download OHLCV market data        (download_market_data/download_tickers.py)
+  2. Download P/E ratio data           (download_market_data/download_stock_info.py)
+  3. Run TA indicator calculations     (calculate_ta/run_calculation.py)
   4. Merge market + TA data into analysis (inline)
-  5. Generate HTML analysis reports    (analyse-market-data/run_analysis.py)
+  5. Generate HTML analysis reports    (analyse_market_data/run_analysis.py)
 
 Steps 1 & 2 run in parallel (independent downloads).
 Steps 3, 4 & 5 run sequentially after both downloads complete.
@@ -42,10 +42,10 @@ from prefect.task_runners import ThreadPoolTaskRunner
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent  # …/stock-market-ta-local
 APP_DIR = PROJECT_ROOT / "app"
 
-DOWNLOAD_TICKERS = APP_DIR / "download-market-data" / "download_tickers.py"
-DOWNLOAD_STOCK_INFO = APP_DIR / "download-market-data" / "download_stock_info.py"
-TA_RUN_CALCULATION = APP_DIR / "calculate-ta" / "run_calculation.py"
-ANALYSIS_RUN = APP_DIR / "analyse-market-data" / "run_analysis.py"
+DOWNLOAD_TICKERS = APP_DIR / "download_market_data" / "download_tickers.py"
+DOWNLOAD_STOCK_INFO = APP_DIR / "download_market_data" / "download_stock_info.py"
+TA_RUN_CALCULATION = APP_DIR / "calculate_ta" / "run_calculation.py"
+ANALYSIS_RUN = APP_DIR / "analyse_market_data" / "run_analysis.py"
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ def merge_analysis_data(ticker: str | None = None) -> None:
     import pandas as pd
 
     # Reuse the yfinance CSV parser (handles multi-row headers)
-    sys.path.insert(0, str(APP_DIR / "calculate-ta"))
+    sys.path.insert(0, str(APP_DIR / "calculate_ta"))
     from common import read_yfinance_csv  # noqa: E402
 
     market_dir = PROJECT_ROOT / "data" / "market-data"

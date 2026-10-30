@@ -10,29 +10,29 @@ A modular, parallel pipeline that downloads OHLCV market data, computes technica
 
 ```bash
 # Download data
-python app/download-market-data/download_tickers.py      # OHLCV
-python app/download-market-data/download_stock_info.py   # P/E, dividends, fundamentals
+python app/download_market_data/download_tickers.py      # OHLCV
+python app/download_market_data/download_stock_info.py   # P/E, dividends, fundamentals
 
 # TA indicators (all 7 modules run in PARALLEL)
-python app/calculate-ta/run_calculation.py
-python app/calculate-ta/run_calculation.py trend momentum  # subset
-python app/calculate-ta/run_calculation.py --dry-run       # preview
+python app/calculate_ta/run_calculation.py
+python app/calculate_ta/run_calculation.py trend momentum  # subset
+python app/calculate_ta/run_calculation.py --dry-run       # preview
 
 # Full Prefect pipeline (downloads + TA + merge)
 python -m app.analysis_pipeline.run_pipeline
 
 # Analyse market data and generate HTML report (one file per ticker)
-python app/analyse-market-data/analyse_ticker.py              # all tickers
-python app/analyse-market-data/analyse_ticker.py AAPL MSFT    # specific
-python app/analyse-market-data/analyse_ticker.py --dry-run    # show data only
+python app/analyse_market_data/analyse_ticker.py              # all tickers
+python app/analyse_market_data/analyse_ticker.py AAPL MSFT    # specific
+python app/analyse_market_data/analyse_ticker.py --dry-run    # show data only
 
 # Analyse sector data
-python app/analyse-market-data/analyse_sector.py              # all sectors
-python app/analyse-market-data/analyse_sector.py Utilities   # specific
+python app/analyse_market_data/analyse_sector.py              # all sectors
+python app/analyse_market_data/analyse_sector.py Utilities   # specific
 
 # All-tickers overview report
-python app/analyse-market-data/analyse_all.py              # all tickers
-python app/analyse-market-data/analyse_all.py --dry-run    # show data only
+python app/analyse_market_data/analyse_all.py              # all tickers
+python app/analyse_market_data/analyse_all.py --dry-run    # show data only
 
 # Backtest
 python app/backtest/backtest_ng.py
@@ -40,7 +40,7 @@ python app/backtest/backtest_ng.py --strategy supertrend
 
 # Tests
 python run_test.py                              # all tests
-python run_test.py calculate-ta                 # TA module tests only
+python run_test.py calculate_ta                 # TA module tests only
 ```
 
 ### Architecture

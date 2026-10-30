@@ -7,5 +7,5 @@ import sys
 #   `from calculate_trend import ...`
 #   `import download_tickers`
 _project_root = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_project_root, "app", "calculate-ta"))
-sys.path.insert(0, os.path.join(_project_root, "app", "download-market-data"))
+sys.path.insert(0, os.path.join(_project_root, "app", "calculate_ta"))
+sys.path.insert(0, os.path.join(_project_root, "app", "download_market_data"))

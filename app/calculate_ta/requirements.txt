@@ -1,4 +1,4 @@
-# Direct dependencies (imported by calculate-ta scripts)
+# Direct dependencies (imported by calculate_ta scripts)
 pandas>=2.0.0
 numpy>=1.24.0
 arch>=7.0.0

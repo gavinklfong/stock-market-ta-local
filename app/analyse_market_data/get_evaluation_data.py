@@ -10,23 +10,23 @@ across 8 categories), `52week` range, and optional `recent_context` (30 rows).
 
 Usage:
     # Default: latest snapshot with indicators (investment-strategy skill primary)
-    python app/analyse-market-data/get_evaluation_data.py NG.L
-    python app/analyse-market-data/get_evaluation_data.py NG.L 2025-06-15         # specific date
-    python app/analyse-market-data/get_evaluation_data.py NG.L --cutoff 2016-10-26 # backtest cutoff
-    python app/analyse-market-data/get_evaluation_data.py NG.L --latest-30        # last 30 rows context
-    python app/analyse-market-data/get_evaluation_data.py NG.L --latest-30 --category trend momentum  # only these categories
+    python app/analyse_market_data/get_evaluation_data.py NG.L
+    python app/analyse_market_data/get_evaluation_data.py NG.L 2025-06-15         # specific date
+    python app/analyse_market_data/get_evaluation_data.py NG.L --cutoff 2016-10-26 # backtest cutoff
+    python app/analyse_market_data/get_evaluation_data.py NG.L --latest-30        # last 30 rows context
+    python app/analyse_market_data/get_evaluation_data.py NG.L --latest-30 --category trend momentum  # only these categories
 
     # Full data for backtesting / parameter optimization
-    python app/analyse-market-data/get_evaluation_data.py NG.L --full-df          # all columns as JSON rows
-    python app/analyse-market-data/get_evaluation_data.py NG.L --ohlcv            # OHLCV rows for VectorBT
-    python app/analyse-market-data/get_evaluation_data.py NG.L --cutoff 2016-10-26 --ohlcv
+    python app/analyse_market_data/get_evaluation_data.py NG.L --full-df          # all columns as JSON rows
+    python app/analyse_market_data/get_evaluation_data.py NG.L --ohlcv            # OHLCV rows for VectorBT
+    python app/analyse_market_data/get_evaluation_data.py NG.L --cutoff 2016-10-26 --ohlcv
 
     # Analysis helpers
-    python app/analyse-market-data/get_evaluation_data.py NG.L --forward-returns  # forward return statistics
-    python app/analyse-market-data/get_evaluation_data.py NG.L --yearly           # year-by-year performance
-    python app/analyse-market-data/get_evaluation_data.py NG.L --list-columns     # all columns by category
-    python app/analyse-market-data/get_evaluation_data.py NG.L --category trend   # only trend indicators
-    python app/analyse-market-data/get_evaluation_data.py NG.L --custom-strategies  # list available custom strategies
+    python app/analyse_market_data/get_evaluation_data.py NG.L --forward-returns  # forward return statistics
+    python app/analyse_market_data/get_evaluation_data.py NG.L --yearly           # year-by-year performance
+    python app/analyse_market_data/get_evaluation_data.py NG.L --list-columns     # all columns by category
+    python app/analyse_market_data/get_evaluation_data.py NG.L --category trend   # only trend indicators
+    python app/analyse_market_data/get_evaluation_data.py NG.L --custom-strategies  # list available custom strategies
 """
 
 import argparse
@@ -559,11 +559,27 @@ def main():
 
 
 def _list_custom_strategies(custom_dir: Path, ticker: str) -> dict:
-    """List all custom strategies grouped by ticker, with their registered names.
+    """List all custom strategies grouped by ticker, with module file names.
 
     Scans per-ticker subdirectories under *custom_dir* recursively.
 
-    Returns a dict mapping ticker -> list of strategy names found in that ticker's files.
+    Returns a dict mapping ticker -> list of entries in the format:
+      - Ticker-specific: ``"strategy_name (module: file_stem)"`` — the file_stem
+        (without .py) is what you pass to ``--custom``.
+      - Generic: ``"strategy_name (from filename.py)"`` — shows the full filename.
+
+    Example output::
+
+        {
+            "LGEN.L": [
+                "lgen_meanrev_risk (module: LGEN.L_meanrev_risk)",
+                "dividend_meanrev (module: LGEN.L_strategies)",
+            ],
+            "generic": [
+                "ba_defense_meanrev (from ba_defense_meanrev.py)",
+            ]
+        }
+
     Only lists strategies relevant to the queried ticker plus a 'generic' group for
     ticker-agnostic strategies.
     """
@@ -597,9 +613,14 @@ def _list_custom_strategies(custom_dir: Path, ticker: str) -> dict:
         for match in re.finditer(r'@register_custom\("([^"]+)"\)', content):
             name = match.group(1)
             if file_ticker == ticker:
-                result.setdefault(file_ticker, []).append(name)
+                # Ticker-specific: show module stem (without .py) — this is what --custom accepts
+                result.setdefault(file_ticker, []).append(
+                    f"{name} (module: {pyfile.stem})"
+                )
             else:
-                result.setdefault("generic", []).append(f"{name} (from {pyfile.name})")
+                result.setdefault("generic", []).append(
+                    f"{name} (from {pyfile.name})"
+                )
 
     # Clean up: remove empty lists
     result = {k: v for k, v in result.items() if v}

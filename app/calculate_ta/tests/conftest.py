@@ -1,4 +1,4 @@
-"""Shared helpers for calculate-ta tests."""
+"""Shared helpers for calculate_ta tests."""
 
 import os
 import pytest

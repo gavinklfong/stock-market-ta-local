@@ -11,7 +11,7 @@ Key points:
 - Function signature: def my_strategy(df: pd.DataFrame) -> tuple[pd.Series, pd.Series]
 - Return entries (1 = buy) and exits (-1 = sell) as int Series
 - Access TA columns via df["ta_column_name"]
-- All TA columns have the "ta_" prefix (see app/calculate-ta/README.md for column list)
+- All TA columns have the "ta_" prefix (see app/calculate_ta/README.md for column list)
 """
 
 from __future__ import annotations

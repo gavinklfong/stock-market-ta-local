@@ -183,7 +183,7 @@ custom_strategies = load_custom_strategies(
 custom_strategies = load_custom_strategies("app/backtest/custom/")
 ```
 
-> **⚠️ Do NOT load all custom strategies for a single-ticker backtest.** There are 20+ files covering 10+ different tickers, producing 100+ strategies. Most are irrelevant. Use `python app/analyse-market-data/get_evaluation_data.py {ticker} --custom-strategies` or `python app/backtest/run_strategy_backtest.py {ticker} --list` to discover relevant ones, then load only those via `module_names`.
+> **⚠️ Do NOT load all custom strategies for a single-ticker backtest.** There are 20+ files covering 10+ different tickers, producing 100+ strategies. Most are irrelevant. Use `python app/analyse_market_data/get_evaluation_data.py {ticker} --custom-strategies` or `python app/backtest/run_strategy_backtest.py {ticker} --list` to discover relevant ones, then load only those via `module_names`.
 
 > **Note:** The `load_custom_strategies()` function internally resolves the project root from its own file location (`Path(__file__).parents[3]`), so it works correctly even when called from scripts in `/tmp/` or any other directory. The `_resolve_framework_import()` function pre-populates `sys.modules` to ensure a single `_custom_registry` across all import paths.
 
@@ -214,13 +214,13 @@ report_path = generate_report(
 Before running backtests, get the data snapshot (company name, sector, indicators, OHLCV):
 ```bash
 # Basic snapshot (outputs JSON by default)
-python app/analyse-market-data/get_evaluation_data.py {ticker}
+python app/analyse_market_data/get_evaluation_data.py {ticker}
 
 # With cutoff date for backtest alignment
-python app/analyse-market-data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD
+python app/analyse_market_data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD
 
 # The --json and --no-report flags are accepted as no-op aliases (for compatibility with other backtest scripts)
-python app/analyse-market-data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD --json --no-report
+python app/analyse_market_data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD --json --no-report
 ```
 
 ### Quick Start — Primary Helper: `run_backtest_analysis.py`
@@ -444,7 +444,7 @@ All TA indicators use the `ta_` prefix. Common columns:
 | `ta_adx14` / `ta_di_plus` / `ta_di_minus` | ADX & Directional Indicators | trend |
 | `ta_hmm_regime` | HMM regime (0/1/2) | regime |
 
-See `app/calculate-ta/README.md` for the full column list.
+See `app/calculate_ta/README.md` for the full column list.
 
 ### Example: RSI Bounce
 
@@ -514,6 +514,33 @@ app/backtest/custom/
 | YAML config | NG.L mean-reversion focused | `app/backtest/configs/NG.L_meanrev.yaml` |
 
 **Note:** Built-in strategies (in `strategies/builtins.py`) are **ticker-agnostic** — they are not named with a ticker prefix. Only files that are **specific to a single ticker** (custom strategies, per-ticker configs) should follow this naming convention.
+
+### Strategy Names vs Module File Names — IMPORTANT
+
+Each custom strategy has **two identifiers**:
+
+| Concept | What it is | Example | Used by |
+|---------|-----------|---------|---------|
+| **Strategy name** | String in `@register_custom("…")` decorator | `lgen_meanrev_risk`, `dividend_meanrev` | `load_custom_strategies()` dict key; backtest results display |
+| **Module file name** | Python file stem (without `.py`) | `LGEN.L_meanrev_risk`, `LGEN.L_strategies` | `--custom` CLI flag |
+
+**To find the mapping:**
+```bash
+# Shows all strategies with their module file names
+python app/analyse_market_data/get_evaluation_data.py LGEN.L --custom-strategies
+# Output: {"LGEN.L": ["lgen_meanrev_risk (module: LGEN.L_meanrev_risk)", ...]}
+```
+
+**Usage:**
+```bash
+# Correct: --custom uses the FILE STEM (module file name)
+python app/backtest/run_strategy_backtest.py LGEN.L --custom LGEN.L_strategies
+
+# Wrong: strategy name is NOT accepted by --custom
+# python app/backtest/run_strategy_backtest.py LGEN.L --custom dividend_meanrev
+```
+
+> **Key rule:** `--custom` accepts **module file names** (file stems), NOT registered strategy names. A single `.py` file can contain multiple `@register_custom`-decorated strategies — passing the module loads **all** strategies defined in that file.
 
 ### File Organization
 

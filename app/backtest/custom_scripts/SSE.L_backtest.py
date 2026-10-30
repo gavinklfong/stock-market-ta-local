@@ -48,7 +48,7 @@ import quantstats as qs
 from datetime import datetime
 
 warnings.filterwarnings("ignore")
-sys.path.insert(0, str(Path(__file__).parent / ".." / "calculate-ta"))
+sys.path.insert(0, str(Path(__file__).parent / ".." / "calculate_ta"))
 
 # Configuration
 DATA_PATH = Path(__file__).parent.parent.parent / "data" / "analysis-data" / "SSE.L.csv"

@@ -6,10 +6,10 @@ Modular, parallel pipeline that computes technical analysis indicators from dail
 
 ```bash
 # Run all modules in parallel
-python app/calculate-ta/run_calculation.py
+python app/calculate_ta/run_calculation.py
 
 # Run a subset (e.g. trend + momentum only)
-python app/calculate-ta/run_calculation.py trend momentum
+python app/calculate_ta/run_calculation.py trend momentum
 ```
 
 ## Output File Structure
@@ -341,13 +341,13 @@ Runs all modules in parallel via `concurrent.futures.ThreadPoolExecutor`, then m
 
 ```bash
 # All modules (parallel)
-python app/calculate-ta/run_calculation.py
+python app/calculate_ta/run_calculation.py
 
 # Subset
-python app/calculate-ta/run_calculation.py trend momentum
+python app/calculate_ta/run_calculation.py trend momentum
 
 # Dry-run (print only)
-python app/calculate-ta/run_calculation.py --dry-run
+python app/calculate_ta/run_calculation.py --dry-run
 ```
 
 ### Individual Modules
@@ -355,14 +355,14 @@ python app/calculate-ta/run_calculation.py --dry-run
 Each module can be run independently:
 
 ```bash
-python app/calculate-ta/calculate_trend.py
-python app/calculate-ta/calculate_momentum.py
+python app/calculate_ta/calculate_trend.py
+python app/calculate_ta/calculate_momentum.py
 # ... etc.
 ```
 
 ### Adding a New Module
 
-1. Create `app/calculate-ta/calculate_<name>.py` with:
+1. Create `app/calculate_ta/calculate_<name>.py` with:
    - `compute_<name>_columns(highs, lows, closes, volumes, n, ...)` → dict of `col_name → list`
    - `process_csv(input_path, output_path, total_files, current_file)` → row count
    - Call `main()` at the bottom
@@ -423,7 +423,7 @@ Thread-pool pipeline runner. Each module calls this to:
 
 Install with:
 ```bash
-pip install -r app/calculate-ta/requirements.txt
+pip install -r app/calculate_ta/requirements.txt
 ```
 
 ---

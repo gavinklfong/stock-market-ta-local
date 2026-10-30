@@ -20,7 +20,7 @@ These CSV files have **108 columns** and **1,800–3,600 rows** (~7–8 MB each)
 **Use the companion script (one call, all data):**
 
 ```bash
-python app/analyse-market-data/get_evaluation_data.py {ticker} {evaluation_date} --latest-30
+python app/analyse_market_data/get_evaluation_data.py {ticker} {evaluation_date} --latest-30
 ```
 
 This outputs a single JSON with: `latest` row, all `indicators` (90+ TA columns across 8 categories), `52week` range, and `recent_context` (last 30 rows with regime + volume + volatility data). Parse the JSON to extract values for each dimension.
@@ -28,9 +28,9 @@ This outputs a single JSON with: `latest` row, all `indicators` (90+ TA columns 
 **Filter by category:** If you only need indicators for a specific dimension, use `--category`:
 
 ```bash
-python app/analyse-market-data/get_evaluation_data.py {ticker} --category trend
-python app/analyse-market-data/get_evaluation_data.py {ticker} --category structure
-python app/analyse-market-data/get_evaluation_data.py {ticker} --category trend volume
+python app/analyse_market_data/get_evaluation_data.py {ticker} --category trend
+python app/analyse_market_data/get_evaluation_data.py {ticker} --category structure
+python app/analyse_market_data/get_evaluation_data.py {ticker} --category trend volume
 ```
 
 Valid categories: `trend`, `momentum`, `return`, `structure`, `volatility`, `volume`, `regime`, `fundamentals`.
@@ -87,7 +87,7 @@ tail -30 data/analysis-data/{ticker}.csv
 | `data/reports/strategies/{ticker}/{latest_strategy_date}.md` | Most recent backtested strategy results — best strategies, their logic, parameters, and recommended entry/exit rules |
 | `docs/all_technical_analysis.md` | TA indicator definitions and interpretation guidelines (12 sections) |
 | `app/backtest/strategies/builtins.py` | 32 built-in strategy source code — read entry/exit logic for each category |
-| `app/calculate-ta/README.md` | Full TA column reference with formulas and parameters |
+| `app/calculate_ta/README.md` | Full TA column reference with formulas and parameters |
 
 ## TA Column Quick Reference
 
@@ -123,14 +123,56 @@ All TA columns use the `ta_` prefix. These are the **actual CSV column names** f
 
 ## Evaluation Methodology
 
-### Token Limit Handling
+### CRITICAL: Write Report in Small Chunks (Avoid Token Limit Errors)
 
-When writing evaluation report:
-- Write the file in sections using separate write/edit calls
-- Start with the header and executive summary
-- Append step 1, 2, 3, etc. separately
-- Each chunk should be self-contained and no more than ~2000 words
-- Use `edit` to insert sections between existing content, or `write` to overwrite with growing content
+**The single biggest cause of failure is writing the entire report in one Write call (~25KB+).** The model output token limit will be exceeded before the arguments complete.
+
+**Follow this exact chunking strategy — every write call must be ≤ 4000 characters (≈ 800 words):**
+
+#### Chunk Plan (8 writes total)
+
+| # | Write call | Content | Approx size |
+|---|-----------|---------|-------------|
+| 1 | **`write`** (create) | Header + Executive Summary (top to `---` before Section 1) | ~3500 chars |
+| 2 | **`edit`** (append) | Section 1: Trend Analysis | ~1500 chars |
+| 3 | **`edit`** (append) | Section 2: Momentum Analysis | ~1500 chars |
+| 4 | **`edit`** (append) | Section 3: Return Analysis | ~1500 chars |
+| 5 | **`edit`** (append) | Section 4: Structure Analysis | ~1500 chars |
+| 6 | **`edit`** (append) | Section 5: Volatility Analysis | ~1500 chars |
+| 7 | **`edit`** (append) | Section 6: Volume Analysis + Section 7: Regime Analysis | ~3000 chars |
+| 8 | **`edit`** (append) | Signal Synthesis + Next Steps + footer | ~2500 chars |
+
+#### Chunking Rules
+
+1. **Never combine two or more sections into a single write call.** Each section (Trend, Momentum, etc.) must be its own call.
+2. **Section 6+7 can be combined** (both are shorter than Trend/Momentum), but nothing else should be merged.
+3. **Use `edit` for chunks 2–8**, targeting the `---` separator at the end of the previous section as the insertion point.
+4. **If a section looks like it might exceed ~2000 chars**, split it further: write the table first, then edit to append the assessment below.
+5. **Do NOT write the entire template at once.** The template above is a reference — fill in values as you write each chunk.
+6. **After chunk 1, always verify the file exists** before proceeding to chunk 2 (the directory must exist, which the AI already creates).
+7. **If the model output starts to run long**, stop writing and let the next turn continue from where it left off. Do NOT try to complete the whole file in one go.
+
+#### Example workflow:
+
+```
+# Chunk 1: Create file with header + exec summary
+write → "data/reports/evaluation/LGEN.L/20261030_evaluation.md"
+  Content: Header block + Executive Summary tables + Strategy Alignment tables + Signal Summary + "---"
+
+# Chunk 2: Append Trend section
+edit → target: last "---"
+  oldString: "---\n\n"
+  newString: "---\n\n## 1. Trend Analysis\n\n**Signal:** ...\n...\n\n---\n\n"
+
+# Chunk 3: Append Momentum section
+edit → target: the "---" at end of Trend section
+  oldString: "---\n\n"
+  newString: "---\n\n## 2. Momentum Analysis\n\n**Signal:** ...\n...\n\n---\n\n"
+
+# ... continue for all sections ...
+```
+
+**Remember:** It is always better to use 8 small, successful writes than 1 large write that fails.
 
 ### Report Depth Guidelines
 
@@ -182,7 +224,7 @@ All 7 dimensions use the **same weighted scoring system**: each factor is rated 
 
 1. **Run the companion script** to get all data in one call:
    ```bash
-   python app/analyse-market-data/get_evaluation_data.py {ticker} {evaluation_date} --latest-30
+   python app/analyse_market_data/get_evaluation_data.py {ticker} {evaluation_date} --latest-30
    ```
    The script handles date resolution internally — use `{actual_date}` (extracted in Step 1.2) as the effective evaluation date for all scoring.
 
@@ -879,4 +921,4 @@ Write the report using this unified structure (based on SVT.L and VUKG.L evaluat
 - **Ticker identity:** Always resolve from `config/ticker_list.csv` before writing any report. Never guess company names from ticker symbols. `NG.L` = **National Grid** (Utilities), not "Natural Gas". This is the #1 source of incorrect reports.
 - **MFI and GARCH appear in multiple dimensions** — score each dimension independently using that dimension's interpretation; do not skip a dimension because the column was used elsewhere
 - **Report depth** — choose report depth based on signal agreement (see Report Depth Guidelines); condense when 5+ agree, expand when <4 agree
-- **Write report in chunks** — start with header + executive summary, then append sections separately to avoid token limit issues
+- **CRITICAL: Chunked writes only** — Never write the entire report in a single Write call. Use the 8-chunk plan (see Token Limit Handling above). Each write/edit must be ≤ 4000 characters. This is the #1 cause of skill failures.

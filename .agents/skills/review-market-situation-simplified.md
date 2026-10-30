@@ -18,7 +18,7 @@ Assess the market situation for `{ticker}` as of `{evaluation_date}` and output 
 **Use the companion script** (one call, all data):
 
 ```bash
-python app/analyse-market-data/get_evaluation_data.py {ticker} {evaluation_date} --latest-30
+python app/analyse_market_data/get_evaluation_data.py {ticker} {evaluation_date} --latest-30
 ```
 
 This outputs a single JSON with: `latest` row (OHLCV), all `indicators` (90+ TA columns across 8 categories), `52week` range, and `recent_context` (last 30 rows with regime + volume + volatility data).
@@ -26,9 +26,9 @@ This outputs a single JSON with: `latest` row (OHLCV), all `indicators` (90+ TA 
 **Filter by category:** If you only need indicators for a specific dimension, use `--category`:
 
 ```bash
-python app/analyse-market-data/get_evaluation_data.py {ticker} --category trend
-python app/analyse-market-data/get_evaluation_data.py {ticker} --category structure
-python app/analyse-market-data/get_evaluation_data.py {ticker} --category trend volume
+python app/analyse_market_data/get_evaluation_data.py {ticker} --category trend
+python app/analyse_market_data/get_evaluation_data.py {ticker} --category structure
+python app/analyse_market_data/get_evaluation_data.py {ticker} --category trend volume
 ```
 
 Valid categories: `trend`, `momentum`, `return`, `structure`, `volatility`, `volume`, `regime`, `fundamentals`.

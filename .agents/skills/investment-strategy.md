@@ -140,7 +140,7 @@ from app.backtest.strategies.builtins import STRATEGIES
 
 All data retrieval for this skill should use the helper script:
 ```bash
-python app/analyse-market-data/get_evaluation_data.py {ticker} [date] [options]
+python app/analyse_market_data/get_evaluation_data.py {ticker} [date] [options]
 ```
 
 > **Note:** `get_evaluation_data.py` **outputs JSON by default** — no `--json` flag needed. The `--json` flag is accepted as a no-op alias for compatibility with other backtest scripts (e.g. `run_backtest_analysis.py`, `run_strategy_backtest.py`). Similarly, `--no-report` is a no-op since no HTML is generated.
@@ -165,7 +165,7 @@ python app/analyse-market-data/get_evaluation_data.py {ticker} [date] [options]
 import subprocess, json
 
 result = subprocess.run([
-    "python", "app/analyse-market-data/get_evaluation_data.py",
+    "python", "app/analyse_market_data/get_evaluation_data.py",
     "NG.L", "--cutoff", "2016-10-26"
 ], capture_output=True, text=True)
 data = json.loads(result.stdout)
@@ -181,7 +181,7 @@ latest = data["latest"]              # {date: "...", close: 1150.0, ...}
 
 # Full DataFrame for backtesting
 result = subprocess.run([
-    "python", "app/analyse-market-data/get_evaluation_data.py",
+    "python", "app/analyse_market_data/get_evaluation_data.py",
     "NG.L", "--cutoff", "2016-10-26", "--full-df"
 ], capture_output=True, text=True)
 full_data = json.loads(result.stdout)
@@ -199,7 +199,7 @@ from vectorbt.portfolio.enums import SizeType
 
 # Get OHLCV data for VectorBT
 result = subprocess.run([
-    "python", "app/analyse-market-data/get_evaluation_data.py",
+    "python", "app/analyse_market_data/get_evaluation_data.py",
     "NG.L", "--cutoff", "2016-10-26", "--ohlcv"
 ], capture_output=True, text=True)
 ohlcv = json.loads(result.stdout)
@@ -231,7 +231,7 @@ pf = vbt.Portfolio.from_signals(
 
 ```python
 result = subprocess.run([
-    "python", "app/analyse-market-data/get_evaluation_data.py",
+    "python", "app/analyse_market_data/get_evaluation_data.py",
     "NG.L", "--cutoff", "2026-10-28", "--yearly"
 ], capture_output=True, text=True)
 yearly = json.loads(result.stdout)["yearly_performance"]
@@ -248,18 +248,64 @@ Trend following · Mean reversion · Momentum · Contrarian · Dividend income �
 
 1. Run `get_evaluation_data.py` which auto-resolves from `config/ticker_list.csv`:
    ```bash
-   python app/analyse-market-data/get_evaluation_data.py {ticker}
+   python app/analyse_market_data/get_evaluation_data.py {ticker}
    ```
    The output includes `company_name` and `sector` — these are the **authoritative** identifiers.
 2. **NEVER guess** what a ticker represents based on its symbol alone (e.g. `NG.L` is **National Grid**, not "Natural Gas"; `BP.L` is **BP**, not "Bond Pricing")
 3. Use the resolved company name throughout the report instead of the raw ticker symbol where narrative context is needed
 4. **Constraint:** If `company_name` is `null` in the output, the ticker is not found in `config/ticker_list.csv` — note this as a data issue and proceed with the ticker symbol only — do not fabricate a company name.
 
+## Strategy Names vs Module File Names — **CRITICAL**
+
+Custom strategies have **two names** — the skill AI must understand the mapping:
+
+| Concept | What it is | Example | Used by |
+|---------|-----------|---------|---------|
+| **Strategy name** (registered name) | The string passed to `@register_custom("…")` decorator | `lgen_meanrev_risk`, `dividend_meanrev` | `load_custom_strategies()` returns dict keyed by this; backtest results show this name |
+| **Module file name** (file stem) | The Python file name without `.py` extension | `LGEN.L_meanrev_risk`, `LGEN.L_strategies` | `--custom` flag on CLI; `module_names` parameter |
+
+**How to use the mapping:**
+
+1. Run `get_evaluation_data.py {ticker} --custom-strategies` to see registered strategies **with their module file names**
+2. Look at the `(module: …)` part to find which file contains the strategy you want
+3. Pass the **file stem** (without `.py`) to `--custom`
+
+**LGEN.L example (20 strategies across 6 files):**
+
+```jsonc
+// get_evaluation_data.py LGEN.L --custom-strategies output:
+"LGEN.L": [
+    "lgen_meanrev_risk (module: LGEN.L_meanrev_risk)",   // ← strategy name | module file
+    "lgen_multisignal_mr (module: LGEN.L_multisignal)",
+    "lgen_upper_exit_time_stop (module: LGEN.L_optimized)",   // 7 strategies in 1 file
+    "lgen_crash_protected_upper (module: LGEN.L_optimized)",
+    // ... 5 more from LGEN.L_optimized
+    "dividend_meanrev (module: LGEN.L_strategies)",           // 6 strategies in 1 file
+    "trend_filtered_meanrev (module: LGEN.L_strategies)",
+    // ... 4 more from LGEN.L_strategies
+    "lgen_strict_crash_upper (module: LGEN.L_variants)",      // 4 strategies in 1 file
+    // ... 3 more from LGEN.L_variants
+]
+```
+
+**To run backtest with a specific strategy:**
+```bash
+# Run ALL strategies from a single module file (recommended — a file may contain multiple strategies)
+python app/backtest/run_strategy_backtest.py LGEN.L --custom LGEN.L_meanrev_risk   # 1 strategy
+python app/backtest/run_strategy_backtest.py LGEN.L --custom LGEN.L_strategies     # 6 strategies in this file
+python app/backtest/run_strategy_backtest.py LGEN.L --custom LGEN.L_meanrev_risk LGEN.L_strategies  # multiple files
+
+# Run a SPECIFIC registered strategy name — NOT possible via --custom; --custom always loads the entire module file
+# If you need only one strategy from a multi-strategy file, use load_custom_strategies() programmatically
+```
+
+> **Key rule:** `--custom` accepts **module file names** (file stems), NOT strategy names. The CLI loads the entire `.py` file and all `@register_custom`-decorated functions within it become available. To find which module file contains a strategy, look at the `(module: …)` part of `--custom-strategies` output.
+
 ## Directory Quick Reference
 
 | Directory | Purpose | Naming convention | Example |
 |-----------|---------|-------------------|---------|
-| `app/backtest/custom/{ticker}/` | Strategy module files (registered with `@register_custom`) — per-ticker subdirectories | `{function}.py` | `meanrev.py` |
+| `app/backtest/custom/{ticker}/` | Strategy module files (registered with `@register_custom`) — per-ticker subdirectories | `{file_stem}.py` — file stem may include ticker prefix | `LGEN.L_meanrev_risk.py`, `LGEN.L_strategies.py`, `meanrev.py` |
 | `app/backtest/custom_scripts/` | One-off analysis / backtest scripts | `{Ticker}_{function}.py` | `NG.L_backtest.py` |
 | `app/backtest/configs/` | Per-ticker YAML configs | `{Ticker}_{function}.yaml` | `NG_L_optimized.yaml` |
 
@@ -323,16 +369,16 @@ All TA columns use the `ta_` prefix. **Always verify columns with** `get_evaluat
 
 1. Get the full data snapshot via `get_evaluation_data.py`:
    ```bash
-   python app/analyse-market-data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD
+   python app/analyse_market_data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD
    ```
    This gives you: company name, sector, date range, row count, OHLCV, all indicators, and 52-week range.
 2. Check forward returns statistics:
    ```bash
-   python app/analyse-market-data/get_evaluation_data.py {ticker} --forward-returns
+   python app/analyse_market_data/get_evaluation_data.py {ticker} --forward-returns
    ```
 3. Verify available columns:
    ```bash
-   python app/analyse-market-data/get_evaluation_data.py {ticker} --list-columns
+   python app/analyse_market_data/get_evaluation_data.py {ticker} --list-columns
    ```
 4. **Use the resolved company name** from the Pre-flight step — e.g. "National Grid (NG.L) is a regulated UK utility…" not "NG.L is a commodity…"
 5. Examine forward returns (`ta_return_5d`, `ta_return_10d`, `ta_return_20d`) and past performance (`ta_performance_1m`, `ta_performance_3m`, `ta_performance_6m`, `ta_performance_1y`) to understand the asset's behavior
@@ -371,7 +417,7 @@ import subprocess, json, pandas as pd
 
 # Get the data file path via the helper script
 result = subprocess.run([
-    "python", "app/analyse-market-data/get_evaluation_data.py",
+    "python", "app/analyse_market_data/get_evaluation_data.py",
     "{ticker}", "--cutoff", "2016-10-26"
 ], capture_output=True, text=True)
 data = json.loads(result.stdout)
@@ -425,12 +471,15 @@ Select the top 5 strategies by performance (balanced: return + risk). For each:
 
 **Step 1 — Evaluate existing custom strategies for this ticker (discovery):**
    ```bash
-   python app/analyse-market-data/get_evaluation_data.py {ticker} --custom-strategies
+   python app/analyse_market_data/get_evaluation_data.py {ticker} --custom-strategies
    ```
-   This returns a JSON with `custom_strategies` grouped by ticker. If the ticker has existing custom strategies, evaluate them first:
+   This returns a JSON with `custom_strategies` grouped by ticker. Each entry is formatted as `"strategy_name (module: file_stem)"` — the `file_stem` (without `.py`) is what you pass to `--custom`.
+
+   If the ticker has existing custom strategies, evaluate them first:
    ```bash
    python app/backtest/run_strategy_backtest.py {ticker} --cutoff YYYY-MM-DD --custom {module1} {module2} --json --no-report
    ```
+   Where `{module1}` is the file stem (e.g., `LGEN.L_strategies`), NOT the strategy name (e.g., `dividend_meanrev`). A single module file can contain multiple strategies — passing the module loads all of them.
 
 **Step 2 — If no existing custom strategies, or if you want to go beyond them: CREATE a new one.**
    1. Copy `app/backtest/custom/template_strategy.py` to `app/backtest/custom/{ticker}/{custom_name}.py` (create the ticker subdirectory if needed). **Always create the ticker subdirectory — do NOT put custom strategies in the root `custom/` directory.**
@@ -478,7 +527,7 @@ custom = load_custom_strategies(
 > **CRITICAL — Do NOT load all custom strategies at once:**
 > - There are 20+ custom strategy files covering 10+ different tickers. Loading them all produces 100+ irrelevant strategies.
 > - **Always load only strategies relevant to the target ticker.**
-> - **Step 1:** Discover relevant custom strategies: `python app/analyse-market-data/get_evaluation_data.py {ticker} --custom-strategies`
+> - **Step 1:** Discover relevant custom strategies: `python app/analyse_market_data/get_evaluation_data.py {ticker} --custom-strategies`
 > - **Step 2:** Use the discovered module names with `--list` to verify: `python app/backtest/run_strategy_backtest.py {ticker} --list --custom {module1} {module2}`
 > - **Step 3:** Pass those module file names via `module_names=["ba_defense_meanrev", "ba_regime_filter"]` to `load_custom_strategies()`.
 > - Generic strategies (not ticker-specific) can be loaded separately if needed.
@@ -518,7 +567,7 @@ df = engine.load_data()
 
 # Option B: Use get_evaluation_data.py output directly
 result = subprocess.run([
-    "python", "app/analyse-market-data/get_evaluation_data.py",
+    "python", "app/analyse_market_data/get_evaluation_data.py",
     "NG.L", "--cutoff", "2016-10-26", "--ohlcv"
 ], capture_output=True, text=True)
 ohlcv_data = json.loads(result.stdout)
@@ -652,7 +701,7 @@ This returns JSON with `yearly_performance` — an array of per-strategy objects
 
 For buy-and-hold baseline only, use:
 ```bash
-python app/analyse-market-data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD --yearly
+python app/analyse_market_data/get_evaluation_data.py {ticker} --cutoff YYYY-MM-DD --yearly
 ```
 
 | Year | Buy & Hold | {strategy_1} | {strategy_2} | {strategy_3} | {strategy_4} | {strategy_5} |

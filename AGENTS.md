@@ -4,16 +4,16 @@
 
 ```
 app/
-  download-market-data/     # Downloads OHLCV from Yahoo Finance
+  download_market_data/     # Downloads OHLCV from Yahoo Finance
     download_tickers.py       # Bulk OHLCV → data/market-data/*.csv
     download_stock_info.py    # P/E ratios → data/pe-data/*.csv
-  analysis-pipeline/    # Prefect flow: download → TA → merge → HTML reports
-  analyse-market-data/  # Interactive HTML report generation
+  analysis_pipeline/    # Prefect flow: download → TA → merge → HTML reports
+  analyse_market_data/  # Interactive HTML report generation
     analyse_ticker.py     # Single ticker
     run_analysis.py       # All tickers + sectors + overview
     analyse_sector.py     # Single sector
     analyse_all.py        # All-tickers overview (sorted by 1Y return)
-  calculate-ta/         # TA indicator modules (see README.md for full docs)
+  calculate_ta/         # TA indicator modules (see README.md for full docs)
     common.py               # Shared: read_yfinance_csv(), main() thread-pool runner
     run_calculation.py      # Orchestrator — runs modules in parallel, then merges
   backtest/               # VectorBT backtesting framework
@@ -37,16 +37,16 @@ data/
 
 ```bash
 # 1. Download data (activate venv first)
-python app/download-market-data/download_tickers.py
-python app/download-market-data/download_tickers.py --ticker NG.L        # single ticker
-python app/download-market-data/download_stock_info.py
-python app/download-market-data/download_stock_info.py --ticker NG.L
+python app/download_market_data/download_tickers.py
+python app/download_market_data/download_tickers.py --ticker NG.L        # single ticker
+python app/download_market_data/download_stock_info.py
+python app/download_market_data/download_stock_info.py --ticker NG.L
 
 # 2. TA indicators (all modules run in PARALLEL)
-python app/calculate-ta/run_calculation.py                              # all 7 modules
-python app/calculate-ta/run_calculation.py trend momentum               # subset
-python app/calculate-ta/run_calculation.py --ticker NG.L                # single ticker
-python app/calculate-ta/run_calculation.py --dry-run                    # preview only
+python app/calculate_ta/run_calculation.py                              # all 7 modules
+python app/calculate_ta/run_calculation.py trend momentum               # subset
+python app/calculate_ta/run_calculation.py --ticker NG.L                # single ticker
+python app/calculate_ta/run_calculation.py --dry-run                    # preview only
 
 # 3. Full Prefect pipeline (download → TA → merge → HTML reports)
 python -m app.analysis_pipeline.run_pipeline
@@ -59,22 +59,22 @@ python -m app.analysis_pipeline.run_pipeline --ticker NG.L --force
 # 4. Analyse market data → HTML reports
 
 # 4a. Single ticker report
-python app/analyse-market-data/analyse_ticker.py NG.L                   # single ticker
-python app/analyse-market-data/analyse_ticker.py --dry-run NG.L         # show data only
+python app/analyse_market_data/analyse_ticker.py NG.L                   # single ticker
+python app/analyse_market_data/analyse_ticker.py --dry-run NG.L         # show data only
 
 # 4b. All tickers + sectors + overview (default), or filtered set
-python app/analyse-market-data/run_analysis.py
-python app/analyse-market-data/run_analysis.py --tickers NG.L BP.L      # specific tickers
-python app/analyse-market-data/run_analysis.py --no-sector              # skip sector reports
-python app/analyse-market-data/run_analysis.py --dry-run                # data only, no HTML
+python app/analyse_market_data/run_analysis.py
+python app/analyse_market_data/run_analysis.py --tickers NG.L BP.L      # specific tickers
+python app/analyse_market_data/run_analysis.py --no-sector              # skip sector reports
+python app/analyse_market_data/run_analysis.py --dry-run                # data only, no HTML
 
 # 4c. Single sector report
-python app/analyse-market-data/analyse_sector.py Utilities
-python app/analyse-market-data/analyse_sector.py --dry-run Utilities
+python app/analyse_market_data/analyse_sector.py Utilities
+python app/analyse_market_data/analyse_sector.py --dry-run Utilities
 
 # 4d. All-tickers overview (sorted by 1Y return descending)
-python app/analyse-market-data/analyse_all.py
-python app/analyse-market-data/analyse_all.py --dry-run
+python app/analyse_market_data/analyse_all.py
+python app/analyse_market_data/analyse_all.py --dry-run
 
 # 5. Backtest (reads data/analysis-data/{ticker}.csv)
 python app/backtest/run_backtest.py NG.L                                # single ticker
@@ -87,8 +87,8 @@ python app/backtest/backtest_all.py --no-report                         # skip H
 
 # 6. Tests
 python run_test.py                              # all tests
-python run_test.py calculate-ta                 # TA module tests only
-python run_test.py download-market-data             # download script tests only
+python run_test.py calculate_ta  # TA module tests only
+python run_test.py download_market_data             # download script tests only
 ```
 
 ## Architecture
@@ -102,7 +102,7 @@ python run_test.py download-market-data             # download script tests only
 
 ## Adding a new TA module
 
-1. Create `app/calculate-ta/calculate_<name>.py` with:
+1. Create `app/calculate_ta/calculate_<name>.py` with:
    - `compute_<name>_columns(...)` → dict of `col_name → list`
    - `process_csv(input_path, output_path, total_files, current_file)` → row count
    - Call `main()` from `common.py` at the bottom
@@ -120,7 +120,7 @@ python run_test.py download-market-data             # download script tests only
 | `calculate_structure.py` | Swing highs/lows, HH/HL/LH/LL, BOS, CHoCH, S/R clusters |
 | `calculate_return.py` | Forward returns (5d/10d/20d); rolling alpha/beta vs ^FTSE |
 
-All output columns use `ta_` prefix. Full details in `app/calculate-ta/README.md`.
+All output columns use `ta_` prefix. Full details in `app/calculate_ta/README.md`.
 
 ## Gotchas
 
@@ -128,8 +128,8 @@ All output columns use `ta_` prefix. Full details in `app/calculate-ta/README.md
 - **yfinance CSV header**: Two-row (sometimes three-row) header. `read_yfinance_csv()` auto-detects it. Modules read columns by name only (`Date`, `Open`, `High`, `Low`, `Close`, `Volume`).
 - **Ticker list**: Edit `config/ticker_list.csv` (columns: Ticker, Company, Major Industry / Sector). Periods auto-converted (`BRK.B` → `BRK-B`). Suffixes like `.L` preserved.
 - **Git-ignored**: `data/market-data/*.csv` and `venv/` are gitignored. Other `data/` subdirs contain tracked output files.
-- **Regime module**: Requires `arch` + `hmmlearn` (heavy ML packages). Install via `pip install -r app/calculate-ta/requirements.txt`.
+- **Regime module**: Requires `arch` + `hmmlearn` (heavy ML packages). Install via `pip install -r app/calculate_ta/requirements.txt`.
 - **Prefect env**: `.env` sets `PREFECT_SERVER_ANALYTICS_ENABLED=false` (telemetry opt-out).
-- **Tests**: Use `python run_test.py <module>` — the wrapper handles `sys.path` setup via root `conftest.py`, which inserts `app/calculate-ta/` and `app/download-market-data/` into the path. Tests live in `app/{module}/tests/`.
+- **Tests**: Use `python run_test.py <module>` — the wrapper handles `sys.path` setup via root `conftest.py`, which inserts `app/calculate_ta/` and `app/download_market_data/` into the path. Tests live in `app/{module}/tests/`.
 - **Backtest data source**: Backtest scripts read from `data/analysis-data/{ticker}.csv` (merged market+TA+P/E), not raw TA data.
 - **Incremental TA**: TA modules support incremental recalculation. Use `--force` to skip incrementality (full recalc).
